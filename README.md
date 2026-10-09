@@ -53,8 +53,42 @@ dotnet build WotR.Testing.slnx
 Outputs go to the ignored `artifacts/` directory. Public CI cannot build this
 repository because it has no game files.
 
+## Repository layout
+
+| Path | Owns |
+| --- | --- |
+| `src/` | Libraries and their MSBuild targets ([overview](src/README.md)) |
+| `scripts/` | Test runner and game-file snapshot scripts, called by consumers through the submodule |
+| `tests/` | Repository checks; library tests and synthetic fixtures once they exist |
+| `docs/` | Public documentation ([index](docs/README.md)) |
+| `data/` | No datasets; game files never belong in this repository |
+| `.github/` | CI, pull request template and CODEOWNERS |
+| [`STATUS.md`](STATUS.md) | Verified behavior and its limits |
+| [`CHANGELOG.md`](CHANGELOG.md) | User-visible changes |
+
+Tasks are tracked in Linear, not GitHub Issues; see [contributing](CONTRIBUTING.md)
+and [security reporting](SECURITY.md). Development rules are in [CLAUDE.md](CLAUDE.md).
+
+## Repository checks
+
+CI runs these on every push and pull request; they need Python 3.11+ and uv, not
+the game:
+
+```powershell
+python tests/check_repository.py
+python -m unittest discover -s tests -p 'test_*.py'
+uvx ruff==0.16.10 check --config .ruff.toml tests
+uvx ruff==0.16.10 format --check --config .ruff.toml tests
+uvx ty==0.0.82 check tests
+```
+
+They check required files, public links, instruction aliases and that no game files
+or local game paths are tracked. They do not build or test the library.
+
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE), with an
 [additional permission](LICENSE-EXCEPTION.md) to link and convey it together with
-the proprietary game and Unity engine assemblies.
+the proprietary game and Unity engine assemblies. The repository scaffolding
+(checks, CI and contribution files) is adapted from Acture's open-source project
+template, MIT License, Copyright (c) 2026 Acture.

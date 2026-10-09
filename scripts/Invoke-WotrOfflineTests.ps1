@@ -17,7 +17,9 @@ param(
     [string]$Filter,
     [string]$ResultsDirectory,
     # A run in which fewer tests pass (for example because every test was skipped as unity-runtime-required) fails.
-    [ValidateRange(1, [int]::MaxValue)][int]$MinimumPassed = 1
+    [ValidateRange(1, [int]::MaxValue)][int]$MinimumPassed = 1,
+    # Skip the NuGet lookup that warns when a mod uses an older BlueprintCore than the latest release.
+    [switch]$NoUpdateCheck
 )
 
 $ErrorActionPreference = 'Stop'
@@ -205,6 +207,24 @@ elseif ($built) {
 if ($built -and $results.Count -eq 0) { $problems.Add('Zero tests: no test results were reported.') }
 if ($built -and -not (Test-Path -LiteralPath $environmentPath)) { $problems.Add('Missing report: environment.json was not written by the test fixture.') }
 
+# Warnings never fail the run: they point at differences a player's game may have.
+$warnings = [System.Collections.Generic.List[string]]::new()
+if (Test-Path -LiteralPath $environmentPath) {
+    $environment = Get-Content -LiteralPath $environmentPath -Raw | ConvertFrom-Json
+    foreach ($warning in @($environment.warnings)) { if ($warning) { $warnings.Add($warning) } }
+    $blueprintCore = @($environment.libraries | Where-Object { $_.name -eq 'BlueprintCore.dll' -and $_.version }) | Select-Object -First 1
+    if ($blueprintCore -and -not $NoUpdateCheck -and -not $env:WOTR_NO_UPDATE_CHECK) {
+        try {
+            $published = (Invoke-RestMethod -Uri 'https://api.nuget.org/v3-flatcontainer/ww-blueprint-core/index.json' -TimeoutSec 15).versions |
+                Where-Object { $_ -notmatch '-' } | ForEach-Object { [version]$_ }
+            $latest = $published | Sort-Object | Select-Object -Last 1
+            $used = [version]$blueprintCore.version
+            if ($latest -and $used -lt $latest) { $warnings.Add("BlueprintCore $used is used; $latest is the latest release (NuGet WW-Blueprint-Core).") }
+        }
+        catch { $warnings.Add("BlueprintCore update check skipped: $($_.Exception.Message)") }
+    }
+}
+
 $counts = [ordered]@{}
 foreach ($group in ($results | Group-Object classification)) { $counts[$group.Name] = $group.Count }
 $blocking = @($results | Where-Object { $_.classification -notin 'passed', 'unity-runtime-required' })
@@ -231,6 +251,7 @@ $summary = [ordered]@{
     sourceHasUncommittedChanges = $dirty
     counts = $counts
     problems = $problems
+    warnings = $warnings
     reports = [ordered]@{ tests = $(if ($Runtime -eq 'mono') { $xunitPath } else { $trxPath }); environment = $environmentPath }
     results = $results
 }
@@ -245,6 +266,12 @@ $lines.Add('| Classification | Tests |')
 $lines.Add('| --- | ---: |')
 foreach ($entry in $counts.GetEnumerator()) { $lines.Add("| $($entry.Key) | $($entry.Value) |") }
 foreach ($problem in $problems) { $lines.Add(''); $lines.Add("- $problem") }
+if ($warnings.Count -gt 0) {
+    $lines.Add('')
+    $lines.Add('Warnings (do not fail the run):')
+    $lines.Add('')
+    foreach ($warning in $warnings) { $lines.Add("- $warning") }
+}
 $lines.Add('')
 $lines.Add('| Test | Classification |')
 $lines.Add('| --- | --- |')
@@ -253,6 +280,7 @@ $lines | Set-Content -LiteralPath (Join-Path $ResultsDirectory 'summary.md') -En
 
 Write-Host ''
 foreach ($entry in $counts.GetEnumerator()) { Write-Host ("{0,-26} {1}" -f $entry.Key, $entry.Value) }
+foreach ($warning in $warnings) { Write-Host "WARN: $warning" }
 foreach ($problem in $problems) { Write-Host "FAIL: $problem" }
 foreach ($result in $blocking) { Write-Host "FAIL: [$($result.classification)] $($result.name)" }
 Write-Host "Reports: $ResultsDirectory"

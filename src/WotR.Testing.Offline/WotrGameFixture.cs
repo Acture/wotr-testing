@@ -82,12 +82,15 @@ namespace WotR.Testing.Offline
 
         public virtual void Dispose()
         {
-            var directory = OfflineRuntime.Inputs?.ReportDirectory
-                ?? Environment.GetEnvironmentVariable(OfflineInputs.ReportDirectoryVariable)
-                ?? Path.Combine(Path.GetDirectoryName(typeof(WotrGameFixture).Assembly.Location), "wotr-reports");
+            var directory = ReportDirectory();
             Directory.CreateDirectory(directory);
             File.WriteAllText(Path.Combine(directory, "environment.json"), JsonSerializer.Serialize(BuildReport(), Report.JsonOptions));
         }
+
+        private static string ReportDirectory()
+            => OfflineRuntime.Inputs?.ReportDirectory
+               ?? Environment.GetEnvironmentVariable(OfflineInputs.ReportDirectoryVariable)
+               ?? Path.Combine(Path.GetDirectoryName(typeof(WotrGameFixture).Assembly.Location), "wotr-reports");
 
         private object BuildReport()
         {
@@ -119,7 +122,10 @@ namespace WotR.Testing.Offline
                     snapshotManifestGameVersion = OfflineRuntime.Inputs.Identity.SnapshotManifestGameVersion,
                 },
                 mod = new { id = Session.ModId, assembly = OfflineRuntime.Inputs?.ModAssembly, dependencies = OfflineRuntime.ModDependencies },
-                mods = Session.Mods.Select(m => new { id = m.Id, version = m.Version, underTest = m.UnderTest, source = m.SourcePath, entryPath = m.EntryPath, log = m.Log }).ToArray(),
+                libraries = OfflineRuntime.ModLibraries,
+                mods = Session.Mods.Select(m => new { id = m.Id, version = m.Version, underTest = m.UnderTest, source = m.SourcePath, entryPath = m.EntryPath }).ToArray(),
+                warnings = OfflineRuntime.Warnings,
+                dlc = OfflineDlc.Report(),
                 runtimeDirectory = OfflineRuntime.RuntimeDirectory,
                 modRuntimeDirectory = OfflineRuntime.ModRuntimeDirectory,
                 rewrite = OfflineRuntime.Rewrite,
@@ -131,7 +137,7 @@ namespace WotR.Testing.Offline
                 logSummary = logs.GroupBy(l => $"{l.Source}:{l.Severity}").ToDictionary(g => g.Key, g => g.Count()),
                 logErrors = logs.Where(l => l.Severity is "Error" or "Exception" || l.Exception != null).Take(200).ToArray(),
                 logWarnings = logs.Where(l => l.Severity == "Warning").Take(200).ToArray(),
-                modLog = Session.ModLog,
+                modLogs = ModLogSink.Write(Path.Combine(ReportDirectory(), "logs")),
                 observations = Observations,
             };
         }

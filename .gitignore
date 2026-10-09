@@ -1,8 +1,26 @@
+# Build outputs
 artifacts/
 bin/
 obj/
 .vs/
 *.user
+
+# Local game path: never commit
 /GamePath.props
 # Licensed game files: never commit
 /vendor/
+
+# Local configuration and credentials
+.DS_Store
+.env
+.env.*
+!.env.example
+!.env.template
+*credentials-backup*
+
+# Repository checks
+.venv/
+__pycache__/
+*.py[cod]
+.ruff_cache/
+.ty_cache/

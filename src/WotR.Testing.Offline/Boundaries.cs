@@ -52,6 +52,8 @@ namespace WotR.Testing.Offline
                 "Messages are captured into the test report.");
             Declare("owlcat-log", "logging", "Owlcat.Runtime.Core.Logging.Logger.Log",
                 "Messages and exceptions are captured into the test report with their severity; nothing is suppressed from it.");
+            Declare("umm-log", "logging", "UnityModManager.Logger.Write, WriteBuffers and Clear",
+                "Every manager and mod log line goes to the report (logs/<source>.log); Log.txt in the installation is never written or deleted.");
             Declare("shader-ids", "graphics", "UnityEngine.Shader.PropertyToID",
                 "Stable integer per property name, used only by visual static constructors.");
             Declare("scene-objects", "scene", "UnityEngine.Object.FindObjectsOfType and Resources.FindObjectsOfTypeAll",
@@ -60,6 +62,8 @@ namespace WotR.Testing.Offline
                 "Skipped; it would otherwise contact the developer's report server.");
             Declare("graphics-settings", "graphics", "GraphicsSettingsController constructor and GraphicsPresetsController.AutodetectQuality",
                 "Skipped; they need scene coroutine objects and GPU detection.");
+            Declare("runtime-images", "graphics", "Texture2D constructors, ImageConversion.LoadImage and Sprite.Create",
+                "Images a mod builds at run time (for example icons from PNG files) have no native texture: constructors are skipped, LoadImage returns false and Sprite.Create returns null, as native assets from bundles are null.");
             Declare("referenced-assets", "assets", "BlueprintReferencedAssets.Get(int) during blueprint deserialization",
                 "Entries are read from the real blueprint.assets list; ScriptableObjects are mapped from their type tree as the field type the game expects, native assets stay null.");
         }
@@ -132,7 +136,8 @@ namespace WotR.Testing.Offline
         {
             Boundaries.Hit("unity-paths");
             Directory.CreateDirectory(path);
-            result = path;
+            // Unity returns these paths with '/' separators on Windows, and game code splits them on '/'.
+            result = path.Replace('\\', '/');
             return false;
         }
     }
@@ -239,6 +244,46 @@ namespace WotR.Testing.Offline
         {
             Boundaries.Hit("scene-objects");
             __result = (UnityEngine.Object[])Array.CreateInstance(type, 0);
+            return false;
+        }
+    }
+
+    [HarmonyPatch]
+    internal static class Texture2DConstructorPatch
+    {
+        private static IEnumerable<MethodBase> TargetMethods() => AccessTools.GetDeclaredConstructors(typeof(UnityEngine.Texture2D)).Where(c => !c.IsStatic);
+
+        private static bool Prefix()
+        {
+            Boundaries.Hit("runtime-images");
+            return false;
+        }
+    }
+
+    [HarmonyPatch]
+    internal static class LoadImagePatch
+    {
+        private static IEnumerable<MethodBase> TargetMethods()
+            => AccessTools.GetDeclaredMethods(Type.GetType("UnityEngine.ImageConversion, UnityEngine.ImageConversionModule", throwOnError: true)).Where(m => m.Name == "LoadImage");
+
+        private static bool Prefix(ref bool __result)
+        {
+            Boundaries.Hit("runtime-images");
+            __result = false;
+            return false;
+        }
+    }
+
+    [HarmonyPatch]
+    internal static class SpriteCreatePatch
+    {
+        private static IEnumerable<MethodBase> TargetMethods()
+            => AccessTools.GetDeclaredMethods(typeof(UnityEngine.Sprite)).Where(m => m.Name == nameof(UnityEngine.Sprite.Create) && m.IsPublic);
+
+        private static bool Prefix(ref UnityEngine.Sprite __result)
+        {
+            Boundaries.Hit("runtime-images");
+            __result = null;
             return false;
         }
     }

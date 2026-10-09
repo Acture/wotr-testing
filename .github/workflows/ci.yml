@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repository:
+    name: Repository checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          submodules: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: '0.12.17'
+          enable-cache: false
+      - name: Check repository ownership, public links and game files
+        run: python3 tests/check_repository.py
+      - name: Test repository boundaries
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
+      - name: Lint and format repository checks
+        run: |
+          uvx ruff==0.16.10 check --config .ruff.toml tests
+          uvx ruff==0.16.10 format --check --config .ruff.toml tests
+      - name: Typecheck repository checks
+        run: uvx ty==0.0.82 check tests

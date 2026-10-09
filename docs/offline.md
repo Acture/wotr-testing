@@ -42,9 +42,11 @@ All mods and their private libraries share one process, as in the game. When mod
 ship different copies of one library (for example BlueprintCore 2.8.6 and 2.8.7),
 the game's Mono uses the copy loaded first for every mod, whatever version each mod
 was built against (verified with two mods carrying different versions of one
-library). A run does the same in load order and reports a warning naming the copy
-used and the copies ignored; `environment.json` lists the copy of each library
-used (`libraries`).
+library). A library loads when code first uses it, not when its mod loads, so which
+copy the game uses is not predictable from the mod list. A run uses the first copy
+in load order and reports a warning naming every copy; `environment.json` lists the
+copy of each library used (`libraries`). The run's result may differ with another
+copy.
 
 ## DLC
 

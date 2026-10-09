@@ -23,6 +23,7 @@ namespace WotR.Testing.Offline
     {
         private static readonly string[] ForbiddenProcesses = { "Wrath", "Unity", "Unity Hub" };
         private static readonly string[] ForbiddenModules = { "UnityPlayer.dll", "mono-2.0-bdwgc.dll", "Wrath.exe" };
+        private const string UnityMonoModule = "mono-2.0-bdwgc.dll";
 
         private readonly DateTime startedAt = DateTime.UtcNow;
         private readonly HashSet<int> processesBefore;
@@ -60,10 +61,19 @@ namespace WotR.Testing.Offline
             if (startupError != null) throw startupError;
         }
 
+        /// <summary>
+        /// Player modules loaded into the test process. The game's Mono runtime is allowed only when this process runs
+        /// on it and it was loaded from the declared inputs; UnityPlayer.dll and Wrath.exe are never allowed.
+        /// </summary>
         public static IEnumerable<string> LoadedForbiddenModules()
             => Process.GetCurrentProcess().Modules.Cast<ProcessModule>()
-                .Select(m => m.ModuleName)
-                .Where(name => ForbiddenModules.Contains(name, StringComparer.OrdinalIgnoreCase));
+                .Where(m => ForbiddenModules.Contains(m.ModuleName, StringComparer.OrdinalIgnoreCase) && !IsDeclaredUnityMono(m))
+                .Select(m => m.ModuleName);
+
+        private static bool IsDeclaredUnityMono(ProcessModule module)
+            => OfflineRuntime.IsUnityMono && OfflineRuntime.Inputs != null
+               && string.Equals(module.ModuleName, UnityMonoModule, StringComparison.OrdinalIgnoreCase)
+               && string.Equals(Path.GetFullPath(module.FileName), Path.GetFullPath(Path.Combine(OfflineRuntime.Inputs.MonoRuntime, UnityMonoModule)), StringComparison.OrdinalIgnoreCase);
 
         public IEnumerable<string> ForbiddenProcessesStartedDuringRun()
             => ForbiddenProcesses.SelectMany(Process.GetProcessesByName)
@@ -93,6 +103,7 @@ namespace WotR.Testing.Offline
                     path = process.MainModule?.FileName,
                     id = process.Id,
                     runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+                    runtimeKind = OfflineRuntime.RuntimeKind,
                     is64Bit = Environment.Is64BitProcess,
                     forbiddenModulesLoaded = LoadedForbiddenModules().ToArray(),
                     forbiddenProcessesStartedDuringRun = ForbiddenProcessesStartedDuringRun().ToArray(),
@@ -108,6 +119,7 @@ namespace WotR.Testing.Offline
                     snapshotManifestGameVersion = OfflineRuntime.Inputs.Identity.SnapshotManifestGameVersion,
                 },
                 mod = new { id = Session.ModId, assembly = OfflineRuntime.Inputs?.ModAssembly, dependencies = OfflineRuntime.ModDependencies },
+                mods = Session.Mods,
                 runtimeDirectory = OfflineRuntime.RuntimeDirectory,
                 rewrite = OfflineRuntime.Rewrite,
                 loadedAssemblies = LoadedGameAssemblies(),
@@ -128,7 +140,7 @@ namespace WotR.Testing.Offline
             var runtime = OfflineRuntime.RuntimeDirectory;
             if (runtime == null) return Array.Empty<object>();
             var rewritten = new HashSet<string>(OfflineRuntime.Rewrite?.RewrittenAssemblies ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
-            var modFiles = new HashSet<string>(OfflineRuntime.ModDependencies.Append(Path.GetFileName(OfflineRuntime.Inputs.ModAssembly)), StringComparer.OrdinalIgnoreCase);
+            var modFiles = new HashSet<string>(OfflineRuntime.ModDependencies.Concat(OfflineRuntime.Inputs.AllMods.Select(Path.GetFileName)), StringComparer.OrdinalIgnoreCase);
             return AppDomain.CurrentDomain.GetAssemblies()
                 .Where(a => !a.IsDynamic && a.Location.StartsWith(runtime, StringComparison.OrdinalIgnoreCase))
                 .OrderBy(a => a.GetName().Name)

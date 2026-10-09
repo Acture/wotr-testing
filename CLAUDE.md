@@ -9,6 +9,8 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
 ## Layout
 
 - `src/WotR.Testing.Offline/`: offline library, its `build/*.targets` and README.
+- `src/WotR.Testing.MonoHost/`: `wotr-mono-host`, starts the game's own Unity Mono
+  runtime (the default test runtime) from the inputs.
   Planned: `src/WotR.Testing.InGame/` for in-game testing, and a shared
   `WotR.Testing` layer once both need it.
 - `scripts/`: `Invoke-WotrOfflineTests.ps1` (generic runner) and
@@ -57,7 +59,9 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   ```
 - The library has no tests of its own yet. Verify changes through a consumer: the
   AttributeFeats repository (`external/wotr-testing` submodule) runs
-  `pwsh -NoProfile -File scripts/Invoke-OfflineMechanicsTests.ps1`, currently 9/9.
+  `pwsh -NoProfile -File scripts/Invoke-OfflineMechanicsTests.ps1`, currently 10/10
+  on the default Unity Mono runtime. Changes to mod loading should also be checked
+  with a mod that has a dependency mod (TabletopTweaks-Base with -Core).
   Point its submodule at a local branch to test before publishing. Do not claim
   untested behavior has passed.
 - Public CI has no game files and cannot build this repository yet (OSS-358).

@@ -61,14 +61,6 @@ public sealed class MyFeatTests
     public void FeatAddsBonus()
     {
         game.RequireGame();
-        MyFeatScenario.Run(game); // game types live in a helper, not in the test class
-    }
-}
-
-internal static class MyFeatScenario
-{
-    public static void Run(MyModGame game)
-    {
         var unit = OfflineGame.CreateUnit("<vanilla unit blueprint guid>");
         var before = OfflineGame.StatSnapshot(unit);
         unit.Progression.Features.AddFeature(OfflineGame.Blueprint<BlueprintFeature>("<feat guid>"));
@@ -77,8 +69,13 @@ internal static class MyFeatScenario
 }
 ```
 
-Keep game types out of test class signatures and fields: the test framework
-reflects on test classes before the game runtime folder is ready.
+Game types can be used anywhere in test classes. The targets generate a module
+initializer into the test assembly that installs the game assembly resolver; the
+first request for a game assembly, even while the test framework discovers tests,
+prepares the runtime folder. If your project already defines
+`System.Runtime.CompilerServices.ModuleInitializerAttribute`, set
+`WotrGenerateModuleInitializer=false` and call `OfflineRuntime.InstallResolver()`
+from your own module initializer.
 
 Catch `UnityNative.IsUnavailable(error)` and skip with `UnityNative.SkipReason(...)`
 when a path reaches Unity engine code; such results are reported as

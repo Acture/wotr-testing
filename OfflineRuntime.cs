@@ -30,17 +30,66 @@ namespace WotR.OfflineTesting
         /// <summary>The mod's own dependencies copied next to it, for example BlueprintCore.dll.</summary>
         public static IReadOnlyList<string> ModDependencies { get; private set; } = Array.Empty<string>();
 
-        /// <summary>Resolves game assemblies only after <see cref="Prepare"/> succeeded.</summary>
+        private static int resolverInstalled;
+        private static Exception prepareError;
+        [ThreadStatic] private static bool resolving;
+
+        /// <summary>
+        /// Installs the resolver that loads game, Harmony and mod assemblies from the prepared runtime folder. The build
+        /// targets call this from a module initializer generated into the test assembly, so game types may appear anywhere
+        /// in test classes: the first request for a game assembly, even during test discovery, prepares the folder.
+        /// </summary>
         [ModuleInitializer]
-        internal static void InstallResolver()
+        public static void InstallResolver()
         {
+            if (System.Threading.Interlocked.Exchange(ref resolverInstalled, 1) == 1) return;
             AppDomain.CurrentDomain.AssemblyResolve += (_, args) =>
             {
-                var directory = runtimeDirectory;
-                if (directory == null) return null;
-                var path = Path.Combine(directory, new AssemblyName(args.Name).Name + ".dll");
+                var name = new AssemblyName(args.Name).Name;
+                if (resolving || name.EndsWith(".resources", StringComparison.Ordinal)) return null;
+                if (runtimeDirectory == null)
+                {
+                    if (prepareError != null || !IsInputAssembly(name)) return null;
+                    resolving = true;
+                    try
+                    {
+                        Prepare();
+                    }
+                    catch (Exception error)
+                    {
+                        // Reported, classified, by the fixture's runtime stage; discovery just cannot resolve the type.
+                        prepareError = error;
+                        return null;
+                    }
+                    finally
+                    {
+                        resolving = false;
+                    }
+                }
+                var path = Path.Combine(runtimeDirectory, name + ".dll");
                 return File.Exists(path) ? Assembly.LoadFrom(path) : null;
             };
+        }
+
+        /// <summary>Cheap check against the build-time inputs, so unrelated assembly requests never trigger preparation.</summary>
+        private static bool IsInputAssembly(string name)
+        {
+            try
+            {
+                var configPath = Path.Combine(Path.GetDirectoryName(typeof(OfflineRuntime).Assembly.Location), "wotr-offline-inputs.json");
+                if (!File.Exists(configPath)) return false;
+                var config = JsonNode.Parse(File.ReadAllText(configPath));
+                var root = Environment.GetEnvironmentVariable(OfflineInputs.InputRootVariable) is { Length: > 0 } overridden ? overridden : (string)config["inputRoot"];
+                var managed = Path.Combine(root, "Wrath_Data", "Managed");
+                var file = name + ".dll";
+                return File.Exists(Path.Combine(managed, file))
+                    || File.Exists(Path.Combine(managed, "UnityModManager", file))
+                    || File.Exists(Path.Combine(Path.GetDirectoryName((string)config["modAssembly"]), file));
+            }
+            catch (IOException)
+            {
+                return false;
+            }
         }
 
         public static void Prepare()
@@ -48,6 +97,7 @@ namespace WotR.OfflineTesting
             lock (Gate)
             {
                 if (runtimeDirectory != null) return;
+                prepareError = null;
                 Inputs = OfflineInputs.Load();
                 var managed = Inputs.Managed;
                 var umm = Path.Combine(managed, "UnityModManager");

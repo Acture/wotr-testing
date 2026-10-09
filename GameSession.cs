@@ -39,7 +39,7 @@ namespace WotR.OfflineTesting
         public void Start(Action<GameSession> verifyModInitialized = null)
         {
             verifyMod = verifyModInitialized;
-            // Game types may only be touched after the runtime folder exists, so the remaining stages live in a separate method.
+            // Usually already prepared by the resolver; running it as a stage records it and classifies its failure.
             Run("runtime", "Prepare rewritten runtime folder", OfflineRuntime.Prepare);
             StartGame();
         }
@@ -161,10 +161,7 @@ namespace WotR.OfflineTesting
 
     }
 
-    /// <summary>
-    /// Game-typed helpers. Kept out of <see cref="GameSession"/> because generic constraints load game assemblies
-    /// when the declaring type loads, which must not happen before the runtime folder is prepared.
-    /// </summary>
+    /// <summary>Helpers for building test scenarios from vanilla blueprints.</summary>
     public static class OfflineGame
     {
         public static T Blueprint<T>(string guid) where T : BlueprintScriptableObject

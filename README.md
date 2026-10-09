@@ -1,103 +1,58 @@
-# WotR.OfflineTesting
+# wotr-testing
 
-Runs a Pathfinder: Wrath of the Righteous mod against the real game assemblies,
-vanilla blueprint pack and settings in an ordinary .NET Framework test process,
-without starting `Wrath.exe` or Unity. The mod is loaded through the entry method
-in its `Info.json`, and its blueprints are created by its own patches on the
-game's `BlueprintsCache.Init`.
+Test tooling for Pathfinder: Wrath of the Righteous mods.
 
-Status: developed inside AttributeFeats and not yet published as a package. The
-API may change; it has been verified with WotR 2.7.0 and one mod. See
-[doc/offline-mechanics-testing.md](../../doc/offline-mechanics-testing.md) for how
-it works, every environment adaptation and the known limits.
+| Component | Status |
+|---|---|
+| [`WotR.Testing.Offline`](src/WotR.Testing.Offline/README.md) | Runs a UnityModManager mod against the real game assemblies, vanilla blueprint pack and settings in a .NET Framework test process, without starting the game or Unity |
+| In-game testing | Planned: running tests inside the game for paths that need the Unity engine |
 
-The library contains no game files. Game assemblies are referenced at compile
-time and copied and rewritten on the test machine.
+The repository contains no game files. Game assemblies are referenced at compile
+time from your own installation, and the offline runtime is prepared on the test
+machine. Never commit, package or publish game files or snapshots of them.
 
-## Use it in a mod's test project
+Status: early. Verified with WotR 2.7.0 and the
+[AttributeFeats](https://github.com/Acture/attribute-feats) mod; not yet published
+as a NuGet package and the API may change. Consume it as a Git submodule for now.
 
-Requirements: Windows, the .NET SDK, a UnityModManager mod with `Info.json` in its
-build output, and the game installed (or a snapshot from
-`scripts/New-WotrVendorSnapshot.ps1`).
+## Quick start
+
+```powershell
+git submodule add https://github.com/Acture/wotr-testing.git external/wotr-testing
+```
+
+Create a .NET Framework 4.8 xUnit project, import
+`external/wotr-testing/src/WotR.Testing.Offline/build/WotR.Testing.Offline.targets`,
+reference `WotR.Testing.Offline.csproj` and set `WotrModAssembly` to your built mod.
+See the [library README](src/WotR.Testing.Offline/README.md) for a complete project
+and the API, and [docs/offline.md](docs/offline.md) for how it works, every
+environment adaptation and the known limits.
+
+```powershell
+pwsh -NoProfile -File external/wotr-testing/scripts/Invoke-WotrOfflineTests.ps1 -Project tests/MyMod.OfflineTests/MyMod.OfflineTests.csproj
+```
+
+## Building
+
+Requires Windows, the .NET SDK and a WotR installation. Set `WrathInstallDir` with
+`/p:WrathInstallDir=...`, the `WrathPath`/`WRATH_PATH` environment variable, or an
+ignored `GamePath.props` at the repository root:
 
 ```xml
-<Project Sdk="Microsoft.NET.Sdk">
+<Project>
   <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
-    <PlatformTarget>x64</PlatformTarget>
-    <WotrModAssembly>../MyMod/bin/Debug/MyMod.dll</WotrModAssembly>
     <WrathInstallDir>C:/Games/Pathfinder Second Adventure</WrathInstallDir>
   </PropertyGroup>
-  <Import Project="path/to/WotR.OfflineTesting/build/WotR.OfflineTesting.targets" />
-  <ItemGroup>
-    <ProjectReference Include="path/to/WotR.OfflineTesting/WotR.OfflineTesting.csproj" AdditionalProperties="WotrInputRoot=$(WotrInputRoot)" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
-    <PackageReference Include="xunit" Version="2.9.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
-  </ItemGroup>
 </Project>
 ```
 
-Add `xunit.runner.json` with `"appDomain": "denied"` and `"shadowCopy": false`,
-copied to the output. Build the mod without deploying it to the game.
-
-```csharp
-public sealed class MyModGame : WotrGameFixture
-{
-    // Optional: fail initialization unless the mod reports success.
-    protected override void VerifyModInitialized(GameSession session) { }
-}
-
-[CollectionDefinition("game")]
-public sealed class GameCollection : ICollectionFixture<MyModGame> { }
-
-[Collection("game")]
-public sealed class MyFeatTests
-{
-    private readonly MyModGame game;
-    public MyFeatTests(MyModGame game) => this.game = game;
-
-    [Fact]
-    public void FeatAddsBonus()
-    {
-        game.RequireGame();
-        var unit = OfflineGame.CreateUnit("<vanilla unit blueprint guid>");
-        var before = OfflineGame.StatSnapshot(unit);
-        unit.Progression.Features.AddFeature(OfflineGame.Blueprint<BlueprintFeature>("<feat guid>"));
-        // assert on unit.Stats, then remove the fact and compare with before
-    }
-}
+```powershell
+dotnet build WotR.Testing.slnx
 ```
 
-Game types can be used anywhere in test classes. The targets generate a module
-initializer into the test assembly that installs the game assembly resolver; the
-first request for a game assembly, even while the test framework discovers tests,
-prepares the runtime folder. If your project already defines
-`System.Runtime.CompilerServices.ModuleInitializerAttribute`, set
-`WotrGenerateModuleInitializer=false` and call `OfflineRuntime.InstallResolver()`
-from your own module initializer.
+Outputs go to the ignored `artifacts/` directory. Public CI cannot build this
+repository because it has no game files.
 
-Catch `UnityNative.IsUnavailable(error)` and skip with `UnityNative.SkipReason(...)`
-when a path reaches Unity engine code; such results are reported as
-`unity-runtime-required`, never as passed.
+## License
 
-## Build properties and variables
-
-| Name | Purpose |
-|---|---|
-| `WotrModAssembly` | Built mod DLL (required). `Info.json` and private DLLs such as `BlueprintCore.dll` are read from its directory |
-| `WotrInputRoot` / `WOTR_INPUT_ROOT` | Game root; otherwise `WotrSnapshotDirectory` (with `manifest.json`), then `WrathInstallDir`/`WrathPath`/`WRATH_PATH` |
-| `WotrWorkDirectory` | Rewritten runtime cache and per-run state (default `obj/wotr/`) |
-| `WotrReportDirectory` / `WOTR_OFFLINE_REPORT_DIR` | Where `environment.json` is written |
-| `WOTR_ALLOW_UNVERIFIED_VERSION=1` | Run on a game version not yet verified (reported as unverified) |
-
-## API
-
-| Type | Use |
-|---|---|
-| `WotrGameFixture` | Boots the session once; `RequireGame()`, `Observations`, `Session`; writes `environment.json` on dispose |
-| `GameSession` | Startup stages, mod log, mod entry path and assembly |
-| `OfflineGame` | `Blueprint<T>(guid)`, `CreateUnit(guid)`, `StatSnapshot(unit)` |
-| `UnityNative` | Recognize and report paths that need the Unity engine |
-| `IlComparison` | Prove that rewritten game assemblies keep every method body |
-| `Boundaries` | Registry of environment adaptations and their hit counts |
+[GNU Affero General Public License v3.0](LICENSE).

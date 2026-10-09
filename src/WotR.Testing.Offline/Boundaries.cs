@@ -6,7 +6,7 @@ using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 
-namespace WotR.OfflineTesting
+namespace WotR.Testing.Offline
 {
     /// <summary>One declared replacement at the environment edge, with how often the game reached it.</summary>
     public sealed class Boundary

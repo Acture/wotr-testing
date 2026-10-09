@@ -7,7 +7,7 @@ using System.Runtime.Serialization;
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 
-namespace WotR.OfflineTesting
+namespace WotR.Testing.Offline
 {
     /// <summary>
     /// Reads ScriptableObject data from the game's own <c>Bundles/blueprint.assets</c> through its Unity type tree

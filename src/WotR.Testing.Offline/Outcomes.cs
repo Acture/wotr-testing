@@ -1,6 +1,6 @@
 using System;
 
-namespace WotR.OfflineTesting
+namespace WotR.Testing.Offline
 {
     /// <summary>Prefixes that let the runner classify results from the standard TRX report.</summary>
     public static class OutcomeMarkers

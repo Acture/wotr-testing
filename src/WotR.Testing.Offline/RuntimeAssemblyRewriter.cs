@@ -5,7 +5,7 @@ using System.Linq;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 
-namespace WotR.OfflineTesting
+namespace WotR.Testing.Offline
 {
     /// <summary>
     /// Writes copies of the WotR managed assemblies that can run on .NET Framework without the Unity player.

@@ -9,7 +9,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace WotR.OfflineTesting
+namespace WotR.Testing.Offline
 {
     /// <summary>
     /// Builds an isolated runtime folder from the real WotR inputs and makes it the only place game,
@@ -156,7 +156,7 @@ namespace WotR.OfflineTesting
         }
     }
 
-    /// <summary>Inputs written at build time by WotR.OfflineTesting.targets (wotr-offline-inputs.json).</summary>
+    /// <summary>Inputs written at build time by WotR.Testing.Offline.targets (wotr-offline-inputs.json).</summary>
     public sealed class OfflineInputs
     {
         public const string InputRootVariable = "WOTR_INPUT_ROOT";
@@ -177,7 +177,7 @@ namespace WotR.OfflineTesting
         public static OfflineInputs Load()
         {
             var configPath = Path.Combine(Path.GetDirectoryName(typeof(OfflineInputs).Assembly.Location), "wotr-offline-inputs.json");
-            if (!File.Exists(configPath)) throw new OfflineEnvironmentMissingException($"Build-time input file missing: {configPath}. Import WotR.OfflineTesting.targets.");
+            if (!File.Exists(configPath)) throw new OfflineEnvironmentMissingException($"Build-time input file missing: {configPath}. Import WotR.Testing.Offline.targets.");
             var config = JsonNode.Parse(File.ReadAllText(configPath));
             var inputs = new OfflineInputs
             {

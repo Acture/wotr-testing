@@ -1,0 +1,8 @@
+artifacts/
+bin/
+obj/
+.vs/
+*.user
+/GamePath.props
+# Licensed game files: never commit
+/vendor/

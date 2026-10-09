@@ -11,7 +11,7 @@ using HarmonyLib;
 using Kingmaker.Blueprints;
 using Kingmaker.EntitySystem.Entities;
 
-namespace WotR.OfflineTesting
+namespace WotR.Testing.Offline
 {
     /// <summary>
     /// Starts the real game systems a mod depends on, in the order the game uses, then loads the mod through the
@@ -19,7 +19,7 @@ namespace WotR.OfflineTesting
     /// </summary>
     public sealed class GameSession
     {
-        public const string HarmonyId = "WotR.OfflineTesting";
+        public const string HarmonyId = "WotR.Testing.Offline";
 
         private Action<GameSession> verifyMod;
 

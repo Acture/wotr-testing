@@ -4,13 +4,13 @@
     Test-framework-independent library for running WotR mods against the real game assemblies and blueprint data
     without the Unity player. Never contains or redistributes game files: runtime copies are made on the test machine.
   -->
-  <!-- In this repository the shared local GamePath.props supplies WrathInstallDir. -->
-  <Import Project="$(AttributeFeatsRepositoryRoot)GamePath.props" Condition="Exists('$(AttributeFeatsRepositoryRoot)GamePath.props')" />
+  <!-- Standalone builds may keep WrathInstallDir in an ignored GamePath.props at the repository root. -->
+  <Import Project="$(MSBuildThisFileDirectory)../../GamePath.props" Condition="Exists('$(MSBuildThisFileDirectory)../../GamePath.props')" />
 
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
     <LangVersion>latest</LangVersion>
-    <RootNamespace>WotR.OfflineTesting</RootNamespace>
+    <RootNamespace>WotR.Testing.Offline</RootNamespace>
     <IsPackable>false</IsPackable>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <WotrIsLibrary>true</WotrIsLibrary>
@@ -24,8 +24,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="build/WotR.OfflineTesting.targets" />
+    <None Include="build/WotR.Testing.Offline.targets" />
   </ItemGroup>
 
-  <Import Project="build/WotR.OfflineTesting.targets" />
+  <Import Project="build/WotR.Testing.Offline.targets" />
 </Project>

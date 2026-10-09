@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <WotrTestingRepositoryRoot>$(MSBuildThisFileDirectory)</WotrTestingRepositoryRoot>
+    <BaseOutputPath>$(WotrTestingRepositoryRoot)artifacts/bin/$(MSBuildProjectName)/</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(WotrTestingRepositoryRoot)artifacts/obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>

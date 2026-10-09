@@ -4,7 +4,7 @@ using System.Linq;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 
-namespace WotR.OfflineTesting
+namespace WotR.Testing.Offline
 {
     /// <summary>Evidence that a rewritten runtime copy keeps the game's method bodies.</summary>
     public static class IlComparison

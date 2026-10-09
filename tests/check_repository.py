@@ -116,7 +116,7 @@ def check_repository(root: Path) -> list[str]:
 		if not re.fullmatch(r"project/[a-z0-9]+(?:-[a-z0-9]+)*", branch):
 			errors.append(f"Private gitlink must track project/<slug>: {entry.path}")
 	for entry in entries:
-		if entry.mode == "120000" or not entry.path.endswith(".md"):
+		if entry.mode in {"120000", "160000"} or not entry.path.endswith(".md"):
 			continue
 		file = root / entry.path
 		fence: str | None = None

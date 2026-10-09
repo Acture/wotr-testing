@@ -87,6 +87,7 @@ function New-MonoClassLibrary([string]$Managed, [string]$WorkDirectory) {
 }
 
 # Arguments are passed one by one (ProcessStartInfo.ArgumentList), so paths with spaces are quoted correctly.
+$testExitCode = $null
 function Invoke-Process([string]$FilePath, [string[]]$Arguments) {
     $info = [System.Diagnostics.ProcessStartInfo]::new($FilePath)
     foreach ($argument in $Arguments) { $info.ArgumentList.Add($argument) }
@@ -95,7 +96,9 @@ function Invoke-Process([string]$FilePath, [string[]]$Arguments) {
     if (-not $process.WaitForExit(($TimeoutMinutes + 1) * 60 * 1000)) {
         $process.Kill($true)
         $problems.Add("Timeout: the test run exceeded $TimeoutMinutes minutes.")
+        return
     }
+    $script:testExitCode = $process.ExitCode
 }
 
 if ($built -and $Runtime -eq 'mono') {
@@ -111,8 +114,9 @@ if ($built -and $Runtime -eq 'mono') {
         else {
             $hostProject = Join-Path $toolRoot 'src/WotR.Testing.MonoHost/WotR.Testing.MonoHost.csproj'
             & dotnet build $hostProject -c Release -nologo -v quiet | Out-Host
+            $hostBuilt = $LASTEXITCODE -eq 0
             $hostPath = (& dotnet msbuild $hostProject -p:Configuration=Release -getProperty:TargetPath -nologo).Trim()
-            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $hostPath)) { $problems.Add('Build failed: WotR.Testing.MonoHost.') }
+            if (-not $hostBuilt -or $LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $hostPath)) { $problems.Add('Build failed: WotR.Testing.MonoHost.') }
             else {
                 $classLibrary = New-MonoClassLibrary (Join-Path $inputRoot 'Wrath_Data/Managed') $inputs.workDirectory
                 $arguments = @('--runtime', $monoRuntime, '--config', (Join-Path $inputRoot 'MonoBleedingEdge/etc'), '--assemblies', $classLibrary,
@@ -204,6 +208,10 @@ if ($built -and -not (Test-Path -LiteralPath $environmentPath)) { $problems.Add(
 $counts = [ordered]@{}
 foreach ($group in ($results | Group-Object classification)) { $counts[$group.Name] = $group.Count }
 $blocking = @($results | Where-Object { $_.classification -notin 'passed', 'unity-runtime-required' })
+# A non-zero exit without a failing result (for example a crash after the last result) still fails the run.
+if ($null -ne $testExitCode -and $testExitCode -ne 0 -and $blocking.Count -eq 0) {
+    $problems.Add("The test process exited with code $testExitCode although no failing result was reported.")
+}
 $passedCount = @($results | Where-Object { $_.classification -eq 'passed' }).Count
 if ($built -and $results.Count -gt 0 -and $passedCount -lt $MinimumPassed) {
     $problems.Add("Too few passed tests: $passedCount passed, at least $MinimumPassed required (skipped tests do not count).")
@@ -218,6 +226,7 @@ $summary = [ordered]@{
     finishedAt = (Get-Date).ToUniversalTime().ToString('o')
     configuration = $Configuration
     runtime = $Runtime
+    testExitCode = $testExitCode
     sourceCommit = $commit
     sourceHasUncommittedChanges = $dirty
     counts = $counts

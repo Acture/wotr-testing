@@ -36,9 +36,37 @@ reported as `[ENV_MISSING]`. Each mod gets its own `ModEntry` with `Assembly` se
 started, active and registered in `UnityModManager.modEntries`. `ModEntry.Path` is a
 per-run copy of the mod's build folder, so the mod reads its own `Assets`,
 `Localization` and settings files and may write settings without touching the build
-output; with no user settings there, mods use their defaults. All mods and their
-private libraries share one process, as in the game, so two different copies of one
-library are rejected.
+output; with no user settings there, mods use their defaults.
+
+All mods and their private libraries share one process, as in the game. When mods
+ship different copies of one library (for example BlueprintCore 2.8.6 and 2.8.7),
+the game's Mono uses the copy loaded first for every mod, whatever version each mod
+was built against (verified with two mods carrying different versions of one
+library). A library loads when code first uses it, not when its mod loads, so which
+copy the game uses is not predictable from the mod list. A run uses the first copy
+in load order and reports a warning naming every copy; `environment.json` lists the
+copy of each library used (`libraries`). The run's result may differ with another
+copy.
+
+## DLC
+
+The game asks the store (Steam, GOG, Epic, ...) whether each DLC is owned, which
+needs the player. Offline the test project chooses instead, with `WotrDlc` (or
+`WOTR_DLC` at run time):
+
+| `WotrDlc` | Available DLCs |
+|---|---|
+| `all` (default) | Every DLC; the same on every machine |
+| `none` | None |
+| `local` | DLCs whose depots the Steam library holding the inputs has installed (`appmanifest_*.acf`); DLCs without their own depot, such as pre-order rewards, count as unavailable |
+| `Dlc4,Dlc6` | The listed DLC blueprint names (`Dlc1`...`Dlc6`, `DlcCommanderPack`, `FreeDlc1`, ...) |
+
+The choice applies for the whole run, because mods usually check DLCs while they
+create blueprints. `environment.json` (`dlc`) records the policy, every DLC the game
+or a mod asked about with the answer and count, listed names that were never asked
+about, and the blueprints mods added or replaced that carry a `DlcCondition`, with
+the DLC reward that gates them. Mods that change DLC-gated vanilla blueprints in
+place are visible only through the DLCs they ask about.
 
 ## Inputs
 
@@ -83,8 +111,18 @@ tests pass (default 1; skipped tests do not count) fails.
 | File | Contents |
 |---|---|
 | `wotr-offline.trx` (`netfx`), `wotr-offline.xunit.xml` (`mono`) | Test report |
-| `environment.json` | Process, input versions and hashes, loaded assembly paths and hashes, startup stages, boundary hit counts, asset gaps, captured game log errors and warnings, mod log and test observations |
-| `summary.json`, `summary.md` | Classified results, runtime, source commit, problems |
+| `environment.json` | Process, input versions and hashes, loaded assembly paths and hashes, mod libraries used, startup stages, boundary hit counts, DLC policy and use, asset gaps, captured game log errors and warnings, a summary of each mod's log, warnings and test observations |
+| `logs/<source>.log` | Every UnityModManager log line per source (`Manager` or a mod Id); gzip-compressed (`.log.gz`) above 5 MB |
+| `summary.json`, `summary.md` | Classified results, runtime, source commit, problems and warnings |
+
+Each mod log summary in `environment.json` gives the line count, the error lines and
+the first and last 20 lines, with consecutive repeats collapsed into one line and a
+count.
+
+Warnings never fail a run. They cover differences a player's game may have: mods
+shipping different copies of one library, and a BlueprintCore copy older than the
+latest NuGet release (`WW-Blueprint-Core`; skipped with `-NoUpdateCheck` or
+`WOTR_NO_UPDATE_CHECK=1`, and when BlueprintCore is merged into the mod assembly).
 
 Every result is classified:
 
@@ -180,6 +218,8 @@ rulebook calculations.
 | `unity-paths` | `Application.dataPath`, `streamingAssetsPath`, `persistentDataPath`, `temporaryCachePath` | Inputs; persistent and cache paths under the work directory |
 | `unity-platform` | `Application.platform/isEditor/isPlaying`, `SystemInfo.systemMemorySize`, `Debug.isDebugBuild` | A playing Windows release player with 16 GB |
 | `unity-log`, `owlcat-log` | Unity's native log sink and Owlcat's logger | Captured into the report |
+| `umm-log` | UnityModManager `Logger.Write`, `WriteBuffers`, `Clear` | Every line goes to `logs/`; `Log.txt` in the installation is never written or deleted |
+| `dlc-availability` | `BlueprintDlc.IsAvailable`, `StoreManager` DLC refreshes | Answered from `WotrDlc`; no store is contacted |
 | `shader-ids` | `Shader.PropertyToID` | Stable integer per name (visual static constructors) |
 | `scene-objects` | `Object.FindObjectsOfType`, `Resources.FindObjectsOfTypeAll` | Empty: no scene is loaded |
 | `bug-report-service` | `ReportingUtils` constructor | Skipped; it would contact the developer's report server |
@@ -208,10 +248,8 @@ game would ask Unity for the system language.
   test units whose rules match what is asserted.
 - **Loaders.** Only UnityModManager mods are supported, alone or with declared
   dependency mods. OwlcatModification mods are not.
-- **DLC.** The game's DLC check reaches Steam, fails offline and is logged as an
-  error; DLC content is treated as unavailable. This is not yet a declared boundary.
-- **Mod log.** The report reads UnityModManager's bounded log history after
-  startup; a verbose mod can push out an earlier mod's lines.
+- **DLC ownership.** `WotrDlc` decides which DLCs exist; nothing asks a store.
+  `local` reads Steam's installed depots only.
 - **Player state.** No save is loaded, so code that needs `Game.Instance.Player`
   (for example `PrerequisitePlayerHasFeature`) logs errors when units are created.
 - **CI.** Public CI has no game files, so it cannot build or run these tests.

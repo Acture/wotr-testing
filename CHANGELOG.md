@@ -28,7 +28,7 @@
 - UnityModManager log lines are captured as written (`umm-log`), written per source
   to `logs/` (gzip above 5 MB) and summarized in `environment.json`; the
   installation's `Log.txt` is never touched.
-- Mods shipping different copies of one library no longer fail the run: the copy
-  loaded first in load order is used, as in the game, with a warning. The runner
+- Mods shipping different copies of one library no longer fail the run: the first
+  copy in load order is used, with a warning that the game may use another copy. The runner
   warns when BlueprintCore is older than the latest release. Warnings never fail a
   run.

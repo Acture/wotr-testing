@@ -52,6 +52,8 @@ namespace WotR.Testing.Offline
                 "Messages are captured into the test report.");
             Declare("owlcat-log", "logging", "Owlcat.Runtime.Core.Logging.Logger.Log",
                 "Messages and exceptions are captured into the test report with their severity; nothing is suppressed from it.");
+            Declare("umm-log", "logging", "UnityModManager.Logger.Write, WriteBuffers and Clear",
+                "Every manager and mod log line goes to the report (logs/<source>.log); Log.txt in the installation is never written or deleted.");
             Declare("shader-ids", "graphics", "UnityEngine.Shader.PropertyToID",
                 "Stable integer per property name, used only by visual static constructors.");
             Declare("scene-objects", "scene", "UnityEngine.Object.FindObjectsOfType and Resources.FindObjectsOfTypeAll",

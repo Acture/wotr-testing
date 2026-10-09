@@ -22,3 +22,13 @@
   without quoting problems, old runtime and per-run folders cleaned up.
 - `New-WotrSnapshot.ps1` refuses a destination that overlaps the installation and
   includes `MonoBleedingEdge` for the Mono runtime.
+- DLC availability is a declared boundary (`dlc-availability`) chosen with `WotrDlc`
+  (`all` by default, `none`, `local` or a list); the report shows which DLCs were
+  asked about and which mod blueprints are DLC-gated. No store is contacted.
+- UnityModManager log lines are captured as written (`umm-log`), written per source
+  to `logs/` (gzip above 5 MB) and summarized in `environment.json`; the
+  installation's `Log.txt` is never touched.
+- Mods shipping different copies of one library no longer fail the run: the copy
+  loaded first in load order is used, as in the game, with a warning. The runner
+  warns when BlueprintCore is older than the latest release. Warnings never fail a
+  run.

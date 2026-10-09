@@ -96,6 +96,8 @@ when a path reaches Unity engine code; such results are reported as
 | `WotrWorkDirectory` | Rewritten runtime cache and per-run state (default `obj/wotr/`) |
 | `WotrReportDirectory` / `WOTR_OFFLINE_REPORT_DIR` | Where `environment.json` is written |
 | `WOTR_ALLOW_UNVERIFIED_VERSION=1` | Run on a game version not yet verified (reported as unverified) |
+| `WotrDlc` / `WOTR_DLC` | Available DLCs: `all` (default), `none`, `local` (installed in the Steam library) or names such as `Dlc4,Dlc6` |
+| `WOTR_NO_UPDATE_CHECK=1` | Skip the BlueprintCore release check (also `-NoUpdateCheck` on the runner) |
 
 ## API
 

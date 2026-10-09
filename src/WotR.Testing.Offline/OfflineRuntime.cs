@@ -37,8 +37,15 @@ namespace WotR.Testing.Offline
         public static string RuntimeDirectory => runtimeDirectory;
         public static RewriteSummary Rewrite { get; private set; }
 
+        /// <summary>Problems that do not stop the run but may differ from a player's game, for the report.</summary>
+        public static IReadOnlyList<string> Warnings => warnings;
+        private static readonly List<string> warnings = new();
+
         /// <summary>Private libraries copied next to the mods, for example BlueprintCore.dll.</summary>
         public static IReadOnlyList<string> ModDependencies { get; private set; } = Array.Empty<string>();
+
+        /// <summary>The copy of each private library this run uses: file name, file version and source path.</summary>
+        public static IReadOnlyList<ModLibrary> ModLibraries { get; private set; } = Array.Empty<ModLibrary>();
 
         private static int resolverInstalled;
         private static Exception prepareError;
@@ -118,18 +125,22 @@ namespace WotR.Testing.Offline
                 }
 
                 // Private mod libraries: DLLs next to a mod that are neither game, UnityModManager nor mod assemblies.
-                // All mods share one AppDomain, as in the game, so two different copies of one library cannot both load.
+                // All mods share one AppDomain, as in the game. When mods ship different copies of one library, the game
+                // (Unity Mono) uses the first one loaded for every mod, whatever version each was built against; the run
+                // does the same in load order and reports it.
                 var gameNames = new HashSet<string>(Directory.GetFiles(managed, "*.dll").Concat(Directory.GetFiles(umm, "*.dll")).Select(Path.GetFileName), StringComparer.OrdinalIgnoreCase);
                 var modAssemblies = Inputs.AllMods.Select(Path.GetFullPath).ToList();
                 var modNames = new HashSet<string>(modAssemblies.Select(Path.GetFileName), StringComparer.OrdinalIgnoreCase);
                 var dependencies = new List<string>();
-                foreach (var library in modAssemblies.SelectMany(mod => Directory.GetFiles(Path.GetDirectoryName(mod), "*.dll"))
+                warnings.Clear();
+                foreach (var library in LoadOrder(modAssemblies).SelectMany(mod => Directory.GetFiles(Path.GetDirectoryName(mod), "*.dll").OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
                     .Where(p => !gameNames.Contains(Path.GetFileName(p)) && !modNames.Contains(Path.GetFileName(p))))
                 {
-                    var same = dependencies.FirstOrDefault(d => string.Equals(Path.GetFileName(d), Path.GetFileName(library), StringComparison.OrdinalIgnoreCase));
-                    if (same == null) dependencies.Add(library);
-                    else if (FileSha256(same) != FileSha256(library))
-                        throw new OfflineEnvironmentMissingException($"Mods ship different copies of {Path.GetFileName(library)}: {same} and {library}. Only one can load.");
+                    var used = dependencies.FirstOrDefault(d => string.Equals(Path.GetFileName(d), Path.GetFileName(library), StringComparison.OrdinalIgnoreCase));
+                    if (used == null) dependencies.Add(library);
+                    else if (FileSha256(used) != FileSha256(library))
+                        warnings.Add($"Mods ship different copies of {Path.GetFileName(library)}: {Describe(used)} is used, {Describe(library)} is not. "
+                            + "In the game the copy loaded first is used by every mod, so the version depends on the player's mods and their load order.");
                 }
                 dependencies.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(Path.GetFileName(a), Path.GetFileName(b)));
 
@@ -162,6 +173,12 @@ namespace WotR.Testing.Offline
                     else Rewrite.ModTypesWithPreciseInitialization += RuntimeAssemblyRewriter.CopyModAssembly(path, destination, searchDirectories);
                 }
                 ModDependencies = dependencies.Select(Path.GetFileName).ToList();
+                ModLibraries = dependencies.Select(path => new ModLibrary
+                {
+                    Name = Path.GetFileName(path),
+                    Version = System.Diagnostics.FileVersionInfo.GetVersionInfo(path).FileVersion,
+                    Source = path,
+                }).ToList();
                 runtimeDirectory = Path.GetFullPath(directory);
             }
         }
@@ -188,6 +205,21 @@ namespace WotR.Testing.Offline
             }
         }
 
+        /// <summary>Mod DLLs in UnityModManager load order, read from their Info.json without loading UnityModManager.</summary>
+        private static List<string> LoadOrder(List<string> modAssemblies)
+        {
+            string[] Strings(JsonNode node) => node is JsonArray array ? array.Select(v => (string)v).ToArray() : Array.Empty<string>();
+            var infos = modAssemblies.Select(path => (path, info: JsonNode.Parse(File.ReadAllText(OfflineInputs.InfoPath(path))))).ToList();
+            return ModLoadOrder.Sort(infos, m => (string)m.info["Id"], m => Strings(m.info["Requirements"]), m => Strings(m.info["LoadAfter"]))
+                .Select(m => m.path).ToList();
+        }
+
+        private static string Describe(string library)
+        {
+            var version = System.Diagnostics.FileVersionInfo.GetVersionInfo(library).FileVersion;
+            return $"{library} ({(string.IsNullOrEmpty(version) ? "no file version" : version)})";
+        }
+
         public static string FileSha256(string path)
         {
             using var stream = File.OpenRead(path);
@@ -202,6 +234,13 @@ namespace WotR.Testing.Offline
         }
     }
 
+    public sealed class ModLibrary
+    {
+        public string Name { get; set; }
+        public string Version { get; set; }
+        public string Source { get; set; }
+    }
+
     /// <summary>Inputs written at build time by WotR.Testing.Offline.targets (wotr-offline-inputs.json).</summary>
     public sealed class OfflineInputs
     {
@@ -213,6 +252,9 @@ namespace WotR.Testing.Offline
         /// <summary>The mod under test.</summary>
         public string ModAssembly { get; private set; }
         public string ModInfo => InfoPath(ModAssembly);
+
+        /// <summary>WotrDlc / WOTR_DLC: all (default), none, local or a comma-separated list of DLC names.</summary>
+        public string Dlc { get; private set; }
 
         /// <summary>Other mods loaded with it (WotrDependencyMod), in declaration order.</summary>
         public IReadOnlyList<string> DependencyMods { get; private set; } = Array.Empty<string>();
@@ -239,6 +281,7 @@ namespace WotR.Testing.Offline
                 ModAssembly = Path.GetFullPath((string)config["modAssembly"]),
                 DependencyMods = ReadModAssemblies(config).Skip(1).Select(Path.GetFullPath).ToList(),
                 WorkDirectory = Path.GetFullPath((string)config["workDirectory"]),
+                Dlc = Environment.GetEnvironmentVariable(OfflineDlc.Variable) is { Length: > 0 } dlc ? dlc : (string)config["dlc"] ?? "all",
                 ReportDirectory = Path.GetFullPath(Environment.GetEnvironmentVariable(ReportDirectoryVariable) is { Length: > 0 } reports ? reports : (string)config["reportDirectory"]),
             };
             inputs.Source = File.Exists(Path.Combine(inputs.InputRoot, "manifest.json")) ? "snapshot" : "installation";

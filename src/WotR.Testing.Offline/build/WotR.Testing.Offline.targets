@@ -16,6 +16,8 @@
       WotrReportDirectory    Reports. Default: $(OutDir)wotr-reports/. WOTR_OFFLINE_REPORT_DIR overrides at run time.
       WotrIsLibrary          true for projects that only need the game references.
       WotrXunitConsoleVersion  xUnit v2 console runner used by Invoke-WotrOfflineTests.ps1 -Runtime mono (default 2.9.2).
+      WotrDlc                Which DLCs are available offline: all (default), none, local (installed in the Steam library)
+                             or a comma-separated list of DLC blueprint names (Dlc4,Dlc6). WOTR_DLC overrides at run time.
       WotrGenerateModuleInitializer  false to skip the generated module initializer (then call
                              OfflineRuntime.InstallResolver() from your own before any game type is touched).
   -->
@@ -30,6 +32,7 @@
     <WotrManaged>$(WotrInputRoot)/Wrath_Data/Managed</WotrManaged>
     <WotrWorkDirectory Condition="'$(WotrWorkDirectory)'==''">$(BaseIntermediateOutputPath)wotr/</WotrWorkDirectory>
     <WotrXunitConsoleVersion Condition="'$(WotrXunitConsoleVersion)'==''">2.9.2</WotrXunitConsoleVersion>
+    <WotrDlc Condition="'$(WotrDlc)'==''">all</WotrDlc>
   </PropertyGroup>
 
   <!-- Runner for Invoke-WotrOfflineTests.ps1 -Runtime mono: downloaded into the NuGet cache, never referenced. -->
@@ -73,6 +76,7 @@
   "modAssembly": "$([System.IO.Path]::GetFullPath('$(WotrModAssembly)').Replace('\','/'))",
   "dependencyMods": "$(_WotrDependencyMods.Replace('\','/'))",
   "workDirectory": "$([System.IO.Path]::GetFullPath('$(WotrWorkDirectory)').Replace('\','/'))",
+  "dlc": "$(WotrDlc.Replace(';', ','))",
   "reportDirectory": "$([System.IO.Path]::GetFullPath('$(WotrReportDirectory)').Replace('\','/'))"
 }</_WotrInputsJson>
     </PropertyGroup>

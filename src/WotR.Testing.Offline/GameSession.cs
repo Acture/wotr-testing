@@ -56,6 +56,7 @@ namespace WotR.Testing.Offline
             HarnessState.PersistentDirectory = Path.Combine(OfflineRuntime.Inputs.WorkDirectory, "persistent", Process.GetCurrentProcess().Id.ToString());
             RemoveFinishedRunState(Path.GetDirectoryName(HarnessState.PersistentDirectory));
             Run("harmony", "Apply declared environment boundaries", ApplyBoundaries);
+            Run("dlc", "Choose available DLCs from WotrDlc (all, none, local or a list)", () => OfflineDlc.Configure(HarnessState.Inputs));
             Run("application-paths", "Kingmaker.Utility.ApplicationPaths.Init (RuntimeInitializeOnLoadMethod)", Kingmaker.Utility.ApplicationPaths.Init);
             Run("type-cache", "StartGameLoader.PrepareTypeCache", () => new Kingmaker.Blueprints.JsonSystem.StartGameLoader().PrepareTypeCache());
             Run("asset-list", "Open blueprint.assets and install the referenced asset list", InstallAssetList);
@@ -207,16 +208,20 @@ namespace WotR.Testing.Offline
 
         private void InitializeBlueprints()
         {
-            ResourcesLibrary.BlueprintsCache.Init();
+            ModBlueprintObserver.Active = true;
+            try
+            {
+                ResourcesLibrary.BlueprintsCache.Init();
+            }
+            finally
+            {
+                ModBlueprintObserver.Active = false;
+            }
             foreach (var mod in Mods) mod.Log = ReadModLog(mod.Id);
             ModLog = UnderTest?.Log ?? new List<string>();
         }
 
-        private static List<string> ReadModLog(string modId)
-        {
-            var history = AccessTools.StaticFieldRefAccess<List<string>>(typeof(UnityModManagerNet.UnityModManager.Logger), "history");
-            return history.Where(line => line.Contains($"[{modId}]")).ToList();
-        }
+        private static List<string> ReadModLog(string modId) => ModLogSink.For(modId);
 
     }
 
@@ -256,24 +261,30 @@ namespace WotR.Testing.Offline
         [System.Text.Json.Serialization.JsonIgnore] public UnityModManagerNet.UnityModManager.ModInfo Info { get; set; }
         [System.Text.Json.Serialization.JsonIgnore] public Assembly Assembly { get; set; }
         [System.Text.Json.Serialization.JsonIgnore] public UnityModManagerNet.UnityModManager.ModEntry Entry { get; set; }
-        public List<string> Log { get; set; } = new();
+        /// <summary>Every line the mod logged; the report keeps a summary and writes the full log to logs/.</summary>
+        [System.Text.Json.Serialization.JsonIgnore] public List<string> Log { get; set; } = new();
     }
 
     /// <summary>UnityModManager's load rules: Requirements ("Id" or "Id-MinVersion") and LoadAfter decide the order.</summary>
     internal static class ModLoadOrder
     {
         public static List<LoadedMod> Sort(List<LoadedMod> declared)
+            => Sort(declared, m => m.Id, m => m.Info.Requirements, m => m.Info.LoadAfter);
+
+        /// <summary>Works on any mod description, so runtime preparation can order mods before game types load.</summary>
+        public static List<T> Sort<T>(List<T> declared, Func<T, string> id, Func<T, string[]> requirements, Func<T, string[]> loadAfter)
         {
-            var ids = new HashSet<string>(declared.Select(m => m.Id));
-            var before = declared.ToDictionary(m => m.Id, m => new HashSet<string>((m.Info.Requirements ?? Array.Empty<string>())
-                .Select(r => Parse(r, ids).id).Concat(m.Info.LoadAfter ?? Array.Empty<string>()).Where(ids.Contains)));
-            var result = new List<LoadedMod>();
+            var ids = new HashSet<string>(declared.Select(id));
+            var before = declared.ToDictionary(id, m => new HashSet<string>((requirements(m) ?? Array.Empty<string>())
+                .Select(r => Parse(r, ids).id).Concat(loadAfter(m) ?? Array.Empty<string>()).Where(ids.Contains)));
+            var result = new List<T>();
             while (result.Count < declared.Count)
             {
                 // Declaration order breaks ties; the mod under test is declared last.
-                var next = declared.FirstOrDefault(m => !result.Contains(m) && before[m.Id].All(id => result.Any(r => r.Id == id)))
-                    ?? throw new OfflineInitializationException("mod-load", "Mods have circular Requirements/LoadAfter: "
-                        + string.Join(", ", declared.Where(m => !result.Contains(m)).Select(m => m.Id)));
+                var next = declared.FirstOrDefault(m => !result.Contains(m) && before[id(m)].All(required => result.Any(r => id(r) == required)));
+                if (next == null)
+                    throw new OfflineInitializationException("mod-load", "Mods have circular Requirements/LoadAfter: "
+                        + string.Join(", ", declared.Where(m => !result.Contains(m)).Select(id)));
                 result.Add(next);
             }
             return result;

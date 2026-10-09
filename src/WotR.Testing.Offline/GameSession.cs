@@ -177,11 +177,13 @@ namespace WotR.Testing.Offline
             // settings files and may write settings without touching the build output.
             mod.EntryPath = Path.Combine(HarnessState.PersistentDirectory, "Mods", mod.Id) + Path.DirectorySeparatorChar;
             CopyModFolder(Path.GetDirectoryName(Path.GetFullPath(mod.SourcePath)), mod.EntryPath);
-            mod.Assembly = Assembly.LoadFrom(Path.Combine(OfflineRuntime.RuntimeDirectory, Path.GetFileName(mod.SourcePath)));
+            mod.Assembly = Assembly.LoadFrom(Path.Combine(OfflineRuntime.ModRuntimeDirectory, Path.GetFileName(mod.SourcePath)));
 
             // UnityModManager convention: "Namespace.Type.Method", a static method taking ModEntry and returning bool or void.
             var entryMethod = mod.Info.EntryMethod;
-            var split = entryMethod.LastIndexOf('.');
+            var split = entryMethod?.LastIndexOf('.') ?? -1;
+            if (split <= 0 || split == entryMethod.Length - 1)
+                throw new OfflineInitializationException("mod-load", $"{mod.Id}: Info.json EntryMethod '{entryMethod}' is not Namespace.Type.Method.");
             var type = mod.Assembly.GetType(entryMethod.Substring(0, split), throwOnError: true);
             var method = type.GetMethod(entryMethod.Substring(split + 1), BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic,
                 null, new[] { typeof(UnityModManagerNet.UnityModManager.ModEntry) }, null)
@@ -253,14 +255,19 @@ namespace WotR.Testing.Offline
     /// <summary>A mod loaded into the session, as UnityModManager would hold it.</summary>
     public sealed class LoadedMod
     {
+        // UnityModManager objects are kept in object fields: Unity Mono resolves field types when it loads this type, and
+        // when runtime preparation fails UnityModManager cannot load, which must not hide the classified failure.
+        private object info;
+        private object entry;
+
         public string Id => Info.Id;
         public string Version => Info.Version;
         public bool UnderTest { get; set; }
         public string SourcePath { get; set; }
         public string EntryPath { get; set; }
-        [System.Text.Json.Serialization.JsonIgnore] public UnityModManagerNet.UnityModManager.ModInfo Info { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore] public UnityModManagerNet.UnityModManager.ModInfo Info { get => (UnityModManagerNet.UnityModManager.ModInfo)info; set => info = value; }
         [System.Text.Json.Serialization.JsonIgnore] public Assembly Assembly { get; set; }
-        [System.Text.Json.Serialization.JsonIgnore] public UnityModManagerNet.UnityModManager.ModEntry Entry { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore] public UnityModManagerNet.UnityModManager.ModEntry Entry { get => (UnityModManagerNet.UnityModManager.ModEntry)entry; set => entry = value; }
         /// <summary>Every line the mod logged; the report keeps a summary and writes the full log to logs/.</summary>
         [System.Text.Json.Serialization.JsonIgnore] public List<string> Log { get; set; } = new();
     }
@@ -274,6 +281,9 @@ namespace WotR.Testing.Offline
         /// <summary>Works on any mod description, so runtime preparation can order mods before game types load.</summary>
         public static List<T> Sort<T>(List<T> declared, Func<T, string> id, Func<T, string[]> requirements, Func<T, string[]> loadAfter)
         {
+            var duplicate = declared.GroupBy(id, StringComparer.OrdinalIgnoreCase).FirstOrDefault(g => g.Count() > 1);
+            if (duplicate != null)
+                throw new OfflineEnvironmentMissingException($"Mod Id '{duplicate.Key}' is declared {duplicate.Count()} times; declare each mod once.");
             var ids = new HashSet<string>(declared.Select(id));
             var before = declared.ToDictionary(id, m => new HashSet<string>((requirements(m) ?? Array.Empty<string>())
                 .Select(r => Parse(r, ids).id).Concat(loadAfter(m) ?? Array.Empty<string>()).Where(ids.Contains)));

@@ -135,9 +135,9 @@ namespace WotR.Testing.Offline
                 }
 
                 // Private mod libraries: DLLs next to a mod that are neither game, UnityModManager nor mod assemblies.
-                // All mods share one AppDomain, as in the game. When mods ship different copies of one library, the game
-                // (Unity Mono) uses the first one loaded for every mod, whatever version each was built against; the run
-                // does the same in load order and reports it.
+                // All mods share one AppDomain, as in the game. When mods ship different copies of one library, Unity
+                // Mono uses the copy loaded first for every mod, and a library loads when code first uses it, so which
+                // copy wins in the game is not known here. The run uses the first copy in load order and warns.
                 var gameNames = new HashSet<string>(Directory.GetFiles(managed, "*.dll").Concat(Directory.GetFiles(umm, "*.dll")).Select(Path.GetFileName), StringComparer.OrdinalIgnoreCase);
                 var modAssemblies = Inputs.AllMods.Select(Path.GetFullPath).ToList();
                 var sameName = modAssemblies.GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase).FirstOrDefault(g => g.Count() > 1);
@@ -152,8 +152,9 @@ namespace WotR.Testing.Offline
                     var used = dependencies.FirstOrDefault(d => string.Equals(Path.GetFileName(d), Path.GetFileName(library), StringComparison.OrdinalIgnoreCase));
                     if (used == null) dependencies.Add(library);
                     else if (FileSha256(used) != FileSha256(library))
-                        warnings.Add($"Mods ship different copies of {Path.GetFileName(library)}: {Describe(used)} is used, {Describe(library)} is not. "
-                            + "In the game the copy loaded first is used by every mod, so the version depends on the player's mods and their load order.");
+                        warnings.Add($"Mods ship different copies of {Path.GetFileName(library)}: {Describe(used)} and {Describe(library)}. "
+                            + $"This run uses {Describe(used)}. In the game every mod uses whichever copy is loaded first, "
+                            + "which depends on which mod first uses the library at run time, so results may differ with the other copy.");
                 }
                 dependencies.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(Path.GetFileName(a), Path.GetFileName(b)));
 

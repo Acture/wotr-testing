@@ -1,6 +1,6 @@
 ## Behavior change
 
-Describe the concrete trigger and resulting behavior. Link the relevant Linear task.
+Describe the concrete trigger and resulting behavior. Link the relevant issue or Linear task.
 
 ## Validation
 

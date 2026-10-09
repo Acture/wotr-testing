@@ -66,7 +66,7 @@ repository because it has no game files.
 | [`STATUS.md`](STATUS.md) | Verified behavior and its limits |
 | [`CHANGELOG.md`](CHANGELOG.md) | User-visible changes |
 
-Tasks are tracked in Linear, not GitHub Issues; see [contributing](CONTRIBUTING.md)
+Report bugs and request features in GitHub Issues; see [contributing](CONTRIBUTING.md)
 and [security reporting](SECURITY.md). Development rules are in [CLAUDE.md](CLAUDE.md).
 
 ## Repository checks

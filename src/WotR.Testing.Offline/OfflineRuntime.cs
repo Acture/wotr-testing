@@ -35,6 +35,12 @@ namespace WotR.Testing.Offline
 
         public static OfflineInputs Inputs { get; private set; }
         public static string RuntimeDirectory => runtimeDirectory;
+
+        /// <summary>
+        /// This process's copies of the mods and their private libraries, under the runtime folder. Separate per process,
+        /// so concurrent runs with different mod builds never overwrite or lock each other's files.
+        /// </summary>
+        public static string ModRuntimeDirectory { get; private set; }
         public static RewriteSummary Rewrite { get; private set; }
 
         /// <summary>Private libraries copied next to the mods, for example BlueprintCore.dll.</summary>
@@ -76,8 +82,12 @@ namespace WotR.Testing.Offline
                         resolving = false;
                     }
                 }
-                var path = Path.Combine(runtimeDirectory, name + ".dll");
-                return File.Exists(path) ? Assembly.LoadFrom(path) : null;
+                foreach (var directory in new[] { runtimeDirectory, ModRuntimeDirectory })
+                {
+                    var path = Path.Combine(directory, name + ".dll");
+                    if (File.Exists(path)) return Assembly.LoadFrom(path);
+                }
+                return null;
             };
         }
 
@@ -121,6 +131,9 @@ namespace WotR.Testing.Offline
                 // All mods share one AppDomain, as in the game, so two different copies of one library cannot both load.
                 var gameNames = new HashSet<string>(Directory.GetFiles(managed, "*.dll").Concat(Directory.GetFiles(umm, "*.dll")).Select(Path.GetFileName), StringComparer.OrdinalIgnoreCase);
                 var modAssemblies = Inputs.AllMods.Select(Path.GetFullPath).ToList();
+                var sameName = modAssemblies.GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase).FirstOrDefault(g => g.Count() > 1);
+                if (sameName != null)
+                    throw new OfflineEnvironmentMissingException($"Mods share the assembly file name {sameName.Key}: {string.Join(", ", sameName)}. They cannot load side by side.");
                 var modNames = new HashSet<string>(modAssemblies.Select(Path.GetFileName), StringComparer.OrdinalIgnoreCase);
                 var dependencies = new List<string>();
                 foreach (var library in modAssemblies.SelectMany(mod => Directory.GetFiles(Path.GetDirectoryName(mod), "*.dll"))
@@ -155,13 +168,19 @@ namespace WotR.Testing.Offline
 
                 // The mods and their libraries come from these builds, next to the rewritten game so they bind to it.
                 var searchDirectories = new[] { managed, umm }.Concat(modAssemblies.Select(Path.GetDirectoryName)).Distinct().ToList();
+                var process = System.Diagnostics.Process.GetCurrentProcess().Id.ToString();
+                MarkInUse(directory, process);
+                var modDirectory = Path.Combine(directory, "mods", process);
+                if (Directory.Exists(modDirectory)) Directory.Delete(modDirectory, true);
+                Directory.CreateDirectory(modDirectory);
                 foreach (var path in modAssemblies.Concat(dependencies))
                 {
-                    var destination = Path.Combine(directory, Path.GetFileName(path));
+                    var destination = Path.Combine(modDirectory, Path.GetFileName(path));
                     if (IsUnityMono) File.Copy(path, destination, true);
                     else Rewrite.ModTypesWithPreciseInitialization += RuntimeAssemblyRewriter.CopyModAssembly(path, destination, searchDirectories);
                 }
                 ModDependencies = dependencies.Select(Path.GetFileName).ToList();
+                ModRuntimeDirectory = Path.GetFullPath(modDirectory);
                 runtimeDirectory = Path.GetFullPath(directory);
             }
         }
@@ -175,7 +194,7 @@ namespace WotR.Testing.Offline
         {
             foreach (var folder in Directory.GetDirectories(Path.GetDirectoryName(current)))
             {
-                if (string.Equals(folder, current, StringComparison.OrdinalIgnoreCase)) continue;
+                if (string.Equals(folder, current, StringComparison.OrdinalIgnoreCase) || InUse(folder)) continue;
                 try
                 {
                     var summary = Path.Combine(folder, "rewrite-summary.json");
@@ -186,6 +205,43 @@ namespace WotR.Testing.Offline
                 {
                 }
             }
+        }
+
+        /// <summary>
+        /// Records that this process uses a runtime folder, and removes the marks and mod copies of finished processes,
+        /// so folder cleanup never deletes files another running test process still needs.
+        /// </summary>
+        private static void MarkInUse(string directory, string process)
+        {
+            var marks = Path.Combine(directory, "in-use");
+            Directory.CreateDirectory(marks);
+            File.WriteAllText(Path.Combine(marks, process), "");
+            foreach (var mark in Directory.GetFiles(marks).Where(m => !IsRunning(Path.GetFileName(m))))
+            {
+                try
+                {
+                    File.Delete(mark);
+                    var mods = Path.Combine(directory, "mods", Path.GetFileName(mark));
+                    if (Directory.Exists(mods)) Directory.Delete(mods, true);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+
+        private static bool InUse(string folder)
+        {
+            var marks = Path.Combine(folder, "in-use");
+            return Directory.Exists(marks) && Directory.GetFiles(marks).Any(m => IsRunning(Path.GetFileName(m)));
+        }
+
+        private static bool IsRunning(string processId)
+        {
+            if (!int.TryParse(processId, out var id)) return false;
+            try { return !System.Diagnostics.Process.GetProcessById(id).HasExited; }
+            catch (ArgumentException) { return false; }
+            catch (InvalidOperationException) { return false; }
         }
 
         public static string FileSha256(string path)

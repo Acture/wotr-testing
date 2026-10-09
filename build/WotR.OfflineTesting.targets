@@ -1,0 +1,59 @@
+<Project>
+
+  <!--
+    WotR offline testing: locates the game inputs, adds compile-time game references and writes
+    wotr-offline-inputs.json next to the test assembly.
+
+    Consumer properties:
+      WotrModAssembly        Required in test projects: path to the built mod DLL. Its Info.json and private
+                             dependencies (for example BlueprintCore.dll) are read from the same directory.
+      WotrInputRoot          Game root (installation or snapshot). Otherwise WOTR_INPUT_ROOT, then
+                             WotrSnapshotDirectory if it contains manifest.json, then WrathInstallDir/WrathPath/WRATH_PATH.
+      WotrSnapshotDirectory  Optional snapshot created by New-WotrVendorSnapshot.ps1.
+      WotrWorkDirectory      Runtime cache and per-run state. Default: $(BaseIntermediateOutputPath)wotr/.
+      WotrReportDirectory    Reports. Default: $(OutDir)wotr-reports/. WOTR_OFFLINE_REPORT_DIR overrides at run time.
+      WotrIsLibrary          true for projects that only need the game references.
+  -->
+
+  <PropertyGroup>
+    <WotrInputRoot Condition="'$(WotrInputRoot)'==''">$([System.Environment]::GetEnvironmentVariable('WOTR_INPUT_ROOT'))</WotrInputRoot>
+    <WotrInputRoot Condition="'$(WotrInputRoot)'=='' and '$(WotrSnapshotDirectory)'!='' and Exists('$(WotrSnapshotDirectory)/manifest.json')">$(WotrSnapshotDirectory)</WotrInputRoot>
+    <WrathInstallDir Condition="'$(WrathInstallDir)'==''">$(WrathPath)</WrathInstallDir>
+    <WrathInstallDir Condition="'$(WrathInstallDir)'==''">$([System.Environment]::GetEnvironmentVariable('WrathPath'))</WrathInstallDir>
+    <WrathInstallDir Condition="'$(WrathInstallDir)'==''">$([System.Environment]::GetEnvironmentVariable('WRATH_PATH'))</WrathInstallDir>
+    <WotrInputRoot Condition="'$(WotrInputRoot)'==''">$(WrathInstallDir)</WotrInputRoot>
+    <WotrManaged>$(WotrInputRoot)/Wrath_Data/Managed</WotrManaged>
+    <WotrWorkDirectory Condition="'$(WotrWorkDirectory)'==''">$(BaseIntermediateOutputPath)wotr/</WotrWorkDirectory>
+  </PropertyGroup>
+
+  <Target Name="EnsureWotrInputs" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(WotrInputRoot)'=='' or !Exists('$(WotrManaged)/Assembly-CSharp.dll')"
+           Text="[ENV_MISSING] WotR inputs not found. Set WotrInputRoot or WOTR_INPUT_ROOT, create a snapshot with New-WotrVendorSnapshot.ps1, or set WrathInstallDir." />
+    <Error Condition="'$(WotrIsLibrary)'!='true' and '$(WotrModAssembly)'==''" Text="[ENV_MISSING] Set WotrModAssembly to the built mod DLL." />
+  </Target>
+
+  <!-- Compile-time only: at run time every game, Harmony and mod assembly comes from the prepared runtime folder. -->
+  <ItemGroup>
+    <Reference Include="$(WotrManaged)/Assembly-CSharp.dll" Private="false" />
+    <Reference Include="$(WotrManaged)/Assembly-CSharp-firstpass.dll" Private="false" />
+    <Reference Include="$(WotrManaged)/Owlcat.Runtime.Core.dll" Private="false" />
+    <Reference Include="$(WotrManaged)/Owlcat.SharedTypes.dll" Private="false" />
+    <Reference Include="$(WotrManaged)/UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="$(WotrManaged)/UnityModManager/UnityModManager.dll" Private="false" />
+    <Reference Include="$(WotrManaged)/UnityModManager/0Harmony.dll" Private="false" />
+    <Reference Include="$(WotrModAssembly)" Private="false" Condition="'$(WotrIsLibrary)'!='true'" />
+  </ItemGroup>
+
+  <Target Name="WriteWotrOfflineInputs" BeforeTargets="CoreCompile" Condition="'$(WotrIsLibrary)'!='true'">
+    <PropertyGroup>
+      <WotrReportDirectory Condition="'$(WotrReportDirectory)'==''">$(OutDir)wotr-reports/</WotrReportDirectory>
+      <_WotrInputsJson>{
+  "inputRoot": "$([System.IO.Path]::GetFullPath('$(WotrInputRoot)').Replace('\','/'))",
+  "modAssembly": "$([System.IO.Path]::GetFullPath('$(WotrModAssembly)').Replace('\','/'))",
+  "workDirectory": "$([System.IO.Path]::GetFullPath('$(WotrWorkDirectory)').Replace('\','/'))",
+  "reportDirectory": "$([System.IO.Path]::GetFullPath('$(WotrReportDirectory)').Replace('\','/'))"
+}</_WotrInputsJson>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(OutDir)wotr-offline-inputs.json" Lines="$(_WotrInputsJson)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
+</Project>

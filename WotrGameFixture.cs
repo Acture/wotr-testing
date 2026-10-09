@@ -1,0 +1,160 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+
+namespace WotR.OfflineTesting
+{
+    /// <summary>
+    /// Boots one offline game session and writes environment.json on dispose. Works as an xUnit collection fixture,
+    /// or from NUnit/MSTest one-time setup. Startup failures are kept and rethrown by <see cref="RequireGame"/>,
+    /// so every test reports the classified cause instead of passing vacuously.
+    /// </summary>
+    /// <remarks>
+    /// Test classes must keep game types out of their signatures and fields: test frameworks reflect on them before
+    /// the runtime folder exists. Put game-typed code in separate helper classes called from the test body.
+    /// </remarks>
+    public class WotrGameFixture : IDisposable
+    {
+        private static readonly string[] ForbiddenProcesses = { "Wrath", "Unity", "Unity Hub" };
+        private static readonly string[] ForbiddenModules = { "UnityPlayer.dll", "mono-2.0-bdwgc.dll", "Wrath.exe" };
+
+        private readonly DateTime startedAt = DateTime.UtcNow;
+        private readonly HashSet<int> processesBefore;
+        private readonly Exception startupError;
+
+        /// <summary>Values tests want in the report, keyed by name.</summary>
+        public ConcurrentDictionary<string, object> Observations { get; } = new();
+
+        public GameSession Session { get; } = new();
+
+        public WotrGameFixture()
+        {
+            // Readable, culture-independent exception text in reports.
+            System.Globalization.CultureInfo.DefaultThreadCurrentUICulture = System.Globalization.CultureInfo.InvariantCulture;
+            System.Threading.Thread.CurrentThread.CurrentUICulture = System.Globalization.CultureInfo.InvariantCulture;
+            processesBefore = new HashSet<int>(ForbiddenProcesses.SelectMany(Process.GetProcessesByName).Select(p => p.Id));
+            try
+            {
+                Session.Start(VerifyModInitialized);
+            }
+            catch (Exception error)
+            {
+                startupError = error;
+            }
+        }
+
+        /// <summary>Override to check mod-specific success, for example a log line. Throw to fail initialization.</summary>
+        protected virtual void VerifyModInitialized(GameSession session)
+        {
+        }
+
+        /// <summary>Throws the classified startup failure, if any.</summary>
+        public void RequireGame()
+        {
+            if (startupError != null) throw startupError;
+        }
+
+        public static IEnumerable<string> LoadedForbiddenModules()
+            => Process.GetCurrentProcess().Modules.Cast<ProcessModule>()
+                .Select(m => m.ModuleName)
+                .Where(name => ForbiddenModules.Contains(name, StringComparer.OrdinalIgnoreCase));
+
+        public IEnumerable<string> ForbiddenProcessesStartedDuringRun()
+            => ForbiddenProcesses.SelectMany(Process.GetProcessesByName)
+                .Where(p => !processesBefore.Contains(p.Id))
+                .Select(p => $"{p.ProcessName} ({p.Id})");
+
+        public virtual void Dispose()
+        {
+            var directory = OfflineRuntime.Inputs?.ReportDirectory
+                ?? Environment.GetEnvironmentVariable(OfflineInputs.ReportDirectoryVariable)
+                ?? Path.Combine(Path.GetDirectoryName(typeof(WotrGameFixture).Assembly.Location), "wotr-reports");
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, "environment.json"), JsonSerializer.Serialize(BuildReport(), Report.JsonOptions));
+        }
+
+        private object BuildReport()
+        {
+            var process = Process.GetCurrentProcess();
+            var logs = HarnessState.Logs.ToArray();
+            return new
+            {
+                startedAt,
+                finishedAt = DateTime.UtcNow,
+                startupError = startupError?.ToString(),
+                process = new
+                {
+                    path = process.MainModule?.FileName,
+                    id = process.Id,
+                    runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+                    is64Bit = Environment.Is64BitProcess,
+                    forbiddenModulesLoaded = LoadedForbiddenModules().ToArray(),
+                    forbiddenProcessesStartedDuringRun = ForbiddenProcessesStartedDuringRun().ToArray(),
+                },
+                inputs = OfflineRuntime.Inputs == null ? null : new
+                {
+                    root = OfflineRuntime.Inputs.InputRoot,
+                    source = OfflineRuntime.Inputs.Source,
+                    gameVersion = OfflineRuntime.Inputs.Identity.GameVersion,
+                    verifiedGameVersion = OfflineRuntime.Inputs.Identity.VerifiedVersion,
+                    assemblyCSharpSha256 = OfflineRuntime.Inputs.Identity.AssemblyCSharpSha256,
+                    resources = OfflineRuntime.Inputs.Identity.ResourceSha256,
+                    snapshotManifestGameVersion = OfflineRuntime.Inputs.Identity.SnapshotManifestGameVersion,
+                },
+                mod = new { id = Session.ModId, assembly = OfflineRuntime.Inputs?.ModAssembly, dependencies = OfflineRuntime.ModDependencies },
+                runtimeDirectory = OfflineRuntime.RuntimeDirectory,
+                rewrite = OfflineRuntime.Rewrite,
+                loadedAssemblies = LoadedGameAssemblies(),
+                stages = Session.Stages,
+                boundaries = Boundaries.Snapshot(),
+                assetGaps = HarnessState.Assets?.Gaps,
+                mappedScriptableObjects = HarnessState.Assets?.MappedObjects,
+                logSummary = logs.GroupBy(l => $"{l.Source}:{l.Severity}").ToDictionary(g => g.Key, g => g.Count()),
+                logErrors = logs.Where(l => l.Severity is "Error" or "Exception" || l.Exception != null).Take(200).ToArray(),
+                logWarnings = logs.Where(l => l.Severity == "Warning").Take(200).ToArray(),
+                modLog = Session.ModLog,
+                observations = Observations,
+            };
+        }
+
+        private object[] LoadedGameAssemblies()
+        {
+            var runtime = OfflineRuntime.RuntimeDirectory;
+            if (runtime == null) return Array.Empty<object>();
+            var rewritten = new HashSet<string>(OfflineRuntime.Rewrite?.RewrittenAssemblies ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+            var modFiles = new HashSet<string>(OfflineRuntime.ModDependencies.Append(Path.GetFileName(OfflineRuntime.Inputs.ModAssembly)), StringComparer.OrdinalIgnoreCase);
+            return AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => !a.IsDynamic && a.Location.StartsWith(runtime, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(a => a.GetName().Name)
+                .Select(a => (object)new
+                {
+                    name = a.GetName().Name,
+                    version = a.GetName().Version?.ToString(),
+                    informationalVersion = a.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion,
+                    location = a.Location,
+                    sha256 = OfflineRuntime.FileSha256(a.Location),
+                    origin = modFiles.Contains(Path.GetFileName(a.Location)) ? "mod build"
+                        : rewritten.Contains(Path.GetFileName(a.Location)) ? "rewritten copy of game input" : "unmodified copy of game input",
+                })
+                .ToArray();
+        }
+    }
+
+    public static class Report
+    {
+        public static readonly JsonSerializerOptions JsonOptions = new()
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            PropertyNameCaseInsensitive = true,
+            DictionaryKeyPolicy = null,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        };
+    }
+}

@@ -175,6 +175,42 @@ namespace WotR.Testing.Offline
             summary.ThrowingInternalCalls++;
         }
 
+        /// <summary>
+        /// Copies a mod or mod library into the runtime folder. Mods are built for Unity Mono, which runs a type's static
+        /// initializer before the type's first static method call; .NET Framework defers it for beforefieldinit types
+        /// until the first static field read. Mods that save a game delegate into a static field and then replace the
+        /// game's delegate would capture their own replacement and recurse. Clearing beforefieldinit restores Mono's
+        /// order. Method bodies are not changed. Returns the number of types changed.
+        /// </summary>
+        public static int CopyModAssembly(string source, string destination, IEnumerable<string> searchDirectories)
+        {
+            if (IsFramework(Path.GetFileName(source)))
+            {
+                File.Copy(source, destination, true);
+                return 0;
+            }
+            ModuleDefinition module;
+            try
+            {
+                var resolver = new DefaultAssemblyResolver();
+                foreach (var directory in searchDirectories) resolver.AddSearchDirectory(directory);
+                module = ModuleDefinition.ReadModule(source, new ReaderParameters { InMemory = true, AssemblyResolver = resolver });
+            }
+            catch (BadImageFormatException)
+            {
+                File.Copy(source, destination, true);
+                return 0;
+            }
+            using (module)
+            {
+                var changed = module.GetTypes().Where(t => t.IsBeforeFieldInit && t.Methods.Any(m => m.IsConstructor && m.IsStatic)).ToList();
+                foreach (var type in changed) type.IsBeforeFieldInit = false;
+                if (changed.Count == 0) File.Copy(source, destination, true);
+                else module.Write(destination);
+                return changed.Count;
+            }
+        }
+
         private static string Key(TypeDefinition t) => "T:" + t.FullName;
         private static string Key(FieldDefinition f) => "F:" + f.DeclaringType.FullName + "::" + f.Name;
         private static string Key(MethodDefinition m) => "M:" + m.FullName;
@@ -227,5 +263,8 @@ namespace WotR.Testing.Offline
         public int WidenedFields { get; set; }
         public int FieldsKeptOutOfSerialization { get; set; }
         public int WidenedMethods { get; set; }
+
+        /// <summary>Mod-side types whose beforefieldinit flag was cleared (see CopyModAssembly). Set per run.</summary>
+        public int ModTypesWithPreciseInitialization { get; set; }
     }
 }

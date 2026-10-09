@@ -7,12 +7,15 @@
     Consumer properties:
       WotrModAssembly        Required in test projects: path to the built mod DLL. Its Info.json and private
                              dependencies (for example BlueprintCore.dll) are read from the same directory.
+      WotrDependencyMod      Items: other mods' built DLLs loaded with it, for example a framework mod named in its
+                             Info.json Requirements. All mods load in Requirements/LoadAfter order.
       WotrInputRoot          Game root (installation or snapshot). Otherwise WOTR_INPUT_ROOT, then
                              WotrSnapshotDirectory if it contains manifest.json, then WrathInstallDir/WrathPath/WRATH_PATH.
-      WotrSnapshotDirectory  Optional snapshot created by New-WotrVendorSnapshot.ps1.
+      WotrSnapshotDirectory  Optional snapshot created by New-WotrSnapshot.ps1.
       WotrWorkDirectory      Runtime cache and per-run state. Default: $(BaseIntermediateOutputPath)wotr/.
       WotrReportDirectory    Reports. Default: $(OutDir)wotr-reports/. WOTR_OFFLINE_REPORT_DIR overrides at run time.
       WotrIsLibrary          true for projects that only need the game references.
+      WotrXunitConsoleVersion  xUnit v2 console runner used by Invoke-WotrOfflineTests.ps1 -Runtime mono (default 2.9.2).
       WotrGenerateModuleInitializer  false to skip the generated module initializer (then call
                              OfflineRuntime.InstallResolver() from your own before any game type is touched).
   -->
@@ -26,11 +29,17 @@
     <WotrInputRoot Condition="'$(WotrInputRoot)'==''">$(WrathInstallDir)</WotrInputRoot>
     <WotrManaged>$(WotrInputRoot)/Wrath_Data/Managed</WotrManaged>
     <WotrWorkDirectory Condition="'$(WotrWorkDirectory)'==''">$(BaseIntermediateOutputPath)wotr/</WotrWorkDirectory>
+    <WotrXunitConsoleVersion Condition="'$(WotrXunitConsoleVersion)'==''">2.9.2</WotrXunitConsoleVersion>
   </PropertyGroup>
+
+  <!-- Runner for Invoke-WotrOfflineTests.ps1 -Runtime mono: downloaded into the NuGet cache, never referenced. -->
+  <ItemGroup Condition="'$(WotrIsLibrary)'!='true'">
+    <PackageDownload Include="xunit.runner.console" Version="[$(WotrXunitConsoleVersion)]" />
+  </ItemGroup>
 
   <Target Name="EnsureWotrInputs" BeforeTargets="PrepareForBuild">
     <Error Condition="'$(WotrInputRoot)'=='' or !Exists('$(WotrManaged)/Assembly-CSharp.dll')"
-           Text="[ENV_MISSING] WotR inputs not found. Set WotrInputRoot or WOTR_INPUT_ROOT, create a snapshot with New-WotrVendorSnapshot.ps1, or set WrathInstallDir." />
+           Text="[ENV_MISSING] WotR inputs not found. Set WotrInputRoot or WOTR_INPUT_ROOT, create a snapshot with New-WotrSnapshot.ps1, or set WrathInstallDir." />
     <Error Condition="'$(WotrIsLibrary)'!='true' and '$(WotrModAssembly)'==''" Text="[ENV_MISSING] Set WotrModAssembly to the built mod DLL." />
   </Target>
 
@@ -46,12 +55,23 @@
     <Reference Include="$(WotrModAssembly)" Private="false" Condition="'$(WotrIsLibrary)'!='true'" />
   </ItemGroup>
 
+  <!-- In a target, so WotrDependencyMod items declared after the Import are seen. -->
+  <Target Name="AddWotrDependencyModReferences" BeforeTargets="ResolveAssemblyReferences" Condition="'$(WotrIsLibrary)'!='true'">
+    <Error Condition="'%(WotrDependencyMod.Identity)'!='' and !Exists('%(WotrDependencyMod.FullPath)')" Text="[ENV_MISSING] WotrDependencyMod not found: %(WotrDependencyMod.FullPath)" />
+    <ItemGroup>
+      <Reference Include="@(WotrDependencyMod->'%(FullPath)')" Private="false" />
+    </ItemGroup>
+  </Target>
+
   <Target Name="WriteWotrOfflineInputs" BeforeTargets="CoreCompile" Condition="'$(WotrIsLibrary)'!='true'">
     <PropertyGroup>
       <WotrReportDirectory Condition="'$(WotrReportDirectory)'==''">$(OutDir)wotr-reports/</WotrReportDirectory>
+      <!-- '|'-separated: WriteLinesToFile would split a ';' list into lines. -->
+      <_WotrDependencyMods>@(WotrDependencyMod->'%(FullPath)', '|')</_WotrDependencyMods>
       <_WotrInputsJson>{
   "inputRoot": "$([System.IO.Path]::GetFullPath('$(WotrInputRoot)').Replace('\','/'))",
   "modAssembly": "$([System.IO.Path]::GetFullPath('$(WotrModAssembly)').Replace('\','/'))",
+  "dependencyMods": "$(_WotrDependencyMods.Replace('\','/'))",
   "workDirectory": "$([System.IO.Path]::GetFullPath('$(WotrWorkDirectory)').Replace('\','/'))",
   "reportDirectory": "$([System.IO.Path]::GetFullPath('$(WotrReportDirectory)').Replace('\','/'))"
 }</_WotrInputsJson>

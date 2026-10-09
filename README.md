@@ -55,4 +55,6 @@ repository because it has no game files.
 
 ## License
 
-[GNU Affero General Public License v3.0](LICENSE).
+[GNU Affero General Public License v3.0](LICENSE), with an
+[additional permission](LICENSE-EXCEPTION.md) to link and convey it together with
+the proprietary game and Unity engine assemblies.

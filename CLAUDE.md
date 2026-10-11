@@ -8,11 +8,13 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
 
 ## Layout
 
-- `src/WotR.Testing.Offline/`: offline library, its `build/*.targets` and README.
+- `src/WotR.Testing/`: `WotR.Testing` meta-package (no code; depends on the
+  components). `src/WotR.Testing.Offline/`: offline library, its `build/*.targets`
+  and README.
 - `src/WotR.Testing.MonoHost/`: `wotr-mono-host`, starts the game's own Unity Mono
   runtime (the default test runtime) from the inputs.
-  Planned: `src/WotR.Testing.InGame/` for in-game testing, and a shared
-  `WotR.Testing` layer once both need it.
+  Planned: `src/WotR.Testing.InGame/` for in-game testing (added to the meta-package),
+  and a shared library both use once they need one.
 - `scripts/`: `Invoke-WotrOfflineTests.ps1` (generic runner) and
   `New-WotrSnapshot.ps1` (game-file snapshot). Consumers call these paths through
   the submodule; moving them is a breaking change.

@@ -3,6 +3,9 @@
   <!--
     Test-framework-independent library for running WotR mods against the real game assemblies and blueprint data
     without the Unity player. Never contains or redistributes game files: runtime copies are made on the test machine.
+    The NuGet package holds this library, its build targets, wotr-mono-host and the runner scripts. Build it with
+    `dotnet pack` (Release by default) at the repository root; Directory.Build.targets deletes the package if it holds
+    anything outside the WotrPackageEntry allowlist below.
   -->
   <!-- Standalone builds may keep WrathInstallDir in an ignored GamePath.props at the repository root. -->
   <Import Project="$(MSBuildThisFileDirectory)../../GamePath.props" Condition="Exists('$(MSBuildThisFileDirectory)../../GamePath.props')" />
@@ -11,9 +14,25 @@
     <TargetFramework>net48</TargetFramework>
     <LangVersion>latest</LangVersion>
     <RootNamespace>WotR.Testing.Offline</RootNamespace>
-    <IsPackable>false</IsPackable>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <WotrIsLibrary>true</WotrIsLibrary>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>WotR.Testing.Offline</PackageId>
+    <Authors>Acture</Authors>
+    <Description>Runs Pathfinder: Wrath of the Righteous mods against the real game assemblies, blueprint pack and settings on the game's own Unity Mono runtime (or .NET Framework), without starting the game. Game files come from your own installation and are never part of the package.</Description>
+    <PackageTags>pathfinder;wrath-of-the-righteous;wotr;modding;testing;unitymodmanager</PackageTags>
+    <PackageLicenseExpression>AGPL-3.0-only</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/Acture/wotr-testing</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Acture/wotr-testing</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- CS1591: not every public member is documented yet. NU5111: tools/*.ps1 are scripts to run, not install hooks. -->
+    <NoWarn>$(NoWarn);CS1591;NU5111</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,10 +40,43 @@
     <PackageReference Include="Mono.Cecil" Version="0.11.6" />
     <PackageReference Include="AssetsTools.NET" Version="3.0.5" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <!--
+      Downloaded for Invoke-WotrOfflineTests.ps1 -Runtime mono and never referenced: package consumers get it as a
+      dependency (its build assets do not flow), because NuGet restore does not see the PackageDownload in the
+      package's own targets.
+    -->
+    <PackageReference Include="xunit.runner.console" Version="2.9.2" />
+  </ItemGroup>
+
+  <!-- Built first so its executable can be packed into tools/; not referenced by the library. -->
+  <ItemGroup>
+    <ProjectReference Include="../WotR.Testing.MonoHost/WotR.Testing.MonoHost.csproj" ReferenceOutputAssembly="false" Private="false" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="build/WotR.Testing.Offline.targets" />
+    <None Include="build/WotR.Testing.Offline.targets" Pack="true" PackagePath="build/" />
+    <!-- Imported for consumers that get this package through WotR.Testing: NuGet imports build/ only for direct references. -->
+    <None Include="buildTransitive/WotR.Testing.Offline.targets" Pack="true" PackagePath="buildTransitive/" />
+    <None Include="README.md" Pack="true" PackagePath="/" />
+    <None Include="../../LICENSE-EXCEPTION.md" Pack="true" PackagePath="/" />
+    <None Include="../../scripts/Invoke-WotrOfflineTests.ps1;../../scripts/New-WotrSnapshot.ps1" Pack="true" PackagePath="tools/" />
+  </ItemGroup>
+
+  <Target Name="PackWotrMonoHost" BeforeTargets="_GetPackageFiles">
+    <MSBuild Projects="../WotR.Testing.MonoHost/WotR.Testing.MonoHost.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_WotrMonoHost" />
+    </MSBuild>
+    <ItemGroup>
+      <None Include="@(_WotrMonoHost);@(_WotrMonoHost->'%(FullPath).config')" Pack="true" PackagePath="tools/" />
+    </ItemGroup>
+  </Target>
+
+  <!-- The only entries a package may hold besides NuGet's own metadata. -->
+  <ItemGroup>
+    <WotrPackageEntry Include="WotR.Testing.Offline.nuspec;README.md;LICENSE-EXCEPTION.md" />
+    <WotrPackageEntry Include="build\WotR.Testing.Offline.targets;buildTransitive\WotR.Testing.Offline.targets" />
+    <WotrPackageEntry Include="lib\net48\WotR.Testing.Offline.dll;lib\net48\WotR.Testing.Offline.xml" />
+    <WotrPackageEntry Include="tools\Invoke-WotrOfflineTests.ps1;tools\New-WotrSnapshot.ps1;tools\wotr-mono-host.exe;tools\wotr-mono-host.exe.config" />
   </ItemGroup>
 
   <Import Project="build/WotR.Testing.Offline.targets" />

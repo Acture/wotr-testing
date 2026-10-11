@@ -33,6 +33,9 @@
     <WotrWorkDirectory Condition="'$(WotrWorkDirectory)'==''">$(BaseIntermediateOutputPath)wotr/</WotrWorkDirectory>
     <WotrXunitConsoleVersion Condition="'$(WotrXunitConsoleVersion)'==''">2.9.2</WotrXunitConsoleVersion>
     <WotrDlc Condition="'$(WotrDlc)'==''">all</WotrDlc>
+    <!-- Runner and snapshot scripts: tools/ in the NuGet package, scripts/ in the source repository. -->
+    <WotrToolsDirectory Condition="'$(WotrToolsDirectory)'=='' and Exists('$(MSBuildThisFileDirectory)../tools/Invoke-WotrOfflineTests.ps1')">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/'))</WotrToolsDirectory>
+    <WotrToolsDirectory Condition="'$(WotrToolsDirectory)'==''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../scripts/'))</WotrToolsDirectory>
   </PropertyGroup>
 
   <!-- Runner for Invoke-WotrOfflineTests.ps1 -Runtime mono: downloaded into the NuGet cache, never referenced. -->

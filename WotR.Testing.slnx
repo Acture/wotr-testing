@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="src/WotR.Testing.MonoHost/WotR.Testing.MonoHost.csproj" />
   <Project Path="src/WotR.Testing.Offline/WotR.Testing.Offline.csproj" />
+  <Project Path="src/WotR.Testing/WotR.Testing.csproj" />
 </Solution>

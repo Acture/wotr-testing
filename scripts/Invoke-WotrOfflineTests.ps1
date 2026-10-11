@@ -114,11 +114,16 @@ if ($built -and $Runtime -eq 'mono') {
         if (-not (Test-Path -LiteralPath (Join-Path $monoRuntime 'mono-2.0-bdwgc.dll'))) { $problems.Add("[ENV_MISSING] The game's Mono runtime was not found in $monoRuntime.") }
         elseif (-not (Test-Path -LiteralPath $console)) { $problems.Add("[ENV_MISSING] xUnit console runner not found: $console. Restore the test project.") }
         else {
-            $hostProject = Join-Path $toolRoot 'src/WotR.Testing.MonoHost/WotR.Testing.MonoHost.csproj'
-            & dotnet build $hostProject -c Release -nologo -v quiet | Out-Host
-            $hostBuilt = $LASTEXITCODE -eq 0
-            $hostPath = (& dotnet msbuild $hostProject -p:Configuration=Release -getProperty:TargetPath -nologo).Trim()
-            if (-not $hostBuilt -or $LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $hostPath)) { $problems.Add('Build failed: WotR.Testing.MonoHost.') }
+            # The NuGet package ships the host next to this script; the source repository builds it.
+            $hostPath = Join-Path $PSScriptRoot 'wotr-mono-host.exe'
+            if (-not (Test-Path -LiteralPath $hostPath)) {
+                $hostProject = Join-Path $toolRoot 'src/WotR.Testing.MonoHost/WotR.Testing.MonoHost.csproj'
+                & dotnet build $hostProject -c Release -nologo -v quiet | Out-Host
+                $hostBuilt = $LASTEXITCODE -eq 0
+                $hostPath = (& dotnet msbuild $hostProject -p:Configuration=Release -getProperty:TargetPath -nologo).Trim()
+                if (-not $hostBuilt -or $LASTEXITCODE -ne 0) { $hostPath = '' }
+            }
+            if (-not $hostPath -or -not (Test-Path -LiteralPath $hostPath)) { $problems.Add('Build failed: WotR.Testing.MonoHost.') }
             else {
                 $classLibrary = New-MonoClassLibrary (Join-Path $inputRoot 'Wrath_Data/Managed') $inputs.workDirectory
                 $arguments = @('--runtime', $monoRuntime, '--config', (Join-Path $inputRoot 'MonoBleedingEdge/etc'), '--assemblies', $classLibrary,

@@ -1,24 +1,61 @@
 # WotR.Testing.Offline
 
 Runs a Pathfinder: Wrath of the Righteous mod against the real game assemblies,
-vanilla blueprint pack and settings in an ordinary .NET Framework test process,
-without starting `Wrath.exe` or Unity. The mod is loaded through the entry method
+vanilla blueprint pack and settings on the game's own Unity Mono runtime (or .NET
+Framework), without starting `Wrath.exe` or the Unity player. The mod is loaded through the entry method
 in its `Info.json`, and its blueprints are created by its own patches on the
 game's `BlueprintsCache.Init`.
 
-Status: not yet published as a package; the API may change. Verified with WotR
-2.7.0, AttributeFeats (BlueprintCore) and TabletopTweaks-Base with
-TabletopTweaks-Core as a dependency mod. See [docs/offline.md](../../docs/offline.md) for how it works,
-every environment adaptation and the known limits.
+Status: preview; the API may change. Verified with WotR 2.7.0, AttributeFeats
+(BlueprintCore) and TabletopTweaks-Base with TabletopTweaks-Core as a dependency
+mod. See [docs/offline.md](https://github.com/Acture/wotr-testing/blob/main/docs/offline.md) for how it works, every environment adaptation
+and the known limits.
 
-The library contains no game files. Game assemblies are referenced at compile
-time and copied and rewritten on the test machine.
+The library and its NuGet package contain no game files. Game assemblies are
+referenced at compile time from your own installation and copied and rewritten on
+the test machine. License: AGPL-3.0 with an
+[additional permission](https://github.com/Acture/wotr-testing/blob/main/LICENSE-EXCEPTION.md)
+for use together with the game and Unity assemblies.
 
 ## Use it in a mod's test project
 
-Requirements: Windows, the .NET SDK, a UnityModManager mod with `Info.json` in its
-build output, and the game installed (or a snapshot from
-`scripts/New-WotrSnapshot.ps1`).
+Requirements: Windows, the .NET SDK, PowerShell 7, a UnityModManager mod with
+`Info.json` in its build output, and the game installed (or a snapshot from
+`New-WotrSnapshot.ps1`).
+
+### From NuGet
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <WotrModAssembly>../MyMod/bin/Debug/MyMod.dll</WotrModAssembly>
+    <WrathInstallDir>C:/Games/Pathfinder Second Adventure</WrathInstallDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Optional: mods named in Info.json Requirements, loaded first. -->
+    <WotrDependencyMod Include="../deps/TabletopTweaks-Core/TabletopTweaks-Core.dll" />
+    <PackageReference Include="WotR.Testing" Version="0.1.0-preview.1" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+</Project>
+```
+
+`WotR.Testing` is the meta-package for all WotR.Testing components; referencing
+`WotR.Testing.Offline` directly works the same. The build targets are imported
+automatically. Its runner and snapshot
+scripts are in the package's `tools/` folder, which the project reports as
+`WotrToolsDirectory`:
+
+```powershell
+$tools = dotnet msbuild tests/MyMod.Tests/MyMod.Tests.csproj -getProperty:WotrToolsDirectory
+pwsh -NoProfile -File "$($tools.Trim())Invoke-WotrOfflineTests.ps1" -Project tests/MyMod.Tests/MyMod.Tests.csproj
+```
+
+### From a Git submodule
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">

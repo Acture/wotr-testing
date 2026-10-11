@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- NuGet packages (first preview `0.1.0-preview.1`): `WotR.Testing`, a meta-package
+  that references the components, and `WotR.Testing.Offline` with the library, its
+  build targets (imported automatically, also through `WotR.Testing`), and in
+  `tools/` the runner, the snapshot script and `wotr-mono-host.exe`;
+  `WotrToolsDirectory` locates them. Built on a maintainer machine with
+  `dotnet pack`; a package holding any file outside its allowlist is deleted. Git
+  submodules keep working.
+
 - `WotR.Testing.Offline` extracted from the AttributeFeats offline tests: real WotR
   2.7.0 assemblies, blueprint pack, settings and enGB localization; mods loaded
   through their `Info.json` entry method; classified results and `environment.json`

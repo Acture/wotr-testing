@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Meta-package: no code, only dependencies on the WotR.Testing components (today WotR.Testing.Offline; in-game testing
+    will be added here). Mod test projects reference this package.
+  -->
+  <Import Project="$(MSBuildThisFileDirectory)../../GamePath.props" Condition="Exists('$(MSBuildThisFileDirectory)../../GamePath.props')" />
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!-- NU5128: a meta-package has dependencies but no lib/ folder by design. -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+    <PackageId>WotR.Testing</PackageId>
+    <Authors>Acture</Authors>
+    <Description>Test tooling for Pathfinder: Wrath of the Righteous mods. References WotR.Testing.Offline, which runs mods against the real game assemblies and blueprint data on the game's own Unity Mono runtime without starting the game. Game files come from your own installation and are never part of the packages.</Description>
+    <PackageTags>pathfinder;wrath-of-the-righteous;wotr;modding;testing;unitymodmanager</PackageTags>
+    <PackageLicenseExpression>AGPL-3.0-only</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/Acture/wotr-testing</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Acture/wotr-testing</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- PrivateAssets none: the component's build targets reach the consumer (through its buildTransitive/ folder). -->
+    <ProjectReference Include="../WotR.Testing.Offline/WotR.Testing.Offline.csproj" PrivateAssets="none" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+    <None Include="../../LICENSE-EXCEPTION.md" Pack="true" PackagePath="/" />
+    <WotrPackageEntry Include="WotR.Testing.nuspec;README.md;LICENSE-EXCEPTION.md" />
+  </ItemGroup>
+</Project>

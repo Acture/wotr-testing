@@ -1,0 +1,4 @@
+<Project>
+  <!-- Consumers that reference WotR.Testing get this package transitively; NuGet imports buildTransitive/ for them. -->
+  <Import Project="$(MSBuildThisFileDirectory)../build/WotR.Testing.Offline.targets" />
+</Project>

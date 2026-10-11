@@ -1,0 +1,36 @@
+<Project>
+  <!--
+    Package checks for every packable project in this repository. Each project lists its allowed package entries as
+    WotrPackageEntry items; a package with any other entry is deleted, so no game file can be published.
+  -->
+  <!-- A release package records its commit, so it must come from a clean tree. -p:WotrAllowDirty=true for local tests. -->
+  <Target Name="RequireCleanTreeForPack" BeforeTargets="GenerateNuspec" Condition="'$(IsPackable)'=='true' and '$(Configuration)'=='Release' and '$(WotrAllowDirty)'!='true'">
+    <Exec Command="git status --porcelain" WorkingDirectory="$(MSBuildThisFileDirectory)" ConsoleToMSBuild="true" StandardOutputImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_WotrGitStatus" />
+    </Exec>
+    <Error Condition="'$(_WotrGitStatus)'!=''" Text="The working tree has uncommitted changes; the package would not match its recorded commit. Commit first, or pass -p:WotrAllowDirty=true for a local test package." />
+  </Target>
+
+  <!-- Opens the finished package and deletes it unless it holds exactly the allowed entries: no game file can be packed. -->
+  <Target Name="VerifyWotrPackage" AfterTargets="Pack" Condition="'$(IsPackable)'=='true'">
+    <PropertyGroup>
+      <_WotrPackage>$([MSBuild]::EnsureTrailingSlash('$(PackageOutputAbsolutePath)'))$(PackageId).$(PackageVersion).nupkg</_WotrPackage>
+      <_WotrPackageCheck>$(IntermediateOutputPath)package-check\</_WotrPackageCheck>
+    </PropertyGroup>
+    <RemoveDir Directories="$(_WotrPackageCheck)" />
+    <Unzip SourceFiles="$(_WotrPackage)" DestinationFolder="$(_WotrPackageCheck)" />
+    <ItemGroup>
+      <_WotrPackedFile Include="$(_WotrPackageCheck)**\*" />
+      <_WotrPacked Include="@(_WotrPackedFile->'%(RecursiveDir)%(Filename)%(Extension)')" />
+      <_WotrPackedContent Include="@(_WotrPacked)" Condition="!$([System.String]::Copy('%(Identity)').StartsWith('_rels\')) and !$([System.String]::Copy('%(Identity)').StartsWith('package\')) and '%(Identity)'!='[Content_Types].xml'" />
+      <_WotrUnexpected Include="@(_WotrPackedContent)" Exclude="@(WotrPackageEntry)" />
+      <_WotrMissing Include="@(WotrPackageEntry)" Exclude="@(_WotrPackedContent)" />
+    </ItemGroup>
+    <RemoveDir Directories="$(_WotrPackageCheck)" />
+    <Delete Files="$(_WotrPackage)" Condition="'@(_WotrUnexpected)'!='' or '@(_WotrMissing)'!=''" />
+    <Error Condition="'@(_WotrUnexpected)'!=''" Text="Package deleted: unexpected entries @(_WotrUnexpected, ', ')." />
+    <Error Condition="'@(_WotrMissing)'!=''" Text="Package deleted: missing entries @(_WotrMissing, ', ')." />
+    <Message Importance="high" Text="Verified $(_WotrPackage): @(_WotrPackedContent, ', ')" />
+  </Target>
+
+</Project>

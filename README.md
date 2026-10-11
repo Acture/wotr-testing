@@ -13,26 +13,29 @@ machine. Never commit, package or publish game files or snapshots of them.
 
 Status: early. Verified with WotR 2.7.0, the
 [AttributeFeats](https://github.com/Acture/attribute-feats) mod (BlueprintCore) and
-TabletopTweaks-Base with TabletopTweaks-Core as a dependency mod; not yet published
-as a NuGet package and the API may change. Consume it as a Git submodule for now.
+TabletopTweaks-Base with TabletopTweaks-Core as a dependency mod. The NuGet package
+is a preview and the API may change.
 
 ## Quick start
 
+Create a .NET Framework 4.8 (or 4.8.1) xUnit v2 project, add the `WotR.Testing`
+NuGet package (preview), set `WotrModAssembly` to your built mod and add a
+`WotrDependencyMod` item for each mod it requires. `WotR.Testing` references the
+components (today `WotR.Testing.Offline`, which carries the build targets, the test
+runner and the Mono host); the packages contain no game files.
+
 ```powershell
-git submodule add https://github.com/Acture/wotr-testing.git external/wotr-testing
+$tools = dotnet msbuild tests/MyMod.OfflineTests/MyMod.OfflineTests.csproj -getProperty:WotrToolsDirectory
+pwsh -NoProfile -File "$($tools.Trim())Invoke-WotrOfflineTests.ps1" -Project tests/MyMod.OfflineTests/MyMod.OfflineTests.csproj
 ```
 
-Create a .NET Framework 4.8 (or 4.8.1) xUnit v2 project, import
+To follow unreleased changes, use this repository as a Git submodule instead: import
 `external/wotr-testing/src/WotR.Testing.Offline/build/WotR.Testing.Offline.targets`,
-reference `WotR.Testing.Offline.csproj`, set `WotrModAssembly` to your built mod and
-add a `WotrDependencyMod` item for each mod it requires.
-See the [library README](src/WotR.Testing.Offline/README.md) for a complete project
-and the API, and [docs/offline.md](docs/offline.md) for how it works, every
-environment adaptation and the known limits.
-
-```powershell
-pwsh -NoProfile -File external/wotr-testing/scripts/Invoke-WotrOfflineTests.ps1 -Project tests/MyMod.OfflineTests/MyMod.OfflineTests.csproj
-```
+reference `WotR.Testing.Offline.csproj` and run
+`external/wotr-testing/scripts/Invoke-WotrOfflineTests.ps1`. See the
+[library README](src/WotR.Testing.Offline/README.md) for complete projects and the
+API, and [docs/offline.md](docs/offline.md) for how it works, every environment
+adaptation and the known limits.
 
 The tests run on the game's own Mono runtime by default; `-Runtime netfx` uses .NET
 Framework instead, with the differences listed in

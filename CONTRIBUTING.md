@@ -2,8 +2,7 @@
 
 Read [README.md](README.md), [CLAUDE.md](CLAUDE.md) and [docs/offline.md](docs/offline.md)
 before changing behavior. Report bugs and request features in
-[GitHub Issues](https://github.com/Acture/wotr-testing/issues); the maintainer
-tracks planned work in Linear.
+[GitHub Issues](https://github.com/Acture/wotr-testing/issues).
 
 Make one focused change and preserve unrelated edits. Run the repository checks in
 [CLAUDE.md](CLAUDE.md), build the solution against your own WotR installation and

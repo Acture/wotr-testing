@@ -1,7 +1,7 @@
 # Project status
 
-`WotR.Testing.Offline` is pre-release. Tasks and decisions live in the Linear
-project `wotr-testing`; this file records verified behavior and its limits.
+`WotR.Testing.Offline` is pre-release. This file records verified behavior and its
+limits.
 
 | Scope | Evidence | Limitation |
 | --- | --- | --- |

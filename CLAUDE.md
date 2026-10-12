@@ -66,16 +66,12 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   with a mod that has a dependency mod (TabletopTweaks-Base with -Core).
   Point its submodule at a local branch to test before publishing. Do not claim
   untested behavior has passed.
-- Public CI has no game files and cannot build this repository yet (OSS-358).
+- Public CI has no game files and cannot build this repository yet.
 - Use CLI and code; do not use computer use or launch the game for offline work.
 
-## Tracking and changes
+## Changes
 
-- Linear project `wotr-testing` under initiative "WotR 模组开发" (team Open Source)
-  owns tasks, dependencies and decisions; this repository owns implementation and
-  evidence. Next work: OSS-358 (try a second, structurally different mod, then
-  NuGet and a `dotnet new` template), related OSS-48, OSS-61, OSS-26 (in-game
-  host), OSS-23 (headless launch). Verified game version: 2.7.0.
+- Verified game version: 2.7.0.
 - Write verified outcomes and their limits to `STATUS.md`; user-visible changes,
   breaking changes and migration steps to `CHANGELOG.md`.
 - Focused branches and concrete diffs. Do not add AI co-author lines. Obtain

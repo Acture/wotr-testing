@@ -72,7 +72,7 @@ repository because it has no game files.
 | `docs/` | Public documentation ([index](docs/README.md)) |
 | `data/` | No datasets; game files never belong in this repository |
 | `.github/` | CI, pull request template and CODEOWNERS |
-| [`STATUS.md`](STATUS.md) | Verified behavior and its limits |
+| `notes/` | Optional private verification records; not required to build or test |
 | [`CHANGELOG.md`](CHANGELOG.md) | User-visible changes |
 
 Report bugs and request features in GitHub Issues; see [contributing](CONTRIBUTING.md)

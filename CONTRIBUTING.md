@@ -25,9 +25,21 @@ maintainer machine:
    allowlist, so no game file can be published.
 3. Verify the packages from a local feed in a test project that references only
    `WotR.Testing`, on both runtimes.
-4. Push `WotR.Testing.Offline` first, then `WotR.Testing`:
-   `dotnet nuget push artifacts/packages/<package>.<version>.nupkg --source https://api.nuget.org/v3/index.json --api-key <key>`.
-   Published versions cannot be deleted, only unlisted.
+4. Create a draft GitHub release with tag `v<version>` and the full build commit
+   SHA as its target. Upload only the two verified `.nupkg` files as its assets;
+   never upload build folders, game files or consumer reports.
+5. Run `.github/workflows/release.yml` from `main` with that tag, first with
+   `publish` disabled to verify the uploaded packages, then enabled to publish.
+   It verifies package identities, versions, source commit and existing content allowlists,
+   then publishes `WotR.Testing.Offline` before `WotR.Testing`. It does not build
+   against the game or check out private notes. NuGet.org trusted publishing must
+   name repository `Acture/wotr-testing`, workflow file `release.yml`, package
+   owner `acture`, pattern `wotr.testing*`, and allow new packages and versions.
+   Leave the policy's environment empty. The workflow obtains a temporary key
+   through GitHub OIDC; no long-lived API key is needed.
+
+Published NuGet versions cannot be deleted, only unlisted. A failed publication
+stops the workflow; inspect which packages were accepted before retrying.
 
 Never attach game files or snapshots of them (DLLs, bundles, localization files) to
 commits, pull requests, issues or test reports. Keep `GamePath.props`, credentials

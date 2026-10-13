@@ -16,7 +16,6 @@ REQUIRED: tuple[str, ...] = (
 	".github/copilot-instructions.md",
 	"CONTRIBUTING.md",
 	"LICENSE",
-	"STATUS.md",
 	"docs/README.md",
 	"data/README.md",
 	"src/README.md",

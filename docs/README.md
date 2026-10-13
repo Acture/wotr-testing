@@ -4,7 +4,6 @@
   boundaries and known limits
 - [WotR.Testing.Offline library](../src/WotR.Testing.Offline/README.md): project
   setup, build properties and API
-- [Repository status](../STATUS.md)
 - [Changelog](../CHANGELOG.md)
 - [Contributing](../CONTRIBUTING.md)
 

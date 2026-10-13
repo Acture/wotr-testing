@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0-preview.1 - 2026-10-14
+
 - NuGet packages (first preview `0.1.0-preview.1`): `WotR.Testing`, a meta-package
   that references the components, and `WotR.Testing.Offline` with the library, its
   build targets (imported automatically, also through `WotR.Testing`), and in
@@ -13,7 +15,7 @@
 - `WotR.Testing.Offline` extracted from the AttributeFeats offline tests: real WotR
   2.7.0 assemblies, blueprint pack, settings and enGB localization; mods loaded
   through their `Info.json` entry method; classified results and `environment.json`
-  reports. Consumed as a Git submodule; no package has been released.
+  reports. Available as preview NuGet packages or a Git submodule.
 - Tests run on the game's own Unity Mono runtime by default (`-Runtime mono`,
   through `WotR.Testing.MonoHost` and the xUnit v2 console runner); `-Runtime netfx`
   keeps the .NET Framework mode. **Breaking:** projects that used another test
@@ -40,3 +42,8 @@
   copy in load order is used, with a warning that the game may use another copy. The runner
   warns when BlueprintCore is older than the latest release. Warnings never fail a
   run.
+- Verification records moved from root `STATUS.md` to the optional private
+  `notes/` submodule. Public builds and repository checks do not require it.
+- NuGet release workflow: locally built packages are checked again and published
+  through GitHub OIDC trusted publishing, without uploading game files or using
+  a long-lived API key.

@@ -1,7 +1,7 @@
 # wotr-testing development
 
 Test tooling for Pathfinder: Wrath of the Righteous mods. Public repository,
-AGPL-3.0. Read [README.md](README.md), [STATUS.md](STATUS.md),
+AGPL-3.0. Read [README.md](README.md),
 [docs/README.md](docs/README.md) and [docs/offline.md](docs/offline.md) before
 changing behavior. CLAUDE.md is the single real instruction file: `AGENTS.md` points
 to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
@@ -22,6 +22,8 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   synthetic fixtures (`tests/fixtures/`) once they exist.
 - `docs/`: public documentation. `data/`: no datasets; game files never go there.
 - `.github/`: CI, pull request template and CODEOWNERS.
+- `notes/`: optional private notes submodule; public builds and checks must not
+  require it.
 - Build outputs go to ignored `artifacts/`. Keep the local `GamePath.props`
   (`WrathInstallDir`) at the root and untracked.
 
@@ -72,7 +74,8 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
 ## Changes
 
 - Verified game version: 2.7.0.
-- Write verified outcomes and their limits to `STATUS.md`; user-visible changes,
+- Write verified outcomes and their limits to `notes/STATUS.md` when the private
+  notes submodule is available; user-visible changes,
   breaking changes and migration steps to `CHANGELOG.md`.
 - Focused branches and concrete diffs. Do not add AI co-author lines. Obtain
   authorization for commits, pushes, PRs, history rewrites and branch deletion.

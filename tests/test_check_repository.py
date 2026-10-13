@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import unittest
 
-from check_repository import Entry, boundary_errors
+from check_repository import REQUIRED, Entry, boundary_errors
 
 
 class BoundaryTests(unittest.TestCase):
+	def test_private_status_is_not_required_for_public_checks(self) -> None:
+		self.assertNotIn("STATUS.md", REQUIRED)
+		self.assertNotIn("notes/STATUS.md", REQUIRED)
+
 	def test_public_documents_and_environment_examples_are_allowed(self) -> None:
 		entries: list[Entry] = [Entry("100644", "docs/usage.md"), Entry("100644", ".env.example")]
 		self.assertEqual(boundary_errors(entries), [])

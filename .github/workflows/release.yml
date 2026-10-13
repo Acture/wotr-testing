@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Draft release tag containing the two locally built packages
+        required: true
+        type: string
+      publish:
+        description: Publish to NuGet after verification (false only verifies)
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nuget-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Acture/wotr-testing' && github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # Required to read draft releases.
+      id-token: write
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          submodules: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Download and verify the locally built packages
+        run: |
+          $ErrorActionPreference = 'Stop'
+          [xml]$properties = Get-Content -LiteralPath Directory.Build.props -Raw
+          $version = [string]$properties.Project.PropertyGroup.Version
+          if ($env:RELEASE_TAG -cne "v$version") { throw 'Release tag must match the repository package version.' }
+          $releaseJson = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json tagName,targetCommitish,assets,isDraft
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read the draft release.' }
+          $release = $releaseJson | ConvertFrom-Json
+          if (-not $release.isDraft -or $release.tagName -cne $env:RELEASE_TAG) { throw 'Expected the matching draft release.' }
+          if ($release.targetCommitish -cne $env:GITHUB_SHA) { throw 'Draft release must target the exact workflow commit SHA.' }
+          $packageDirectory = Join-Path $env:RUNNER_TEMP 'wotr-release-packages'
+          New-Item -ItemType Directory -Path $packageDirectory | Out-Null
+          $packageIds = @('WotR.Testing.Offline', 'WotR.Testing')
+          $expectedAssets = @($packageIds | ForEach-Object { "$($_).$version.nupkg" })
+          $assetDifference = Compare-Object -ReferenceObject $expectedAssets -DifferenceObject @($release.assets.name)
+          if ($assetDifference) { throw 'Draft release must contain exactly the two expected NuGet packages.' }
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir $packageDirectory --pattern $expectedAssets[0] --pattern $expectedAssets[1]
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download both NuGet packages.' }
+          foreach ($packageId in $packageIds) {
+            $package = Join-Path $packageDirectory "$packageId.$version.nupkg"
+            $archive = [IO.Compression.ZipFile]::OpenRead($package)
+            try {
+              $entry = $archive.GetEntry("$packageId.nuspec")
+              if ($null -eq $entry) { throw "Missing package metadata: $packageId" }
+              $reader = [IO.StreamReader]::new($entry.Open())
+              try { [xml]$nuspec = $reader.ReadToEnd() } finally { $reader.Dispose() }
+              $metadata = $nuspec.package.metadata
+              if ($metadata.id -cne $packageId -or $metadata.version -cne $version) { throw 'Package identity or version mismatch.' }
+              if ($metadata.repository.url -cne 'https://github.com/Acture/wotr-testing' -or $metadata.repository.commit -cne $env:GITHUB_SHA) { throw 'Package source commit mismatch.' }
+              if ($packageId -eq 'WotR.Testing') {
+                $dependency = @($metadata.dependencies.group.dependency)
+                if ($dependency.Count -ne 1 -or $dependency[0].id -cne 'WotR.Testing.Offline' -or $dependency[0].version -cne $version) { throw 'Meta-package must reference the matching offline component.' }
+              }
+            } finally { $archive.Dispose() }
+            dotnet msbuild "src/$packageId/$packageId.csproj" -target:VerifyWotrPackage "-property:PackageVersion=$version" "-property:PackageOutputAbsolutePath=$packageDirectory" -property:Configuration=Release
+            if ($LASTEXITCODE -ne 0) { throw "Package content check failed: $packageId" }
+          }
+          "WOTR_RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+          "WOTR_RELEASE_PACKAGES=$packageDirectory" >> $env:GITHUB_ENV
+      - name: Get a temporary NuGet publishing key
+        if: inputs.publish
+        id: login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        with:
+          user: acture
+      - name: Publish offline component, then meta-package
+        if: inputs.publish
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($packageId in @('WotR.Testing.Offline', 'WotR.Testing')) {
+            $package = Join-Path $env:WOTR_RELEASE_PACKAGES "$packageId.$env:WOTR_RELEASE_VERSION.nupkg"
+            dotnet nuget push $package --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json
+            if ($LASTEXITCODE -ne 0) { throw "NuGet publication failed: $packageId" }
+          }

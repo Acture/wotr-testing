@@ -18,6 +18,10 @@
       WotrXunitConsoleVersion  xUnit v2 console runner used by Invoke-WotrOfflineTests.ps1 -Runtime mono (default 2.9.2).
       WotrDlc                Which DLCs are available offline: all (default), none, local (installed in the Steam library)
                              or a comma-separated list of DLC blueprint names (Dlc4,Dlc6). WOTR_DLC overrides at run time.
+      WotrHarmony            The 0Harmony.dll the run loads: umm (default, UnityModManager's copy), game (the game's own
+                             Wrath_Data/Managed copy) or a file path. WOTR_HARMONY overrides at run time.
+      WotrHarmonyReference   Items: Harmony copies (umm, game or file paths) mods are compared with; missing members are
+                             warned. Default: game. WOTR_HARMONY_REFERENCES ('|'-separated) overrides at run time.
       WotrGenerateModuleInitializer  false to skip the generated module initializer (then call
                              OfflineRuntime.InstallResolver() from your own before any game type is touched).
   -->
@@ -33,6 +37,7 @@
     <WotrWorkDirectory Condition="'$(WotrWorkDirectory)'==''">$(BaseIntermediateOutputPath)wotr/</WotrWorkDirectory>
     <WotrXunitConsoleVersion Condition="'$(WotrXunitConsoleVersion)'==''">2.9.2</WotrXunitConsoleVersion>
     <WotrDlc Condition="'$(WotrDlc)'==''">all</WotrDlc>
+    <WotrHarmony Condition="'$(WotrHarmony)'==''">umm</WotrHarmony>
     <!-- Runner and snapshot scripts: tools/ in the NuGet package, scripts/ in the source repository. -->
     <WotrToolsDirectory Condition="'$(WotrToolsDirectory)'=='' and Exists('$(MSBuildThisFileDirectory)../tools/Invoke-WotrOfflineTests.ps1')">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/'))</WotrToolsDirectory>
     <WotrToolsDirectory Condition="'$(WotrToolsDirectory)'==''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../scripts/'))</WotrToolsDirectory>
@@ -74,12 +79,18 @@
       <WotrReportDirectory Condition="'$(WotrReportDirectory)'==''">$(OutDir)wotr-reports/</WotrReportDirectory>
       <!-- '|'-separated: WriteLinesToFile would split a ';' list into lines. -->
       <_WotrDependencyMods>@(WotrDependencyMod->'%(FullPath)', '|')</_WotrDependencyMods>
+      <_WotrHarmony>$(WotrHarmony)</_WotrHarmony>
+      <_WotrHarmony Condition="'$(WotrHarmony)'!='umm' and '$(WotrHarmony)'!='game'">$([System.IO.Path]::GetFullPath('$(WotrHarmony)'))</_WotrHarmony>
+      <_WotrHarmonyReferences>@(WotrHarmonyReference->'%(Identity)', '|')</_WotrHarmonyReferences>
+      <_WotrHarmonyReferences Condition="'$(_WotrHarmonyReferences)'==''">game</_WotrHarmonyReferences>
       <_WotrInputsJson>{
   "inputRoot": "$([System.IO.Path]::GetFullPath('$(WotrInputRoot)').Replace('\','/'))",
   "modAssembly": "$([System.IO.Path]::GetFullPath('$(WotrModAssembly)').Replace('\','/'))",
   "dependencyMods": "$(_WotrDependencyMods.Replace('\','/'))",
   "workDirectory": "$([System.IO.Path]::GetFullPath('$(WotrWorkDirectory)').Replace('\','/'))",
   "dlc": "$(WotrDlc.Replace(';', ','))",
+  "harmony": "$(_WotrHarmony.Replace('\','/'))",
+  "harmonyReferences": "$(_WotrHarmonyReferences.Replace('\','/'))",
   "reportDirectory": "$([System.IO.Path]::GetFullPath('$(WotrReportDirectory)').Replace('\','/'))"
 }</_WotrInputsJson>
     </PropertyGroup>

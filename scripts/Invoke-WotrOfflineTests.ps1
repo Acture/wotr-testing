@@ -19,7 +19,13 @@ param(
     # A run in which fewer tests pass (for example because every test was skipped as unity-runtime-required) fails.
     [ValidateRange(1, [int]::MaxValue)][int]$MinimumPassed = 1,
     # Skip the NuGet lookup that warns when a mod uses an older BlueprintCore than the latest release.
-    [switch]$NoUpdateCheck
+    [switch]$NoUpdateCheck,
+    # The 0Harmony.dll the run loads: umm (UnityModManager's copy, the default), game (the game's own Wrath_Data/Managed
+    # copy), a file path, or a Lib.Harmony version restored from NuGet (2.2.2, or 2.2.2/net35 for one target framework).
+    [string]$Harmony,
+    # Harmony copies the mods are compared with, in the same forms (an array or comma-separated); members they lack are
+    # warned. Default: game.
+    [string[]]$HarmonyReference
 )
 
 $ErrorActionPreference = 'Stop'
@@ -88,6 +94,52 @@ function New-MonoClassLibrary([string]$Managed, [string]$WorkDirectory) {
     return $directory
 }
 
+# umm, game and file paths are passed on; a version is restored as the Lib.Harmony NuGet package (like any package
+# reference, so NuGet verifies its signature) and its 0Harmony.dll used. Lib.Harmony builds per target framework
+# differ; without one, the first of net48, net472, net45, net452 and net35 the package has is used.
+function Resolve-HarmonyCopy([string]$Value) {
+    if ($Value -in 'umm', 'game') { return $Value }
+    if ($Value -notmatch '^(\d+\.\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.]+)?)(?:/([0-9A-Za-z.]+))?$') {
+        if (-not (Test-Path -LiteralPath $Value -PathType Leaf)) { throw "[ENV_MISSING] Harmony copy not found: $Value. Use umm, game, a 0Harmony.dll path or a Lib.Harmony version." }
+        return (Resolve-Path -LiteralPath $Value).Path
+    }
+    $version = $Matches[1]
+    $framework = $Matches[2]
+    $package = Join-Path (Get-ProjectProperty 'NuGetPackageRoot') "lib.harmony/$($version.ToLowerInvariant())"
+    if (-not (Test-Path -LiteralPath (Join-Path $package 'lib'))) {
+        $restore = Join-Path ([System.IO.Path]::GetTempPath()) "wotr-harmony-$([guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Force -Path $restore | Out-Null
+        try {
+            "<Project Sdk=`"Microsoft.NET.Sdk`"><PropertyGroup><TargetFramework>net48</TargetFramework></PropertyGroup><ItemGroup><PackageDownload Include=`"Lib.Harmony`" Version=`"[$version]`" /></ItemGroup></Project>" |
+                Set-Content -LiteralPath (Join-Path $restore 'restore.csproj') -Encoding utf8
+            & dotnet restore (Join-Path $restore 'restore.csproj') -nologo -v quiet | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw "[ENV_MISSING] Lib.Harmony $version could not be restored from NuGet." }
+        }
+        finally { Remove-Item -LiteralPath $restore -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+    $frameworks = if ($framework) { @($framework) } else { @('net48', 'net472', 'net45', 'net452', 'net35') }
+    foreach ($candidate in $frameworks) {
+        $path = Join-Path $package "lib/$candidate/0Harmony.dll"
+        if (Test-Path -LiteralPath $path) { return $path }
+    }
+    throw "[ENV_MISSING] Lib.Harmony $version has no 0Harmony.dll for $($frameworks -join ', ')."
+}
+
+# Passed to the test process as WOTR_HARMONY and WOTR_HARMONY_REFERENCES; restored after the run.
+$ready = $built
+$savedHarmony = @{ WOTR_HARMONY = $env:WOTR_HARMONY; WOTR_HARMONY_REFERENCES = $env:WOTR_HARMONY_REFERENCES }
+if ($built) {
+    try {
+        if ($Harmony) { $env:WOTR_HARMONY = Resolve-HarmonyCopy $Harmony }
+        # Comma-separated values too: pwsh -File passes an array argument as one string.
+        if ($HarmonyReference) { $env:WOTR_HARMONY_REFERENCES = @($HarmonyReference -split ',' | Where-Object { $_.Trim() } | ForEach-Object { Resolve-HarmonyCopy $_.Trim() }) -join '|' }
+    }
+    catch {
+        $problems.Add($_.Exception.Message)
+        $ready = $false
+    }
+}
+
 # Arguments are passed one by one (ProcessStartInfo.ArgumentList), so paths with spaces are quoted correctly.
 $testExitCode = $null
 function Invoke-Process([string]$FilePath, [string[]]$Arguments) {
@@ -103,7 +155,7 @@ function Invoke-Process([string]$FilePath, [string[]]$Arguments) {
     $script:testExitCode = $process.ExitCode
 }
 
-if ($built -and $Runtime -eq 'mono') {
+if ($ready -and $Runtime -eq 'mono') {
     $env:WOTR_OFFLINE_REPORT_DIR = $ResultsDirectory
     try {
         $targetPath = Get-ProjectProperty 'TargetPath'
@@ -142,7 +194,7 @@ if ($built -and $Runtime -eq 'mono') {
     }
 }
 
-if ($built -and $Runtime -eq 'netfx') {
+if ($ready -and $Runtime -eq 'netfx') {
     $env:WOTR_OFFLINE_REPORT_DIR = $ResultsDirectory
     try {
         $arguments = @('test', $project, '--no-build', '--configuration', $Configuration,
@@ -154,6 +206,11 @@ if ($built -and $Runtime -eq 'netfx') {
     finally {
         Remove-Item Env:WOTR_OFFLINE_REPORT_DIR -ErrorAction SilentlyContinue
     }
+}
+
+foreach ($entry in $savedHarmony.GetEnumerator()) {
+    if ($null -eq $entry.Value) { Remove-Item -Path "Env:$($entry.Key)" -ErrorAction SilentlyContinue }
+    else { Set-Item -Path "Env:$($entry.Key)" -Value $entry.Value }
 }
 
 function Get-Classification([string]$Outcome, [string]$Message) {
@@ -184,7 +241,7 @@ if ($Runtime -eq 'mono') {
         }
         foreach ($failure in $xunit.SelectNodes('//errors/error')) { $problems.Add("xUnit $($failure.type) error: $($failure.SelectSingleNode('failure/message')?.InnerText)") }
     }
-    elseif ($built -and $problems.Count -eq 0) {
+    elseif ($ready -and $problems.Count -eq 0) {
         $problems.Add('Missing report: the xUnit XML report was not written.')
     }
 }
@@ -205,17 +262,19 @@ elseif (Test-Path -LiteralPath $trxPath) {
         })
     }
 }
-elseif ($built) {
+elseif ($ready) {
     $problems.Add('Missing report: the TRX test report was not written.')
 }
 
-if ($built -and $results.Count -eq 0) { $problems.Add('Zero tests: no test results were reported.') }
-if ($built -and -not (Test-Path -LiteralPath $environmentPath)) { $problems.Add('Missing report: environment.json was not written by the test fixture.') }
+if ($ready -and $results.Count -eq 0) { $problems.Add('Zero tests: no test results were reported.') }
+if ($ready -and -not (Test-Path -LiteralPath $environmentPath)) { $problems.Add('Missing report: environment.json was not written by the test fixture.') }
 
 # Warnings never fail the run: they point at differences a player's game may have.
 $warnings = [System.Collections.Generic.List[string]]::new()
+$harmonyUsed = $null
 if (Test-Path -LiteralPath $environmentPath) {
     $environment = Get-Content -LiteralPath $environmentPath -Raw | ConvertFrom-Json
+    $harmonyUsed = $environment.harmony?.used
     foreach ($warning in @($environment.warnings)) { if ($warning) { $warnings.Add($warning) } }
     $blueprintCore = @($environment.libraries | Where-Object { $_.name -eq 'BlueprintCore.dll' -and $_.version }) | Select-Object -First 1
     if ($blueprintCore -and -not $NoUpdateCheck -and -not $env:WOTR_NO_UPDATE_CHECK) {
@@ -238,7 +297,7 @@ if ($null -ne $testExitCode -and $testExitCode -ne 0 -and $blocking.Count -eq 0)
     $problems.Add("The test process exited with code $testExitCode although no failing result was reported.")
 }
 $passedCount = @($results | Where-Object { $_.classification -eq 'passed' }).Count
-if ($built -and $results.Count -gt 0 -and $passedCount -lt $MinimumPassed) {
+if ($ready -and $results.Count -gt 0 -and $passedCount -lt $MinimumPassed) {
     $problems.Add("Too few passed tests: $passedCount passed, at least $MinimumPassed required (skipped tests do not count).")
 }
 $passed = $problems.Count -eq 0 -and $blocking.Count -eq 0
@@ -251,6 +310,7 @@ $summary = [ordered]@{
     finishedAt = (Get-Date).ToUniversalTime().ToString('o')
     configuration = $Configuration
     runtime = $Runtime
+    harmony = $harmonyUsed
     testExitCode = $testExitCode
     sourceCommit = $commit
     sourceHasUncommittedChanges = $dirty
@@ -265,7 +325,8 @@ $summary | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $Result
 $lines = [System.Collections.Generic.List[string]]::new()
 $lines.Add('# WotR offline test summary')
 $lines.Add('')
-$lines.Add("Result: **$(if ($passed) { 'PASS' } else { 'FAIL' })** · runtime $Runtime · commit $commit$(if ($dirty) { ' (uncommitted changes)' })")
+$harmonyText = if ($harmonyUsed) { " · Harmony $($harmonyUsed.version) ($($harmonyUsed.source))" } else { '' }
+$lines.Add("Result: **$(if ($passed) { 'PASS' } else { 'FAIL' })** · runtime $Runtime$harmonyText · commit $commit$(if ($dirty) { ' (uncommitted changes)' })")
 $lines.Add('')
 $lines.Add('| Classification | Tests |')
 $lines.Add('| --- | ---: |')
@@ -290,4 +351,4 @@ foreach ($problem in $problems) { Write-Host "FAIL: $problem" }
 foreach ($result in $blocking) { Write-Host "FAIL: [$($result.classification)] $($result.name)" }
 Write-Host "Reports: $ResultsDirectory"
 if (-not $passed) { exit 1 }
-Write-Host "PASS: WotR offline tests ($Runtime)"
+Write-Host "PASS: WotR offline tests ($Runtime$harmonyText)"

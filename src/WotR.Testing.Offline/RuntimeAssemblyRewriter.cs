@@ -172,6 +172,16 @@ namespace WotR.Testing.Offline
             il.Emit(OpCodes.Ldstr, $"{NativeMarker}: {type.FullName}::{method.Name}");
             il.Emit(OpCodes.Newobj, notSupported);
             il.Emit(OpCodes.Throw);
+            // Unreachable return: Harmony before 2.1 emits invalid IL when patching a method that ends in throw, and
+            // these methods are patched by boundaries (for example Application.dataPath), also with -Harmony game.
+            if (!returnsVoid)
+            {
+                var result = new VariableDefinition(method.ReturnType);
+                method.Body.Variables.Add(result);
+                method.Body.InitLocals = true;
+                il.Emit(OpCodes.Ldloc, result);
+            }
+            il.Emit(OpCodes.Ret);
             summary.ThrowingInternalCalls++;
         }
 

@@ -18,7 +18,7 @@ namespace WotR.Testing.Offline
     public static class OfflineRuntime
     {
         // Bump when RuntimeAssemblyRewriter changes, so cached runtime folders are rebuilt.
-        private const string RewriterVersion = "2";
+        private const string RewriterVersion = "3";
 
         private static readonly object Gate = new();
         private static string runtimeDirectory;
@@ -52,6 +52,9 @@ namespace WotR.Testing.Offline
 
         /// <summary>The copy of each private library this run uses: file name, file version and source path.</summary>
         public static IReadOnlyList<ModLibrary> ModLibraries { get; private set; } = Array.Empty<ModLibrary>();
+
+        /// <summary>The 0Harmony.dll this run uses and the Harmony members mods reference that other copies lack.</summary>
+        public static HarmonyReport Harmony { get; private set; }
 
         private static int resolverInstalled;
         private static Exception prepareError;
@@ -157,11 +160,15 @@ namespace WotR.Testing.Offline
                             + "which depends on which mod first uses the library at run time, so results may differ with the other copy.");
                 }
                 dependencies.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(Path.GetFileName(a), Path.GetFileName(b)));
+                var harmonyPath = HarmonyCompatibility.Resolve(Inputs.Harmony, managed);
+                var harmony = HarmonyCompatibility.Describe(Inputs.Harmony, harmonyPath);
+                var references = Inputs.HarmonyReferences.Select(r => HarmonyCompatibility.Describe(r, HarmonyCompatibility.Resolve(r, managed)));
+                Harmony = HarmonyCompatibility.Compare(managed, harmony, references, modAssemblies.Concat(dependencies).ToList(), warnings);
 
                 // On .NET Framework, assemblies compiled against a publicized Assembly-CSharp (mods or libraries like
                 // BlueprintCore) decide which game members must become public, so they are part of the cache key.
                 var consumers = IsUnityMono ? Array.Empty<string>() : modAssemblies.Concat(dependencies).Where(RuntimeAssemblyRewriter.ReferencesGame).ToArray();
-                var key = Hash(string.Join("|", new[] { RewriterVersion, RuntimeKind, Inputs.Identity.AssemblyCSharpSha256 }
+                var key = Hash(string.Join("|", new[] { RewriterVersion, RuntimeKind, Inputs.Identity.AssemblyCSharpSha256, harmony.Sha256 }
                     .Concat(consumers.Select(FileSha256))
                     .Concat(Directory.GetFiles(managed, "*.dll").OrderBy(p => p, StringComparer.Ordinal).Select(p => $"{Path.GetFileName(p)}:{new FileInfo(p).Length}"))));
                 var directory = Path.Combine(Inputs.WorkDirectory, "runtime", key.Substring(0, 16));
@@ -171,6 +178,7 @@ namespace WotR.Testing.Offline
                     var staging = directory + ".tmp-" + Guid.NewGuid().ToString("N");
                     var summary = RuntimeAssemblyRewriter.Generate(managed, staging, consumers);
                     foreach (var file in Directory.GetFiles(umm, "*.dll")) File.Copy(file, Path.Combine(staging, Path.GetFileName(file)), true);
+                    File.Copy(harmonyPath, Path.Combine(staging, "0Harmony.dll"), true);
                     File.WriteAllText(Path.Combine(staging, "rewrite-summary.json"), JsonSerializer.Serialize(summary, Report.JsonOptions));
                     if (Directory.Exists(directory)) Directory.Delete(directory, true);
                     Directory.Move(staging, directory);
@@ -313,6 +321,15 @@ namespace WotR.Testing.Offline
         /// <summary>WotrDlc / WOTR_DLC: all (default), none, local or a comma-separated list of DLC names.</summary>
         public string Dlc { get; private set; }
 
+        /// <summary>
+        /// WotrHarmony / WOTR_HARMONY: the 0Harmony.dll the run loads, umm (default, UnityModManager's copy), game
+        /// (Wrath_Data/Managed) or a file path.
+        /// </summary>
+        public string Harmony { get; private set; }
+
+        /// <summary>WotrHarmonyReference / WOTR_HARMONY_REFERENCES: copies mods are compared with (default: game).</summary>
+        public IReadOnlyList<string> HarmonyReferences { get; private set; } = Array.Empty<string>();
+
         /// <summary>Other mods loaded with it (WotrDependencyMod), in declaration order.</summary>
         public IReadOnlyList<string> DependencyMods { get; private set; } = Array.Empty<string>();
 
@@ -340,6 +357,9 @@ namespace WotR.Testing.Offline
                 WorkDirectory = Path.GetFullPath((string)config["workDirectory"]),
                 Dlc = Environment.GetEnvironmentVariable(OfflineDlc.Variable) is { Length: > 0 } dlc ? dlc : (string)config["dlc"] ?? "all",
                 ReportDirectory = Path.GetFullPath(Environment.GetEnvironmentVariable(ReportDirectoryVariable) is { Length: > 0 } reports ? reports : (string)config["reportDirectory"]),
+                Harmony = Environment.GetEnvironmentVariable(HarmonyCompatibility.HarmonyVariable) is { Length: > 0 } harmony ? harmony : (string)config["harmony"] ?? HarmonyCompatibility.Umm,
+                HarmonyReferences = (Environment.GetEnvironmentVariable(HarmonyCompatibility.ReferencesVariable) is { Length: > 0 } harmonyReferences ? harmonyReferences : (string)config["harmonyReferences"] ?? HarmonyCompatibility.Game)
+                    .Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries).Select(r => r.Trim()).Where(r => r.Length > 0).ToList(),
             };
             inputs.Source = File.Exists(Path.Combine(inputs.InputRoot, "manifest.json")) ? "snapshot" : "installation";
             foreach (var required in new[]

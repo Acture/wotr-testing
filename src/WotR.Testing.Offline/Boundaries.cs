@@ -164,26 +164,29 @@ namespace WotR.Testing.Offline
         }
     }
 
+    // Explicit parameters instead of __args, which Harmony before 2.1 cannot inject (-Harmony game is 2.0.4).
     [HarmonyPatch]
     internal static class UnityLogPatch
     {
-        private static IEnumerable<MethodBase> TargetMethods()
-        {
-            var handler = AccessTools.TypeByName("UnityEngine.DebugLogHandler");
-            yield return AccessTools.Method(handler, "Internal_Log");
-            yield return AccessTools.Method(handler, "Internal_LogException");
-        }
+        private static MethodBase TargetMethod() => AccessTools.Method(AccessTools.TypeByName("UnityEngine.DebugLogHandler"), "Internal_Log");
 
-        private static bool Prefix(object[] __args)
+        private static bool Prefix(UnityEngine.LogType level, string msg)
         {
             Boundaries.Hit("unity-log");
-            HarnessState.Logs.Enqueue(new CapturedLog
-            {
-                Source = "unity",
-                Severity = __args[0] is Exception ? "Exception" : __args[0]?.ToString(),
-                Message = __args.Length > 2 ? __args[2]?.ToString() : null,
-                Exception = (__args[0] as Exception)?.ToString(),
-            });
+            HarnessState.Logs.Enqueue(new CapturedLog { Source = "unity", Severity = level.ToString(), Message = msg });
+            return false;
+        }
+    }
+
+    [HarmonyPatch]
+    internal static class UnityLogExceptionPatch
+    {
+        private static MethodBase TargetMethod() => AccessTools.Method(AccessTools.TypeByName("UnityEngine.DebugLogHandler"), "Internal_LogException");
+
+        private static bool Prefix(Exception ex)
+        {
+            Boundaries.Hit("unity-log");
+            HarnessState.Logs.Enqueue(new CapturedLog { Source = "unity", Severity = "Exception", Exception = ex?.ToString() });
             return false;
         }
     }

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Harmony copies: `-Harmony` (`WotrHarmony`, `WOTR_HARMONY`) chooses the
+  `0Harmony.dll` a run loads: `umm` (default, as before), `game` (the game's own
+  2.0.4), a file, or on the runner a `Lib.Harmony` NuGet version (`2.2.2`,
+  `2.2.2/net35`). Mods and their libraries are compared with `-HarmonyReference`
+  copies (default `game`); members a copy lacks are warned and listed in
+  `environment.json` (`harmony`). A mod calling `CodeInstruction.LoadArgument`
+  passed with UnityModManager's 2.3.6 but fails at `mod-load` with `-Harmony game`,
+  as it does in such a game.
+- The library's own patches work on Harmony 2.0.4: the Unity log boundary no longer
+  uses `__args`, and rewritten internal calls end with an unreachable return. Runtime
+  folders are rebuilt once.
+
 ## 0.1.0-preview.1 - 2026-10-14
 
 - NuGet packages (first preview `0.1.0-preview.1`): `WotR.Testing`, a meta-package

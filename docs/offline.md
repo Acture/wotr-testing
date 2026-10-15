@@ -120,9 +120,11 @@ the first and last 20 lines, with consecutive repeats collapsed into one line an
 count.
 
 Warnings never fail a run. They cover differences a player's game may have: mods
-shipping different copies of one library, and a BlueprintCore copy older than the
+shipping different copies of one library, a BlueprintCore copy older than the
 latest NuGet release (`WW-Blueprint-Core`; skipped with `-NoUpdateCheck` or
-`WOTR_NO_UPDATE_CHECK=1`, and when BlueprintCore is merged into the mod assembly).
+`WOTR_NO_UPDATE_CHECK=1`, and when BlueprintCore is merged into the mod assembly),
+and Harmony members that mods reference but a reference Harmony copy lacks (see
+[Harmony copies](#harmony-copies)).
 
 Every result is classified:
 
@@ -176,6 +178,41 @@ Differences on .NET Framework, which do not apply on `mono`:
   type instantiation on .NET Framework (`NotImplementedException` from its detour).
   The mod then fails at `[INIT_FAILED] mod-load`; nothing is skipped. Use `mono`.
 
+## Harmony copies
+
+Every mod binds to whichever `0Harmony` assembly is loaded first, and players' games
+have several. WotR 2.7.0 ships Harmony 2.0.4 in `Wrath_Data/Managed` (byte-identical
+to the `net45` build of the `Lib.Harmony` 2.0.4 NuGet package), and each
+UnityModManager release ships its own: 0.32.4 has 2.3.6 (the `net48` build of
+`Lib.Harmony` 2.3.6); its changelog names 2.0.1 for 0.22.1 and 2.0.2 for 0.22.9. The
+run cannot know which copy a player's game loads, so it lets you choose the copy it
+uses and compares the mods with others.
+
+| Runner | Build property / variable | Values |
+|---|---|---|
+| `-Harmony` | `WotrHarmony` / `WOTR_HARMONY` | The copy the run loads: `umm` (default), `game`, a `0Harmony.dll` path; on the runner also a `Lib.Harmony` version |
+| `-HarmonyReference` | `WotrHarmonyReference` items / `WOTR_HARMONY_REFERENCES` (`\|`-separated) | Copies the mods and their libraries are compared with, in the same forms (default `game`) |
+
+A version such as `2.2.2` is restored as the `Lib.Harmony` NuGet package (NuGet
+verifies its signature) and its `0Harmony.dll` used: the first of `net48`, `net472`,
+`net45`, `net452` and `net35` it contains, or the one named as in `2.2.2/net35`. Builds
+for different target frameworks are different files, so name the framework to
+reproduce a specific copy; `environment.json` records the version, path and SHA-256
+of every copy (`harmony`).
+
+With another copy the run is the same test run: a mod that calls a member the copy
+lacks fails at `mod-load` with `MissingMethodException`, as it would in such a game.
+The comparison is static. It finds referenced types, methods and fields (including
+through base types) that a copy lacks and warns once per copy and assembly; it does
+not find members reached through reflection by name (`AccessTools.Method(type,
+"Name")`) or behavior that differs between Harmony versions. Only running on that
+copy shows those.
+
+The library's own patches work with Harmony 2.0.4 and later: they do not use
+`__args`, and rewritten internal calls end with an unreachable return (see below),
+because Harmony before 2.1 cannot inject `__args` and emits invalid IL when patching
+a method that ends in `throw`.
+
 ## How the game runs without Unity
 
 On either runtime, any method that calls a Unity engine function implemented in
@@ -185,7 +222,8 @@ are never modified. The copies differ in two ways:
 
 1. **Unity internal calls get managed bodies.** By default they throw
    `NotSupportedException("UNITY_NATIVE_UNAVAILABLE: <method>")`, so code that
-   needs the engine fails visibly. Four narrow rules return instead:
+   needs the engine fails visibly (an unreachable return follows the `throw`, so old
+   Harmony versions can patch them). Four narrow rules return instead:
    - telemetry calls (`UnityEngine.Analytics*`, crash reporting) return defaults;
    - native release calls reached from finalizers do nothing;
    - instance setters on native objects (which cannot exist offline) drop the write;
@@ -246,6 +284,9 @@ game would ask Unity for the system language.
   been established.
 - **Creature types.** The game gives undead and constructs no Constitution; pick
   test units whose rules match what is asserted.
+- **Harmony.** Runs use one `0Harmony` copy (UnityModManager's unless `-Harmony`
+  says otherwise); which copy a player's game loads is not known. The comparison
+  with other copies checks signatures only.
 - **Loaders.** Only UnityModManager mods are supported, alone or with declared
   dependency mods. OwlcatModification mods are not.
 - **DLC ownership.** `WotrDlc` decides which DLCs exist; nothing asks a store.

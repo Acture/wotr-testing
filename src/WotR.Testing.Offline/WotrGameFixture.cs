@@ -123,6 +123,7 @@ namespace WotR.Testing.Offline
                 },
                 mod = new { id = Session.ModId, assembly = OfflineRuntime.Inputs?.ModAssembly, dependencies = OfflineRuntime.ModDependencies },
                 libraries = OfflineRuntime.ModLibraries,
+                harmony = OfflineRuntime.Harmony,
                 mods = Session.Mods.Select(m => new { id = m.Id, version = m.Version, underTest = m.UnderTest, source = m.SourcePath, entryPath = m.EntryPath }).ToArray(),
                 warnings = OfflineRuntime.Warnings,
                 dlc = OfflineDlc.Report(),

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0-preview.1 - 2026-10-16
+
 - Harmony copies: `-Harmony` (`WotrHarmony`, `WOTR_HARMONY`) chooses the
   `0Harmony.dll` a run loads: `umm` (default, as before), `game` (the game's own
   2.0.4), a file, or on the runner a `Lib.Harmony` NuGet version (`2.2.2`,
@@ -13,8 +15,6 @@
 - The library's own patches work on Harmony 2.0.4: the Unity log boundary no longer
   uses `__args`, and rewritten internal calls end with an unreachable return. Runtime
   folders are rebuilt once.
-
-## 0.1.0-preview.1 - 2026-10-14
 
 - NuGet packages (first preview `0.1.0-preview.1`): `WotR.Testing`, a meta-package
   that references the components, and `WotR.Testing.Offline` with the library, its

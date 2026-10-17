@@ -51,6 +51,8 @@
   <!-- Built first so its executable can be packed into tools/; not referenced by the library. -->
   <ItemGroup>
     <ProjectReference Include="../WotR.Testing.MonoHost/WotR.Testing.MonoHost.csproj" ReferenceOutputAssembly="false" Private="false" PrivateAssets="all" />
+    <ProjectReference Include="../WotR.Testing.VSTest/WotR.Testing.VSTest.csproj;../WotR.Testing.Build/WotR.Testing.Build.csproj" ReferenceOutputAssembly="false" Private="false" PrivateAssets="all" />
+    <ProjectReference Include="../WotR.Testing.VSTestBootstrap/WotR.Testing.VSTestBootstrap.csproj" ReferenceOutputAssembly="false" Private="false" PrivateAssets="all" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 
   <ItemGroup>
@@ -69,6 +71,18 @@
     <ItemGroup>
       <None Include="@(_WotrMonoHost);@(_WotrMonoHost->'%(FullPath).config')" Pack="true" PackagePath="tools/" />
     </ItemGroup>
+    <MSBuild Projects="../WotR.Testing.VSTest/WotR.Testing.VSTest.csproj;../WotR.Testing.Build/WotR.Testing.Build.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_WotrTestTools" />
+    </MSBuild>
+    <ItemGroup>
+      <None Include="@(_WotrTestTools)" Pack="true" PackagePath="tools/" />
+    </ItemGroup>
+    <MSBuild Projects="../WotR.Testing.VSTestBootstrap/WotR.Testing.VSTestBootstrap.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_WotrBootstrap" />
+    </MSBuild>
+    <ItemGroup>
+      <None Include="@(_WotrBootstrap);@(_WotrBootstrap->'%(RootDir)%(Directory)%(Filename).runtimeconfig.json')" Pack="true" PackagePath="tools/" />
+    </ItemGroup>
   </Target>
 
   <!-- The only entries a package may hold besides NuGet's own metadata. -->
@@ -77,6 +91,8 @@
     <WotrPackageEntry Include="build\WotR.Testing.Offline.targets;buildTransitive\WotR.Testing.Offline.targets" />
     <WotrPackageEntry Include="lib\net48\WotR.Testing.Offline.dll;lib\net48\WotR.Testing.Offline.xml" />
     <WotrPackageEntry Include="tools\Invoke-WotrOfflineTests.ps1;tools\New-WotrSnapshot.ps1;tools\wotr-mono-host.exe;tools\wotr-mono-host.exe.config" />
+    <WotrPackageEntry Include="tools\WotR.Testing.MonoRuntimeProvider.dll;tools\WotR.Testing.Build.dll" />
+    <WotrPackageEntry Include="tools\WotR.Testing.VSTestBootstrap.dll;tools\WotR.Testing.VSTestBootstrap.runtimeconfig.json" />
   </ItemGroup>
 
   <Import Project="build/WotR.Testing.Offline.targets" />

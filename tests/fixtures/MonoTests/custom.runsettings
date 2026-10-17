@@ -1,0 +1,10 @@
+<RunSettings>
+  <RunConfiguration>
+    <TestCaseFilter>Category=Runtime</TestCaseFilter>
+    <EnvironmentVariables>
+      <WOTR_TEST_EXPECT_RUNTIME>unity-mono</WOTR_TEST_EXPECT_RUNTIME>
+      <WOTR_TEST_SCENARIO>settings</WOTR_TEST_SCENARIO>
+      <WOTR_TEST_SETTINGS_TOKEN>preserved</WOTR_TEST_SETTINGS_TOKEN>
+    </EnvironmentVariables>
+  </RunConfiguration>
+</RunSettings>

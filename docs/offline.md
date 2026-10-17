@@ -70,10 +70,10 @@ place are visible only through the DLCs they ask about.
 
 ## Inputs
 
-- Windows, PowerShell 7 and the .NET SDK. Tests target .NET Framework 4.8 or
+- Windows and .NET SDK 8 or later. Tests target .NET Framework 4.8 or
   4.8.1 (match the mods under test), x64.
 - For the default Unity Mono runtime: the game's `MonoBleedingEdge` folder in the
-  inputs, an xUnit v2 test project, and the .NET Framework 4.8 runtime that ships
+  inputs, an xUnit v2 test project and its VSTest adapter, and the .NET Framework 4.8 runtime that ships
   with Windows. Nothing else is installed.
 - One copy of the game files. The first match wins:
   1. `WotrInputRoot` (`-WotrInputRoot` on the runner or `/p:WotrInputRoot=`);
@@ -101,30 +101,48 @@ out of Git, packages and public artifacts.
 ## Running
 
 ```powershell
-pwsh -NoProfile -File scripts/Invoke-WotrOfflineTests.ps1 -Project path/to/MyMod.OfflineTests.csproj
+dotnet test path/to/MyMod.OfflineTests.csproj
+dotnet test path/to/MyMod.OfflineTests.csproj --filter "FullyQualifiedName~MyFeat" --logger trx
+dotnet test path/to/MyMod.OfflineTests.csproj --list-tests
 ```
 
-The runner builds the project, runs the tests with a hang timeout (default 15
-minutes) and writes the reports below. A run in which fewer than `-MinimumPassed`
-tests pass (default 1; skipped tests do not count) fails.
+The package imports the integration automatically. VSTest builds the project and
+uses the existing test adapter, with a session timeout of 15 minutes by default
+(`WotrTestTimeoutSeconds`, or an explicit `TestSessionTimeout` in user runsettings).
+`--filter`, `--settings`, `--no-build`, `--results-directory` and standard loggers
+retain their ordinary VSTest behavior. A run in which fewer than
+`WotrMinimumPassed` tests pass (default 1; skipped tests do not count) fails.
+Discovery with `--list-tests` does not require execution reports.
+
+Each execution gets a fresh environment-report directory, printed at the end of
+the run, beneath `WotrReportDirectory` when set. Otherwise it is beneath
+`--results-directory`/`wotr/<project>` when supplied, then `wotr-reports` beside the
+test assembly. The test process receives this path as `WOTR_OFFLINE_REPORT_DIR`;
+reports left by an earlier run cannot satisfy the current run's checks.
 
 | File | Contents |
 |---|---|
-| `wotr-offline.trx` (`netfx`), `wotr-offline.xunit.xml` (`mono`) | Test report |
-| `environment.json` | Process, input versions and hashes, loaded assembly paths and hashes, mod libraries used, startup stages, boundary hit counts, DLC policy and use, asset gaps, captured game log errors and warnings, a summary of each mod's log, warnings and test observations |
+| `*.trx` (with `--logger trx`), or another selected VSTest logger | Standard test report on either runtime |
+| `environment.json` | Process, input versions and hashes, loaded assembly paths and hashes, VSTest host dependency isolation, mod libraries used, startup stages, boundary hit counts, DLC policy and use, asset gaps, captured game log errors and warnings, a summary of each mod's log, warnings and test observations |
 | `logs/<source>.log` | Every UnityModManager log line per source (`Manager` or a mod Id); gzip-compressed (`.log.gz`) above 5 MB |
-| `summary.json`, `summary.md` | Classified results, runtime, source commit, problems and warnings |
+| `wotr-results.xml` under `WotrWorkDirectory/test-runs/<run-id>/` | Native VSTest outcomes and classifications used by the post-run validation |
+
+The previous `Invoke-WotrOfflineTests.ps1` entry point is retained for existing
+consumers and requires PowerShell 7. It still writes `wotr-offline.trx` (`netfx`) or
+`wotr-offline.xunit.xml` (`mono`), and `summary.json`/`summary.md`. NuGet consumers
+use `dotnet test` directly; no script lookup is needed.
 
 Each mod log summary in `environment.json` gives the line count, the error lines and
 the first and last 20 lines, with consecutive repeats collapsed into one line and a
 count.
 
 Warnings never fail a run. They cover differences a player's game may have: mods
-shipping different copies of one library, a BlueprintCore copy older than the
-latest NuGet release (`WW-Blueprint-Core`; skipped with `-NoUpdateCheck` or
-`WOTR_NO_UPDATE_CHECK=1`, and when BlueprintCore is merged into the mod assembly),
-and Harmony members that mods reference but a reference Harmony copy lacks (see
+shipping different copies of one library and Harmony members that mods reference
+but a reference Harmony copy lacks (see
 [Harmony copies](#harmony-copies)).
+The previous PowerShell runner also checks BlueprintCore's latest NuGet release
+(`WW-Blueprint-Core`; skipped with `-NoUpdateCheck` or `WOTR_NO_UPDATE_CHECK=1`,
+and when BlueprintCore is merged into the mod assembly).
 
 Every result is classified:
 
@@ -138,19 +156,21 @@ Every result is classified:
 | `unity-runtime-required` | The path reached Unity native code (`[UNITY_RUNTIME_REQUIRED]`); reported as skipped, never as passed | No |
 | `skipped-without-reason` | Skipped without that marker | Yes |
 
-The run also fails on zero tests, a missing test report or `environment.json`, or
-a timeout. A failed startup is reported by every test with its stage name; nothing
+The run also fails on zero tests, a missing result-logger report or `environment.json`,
+a timeout, or an environment report naming a different runtime. An initialization
+error in `environment.json` fails even if a test forgot to call `RequireGame()`.
+A failed startup is reported by every test with its stage name; nothing
 is retried with substitutes.
 
 ## Runtimes
 
-| `-Runtime` | Process | Use |
+| `WotrRuntime` (`-p:WotrRuntime=...`) | Process | Use |
 |---|---|---|
-| `mono` (default) | The game's own Unity Mono runtime (`MonoBleedingEdge/EmbedRuntime/mono-2.0-bdwgc.dll`, Mono 5.11 in 2.7.0) with the game's class libraries, started by `WotR.Testing.MonoHost` and the xUnit v2 console runner | Matches how the game runs mod code |
+| `mono` (default) | VSTest's normal .NET Framework testhost and the project's adapter on the game's own Unity Mono runtime (`MonoBleedingEdge/EmbedRuntime/mono-2.0-bdwgc.dll`, Mono 5.11 in 2.7.0), started by `WotR.Testing.MonoHost` | Matches how the game runs mod code; verified with xUnit v2 |
 | `netfx` | .NET Framework 4.8 through `dotnet test` | Any test framework. Differs from the game where noted below |
 
 `WotR.Testing.MonoHost` (`src/WotR.Testing.MonoHost`, a small .NET Framework program
-the runner builds with `dotnet build`) loads the Mono library from the declared
+shipped in the NuGet package and built for source consumers) loads the Mono library from the declared
 inputs and calls its exported `mono_main`, the entry point of `mono.exe`; the tests
 then run entirely on the game's runtime, and the host process only starts it.
 Nothing is copied out of the installation. Its class library
@@ -161,6 +181,26 @@ and mod assemblies are absent from it, so they load from the rewritten runtime
 folder. `environment.json` records `process.runtimeKind` (`unity-mono` or `netfx`).
 The game's Mono library is the one player module allowed in the test process, and
 only from the declared inputs; `UnityPlayer.dll` and `Wrath.exe` never are.
+
+The package's VSTest bootstrap registers a runtime-provider extension before
+entering the SDK's existing command-line runner, which initializes runtime providers
+before processing adapter paths. The extension changes host startup; the existing
+adapter discovers and executes tests and VSTest writes the chosen loggers. User
+settings are merged per invocation, with supported paths expanded using the SDK's
+public settings utility. Mono uses x64, disables AppDomain isolation and disables
+xUnit shadow copying. CLR debugger launch on this embedded runtime is unsupported;
+other test adapters, collectors and IDE integration have not yet been verified.
+
+Unity Mono binds a simple assembly name to the first copy loaded, so VSTest's
+Json.NET would replace the game's older, incompatible Json.NET. For Mono runs,
+the integration prepares a local cache of the SDK's .NET Framework host. Only the
+SDK Json.NET assembly identity and references to it are renamed to
+`WotR.TestHost.Newtonsoft.Json`; corresponding SDK binding redirects are removed.
+The SDK method instructions stay unchanged, and the game keeps its original
+Json.NET. `environment.json.testHost` records both loaded copies and the original
+and isolated host file hashes. The cache is keyed by SDK file contents and is
+never part of a package or public artifact. Tools scanning every loaded type can
+still see the two libraries' identical type namespaces.
 
 Differences on .NET Framework, which do not apply on `mono`:
 

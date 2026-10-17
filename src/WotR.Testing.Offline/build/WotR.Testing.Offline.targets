@@ -1,4 +1,4 @@
-<Project>
+<Project TreatAsLocalProperty="VSTestSetting;VSTestTestAdapterPath;VSTestConsolePath">
 
   <!--
     WotR offline testing: locates the game inputs, adds compile-time game references and writes
@@ -15,6 +15,9 @@
       WotrWorkDirectory      Runtime cache and per-run state. Default: $(BaseIntermediateOutputPath)wotr/.
       WotrReportDirectory    Reports. Default: $(OutDir)wotr-reports/. WOTR_OFFLINE_REPORT_DIR overrides at run time.
       WotrIsLibrary          true for projects that only need the game references.
+      WotrRuntime            mono (default) or netfx for dotnet test.
+      WotrTestTimeoutSeconds Session timeout, default 900; explicit user runsettings take precedence.
+      WotrMinimumPassed      Minimum passing tests, default 1; skips do not count.
       WotrXunitConsoleVersion  xUnit v2 console runner used by Invoke-WotrOfflineTests.ps1 -Runtime mono (default 2.9.2).
       WotrDlc                Which DLCs are available offline: all (default), none, local (installed in the Steam library)
                              or a comma-separated list of DLC blueprint names (Dlc4,Dlc6). WOTR_DLC overrides at run time.
@@ -38,10 +41,53 @@
     <WotrXunitConsoleVersion Condition="'$(WotrXunitConsoleVersion)'==''">2.9.2</WotrXunitConsoleVersion>
     <WotrDlc Condition="'$(WotrDlc)'==''">all</WotrDlc>
     <WotrHarmony Condition="'$(WotrHarmony)'==''">umm</WotrHarmony>
+    <WotrRuntime Condition="'$(WotrRuntime)'==''">mono</WotrRuntime>
+    <WotrTestTimeoutSeconds Condition="'$(WotrTestTimeoutSeconds)'==''">900</WotrTestTimeoutSeconds>
+    <WotrMinimumPassed Condition="'$(WotrMinimumPassed)'==''">1</WotrMinimumPassed>
     <!-- Runner and snapshot scripts: tools/ in the NuGet package, scripts/ in the source repository. -->
     <WotrToolsDirectory Condition="'$(WotrToolsDirectory)'=='' and Exists('$(MSBuildThisFileDirectory)../tools/Invoke-WotrOfflineTests.ps1')">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/'))</WotrToolsDirectory>
     <WotrToolsDirectory Condition="'$(WotrToolsDirectory)'==''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../scripts/'))</WotrToolsDirectory>
+    <WotrRunnerDirectory Condition="Exists('$(MSBuildThisFileDirectory)../tools/WotR.Testing.MonoRuntimeProvider.dll')">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/'))</WotrRunnerDirectory>
+    <WotrBuildTasksAssembly Condition="'$(WotrRunnerDirectory)'!=''">$(WotrRunnerDirectory)WotR.Testing.Build.dll</WotrBuildTasksAssembly>
+    <WotrMonoHost Condition="'$(WotrRunnerDirectory)'!=''">$(WotrRunnerDirectory)wotr-mono-host.exe</WotrMonoHost>
+    <WotrBootstrapDirectory Condition="'$(WotrRunnerDirectory)'!=''">$(WotrRunnerDirectory)</WotrBootstrapDirectory>
+    <WotrRunnerDirectory Condition="'$(WotrRunnerDirectory)'==''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../artifacts/bin/WotR.Testing.VSTest/$(Configuration)/netstandard2.0/'))</WotrRunnerDirectory>
+    <WotrBuildTasksAssembly Condition="'$(WotrBuildTasksAssembly)'==''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../artifacts/bin/WotR.Testing.Build/$(Configuration)/netstandard2.0/WotR.Testing.Build.dll'))</WotrBuildTasksAssembly>
+    <WotrMonoHost Condition="'$(WotrMonoHost)'==''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../artifacts/bin/WotR.Testing.MonoHost/$(Configuration)/wotr-mono-host.exe'))</WotrMonoHost>
+    <WotrBootstrapDirectory Condition="'$(WotrBootstrapDirectory)'==''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../artifacts/bin/WotR.Testing.VSTestBootstrap/$(Configuration)/net8.0/'))</WotrBootstrapDirectory>
   </PropertyGroup>
+
+  <UsingTask TaskName="WotR.Testing.Build.PrepareTestRun" AssemblyFile="$(WotrBuildTasksAssembly)" />
+  <UsingTask TaskName="WotR.Testing.Build.ValidateTestRun" AssemblyFile="$(WotrBuildTasksAssembly)" />
+
+  <Target Name="EnsureWotrTestProject" BeforeTargets="VSTest" Condition="'$(WotrIsLibrary)'!='true' and '$(WotrLegacyRunner)'!='true'">
+    <Error Condition="'$(IsTestProject)'!='true'" Text="[TEST_PROJECT_REQUIRED] No test project was registered. Reference Microsoft.NET.Test.Sdk and a test framework with its VSTest adapter. Use WotrIsLibrary=true only for a library that needs compile-time references." />
+  </Target>
+
+  <!-- Keep VSTest's own discovery, adapters, filters, loggers and exit handling. Only its runtime provider changes. -->
+  <Target Name="PrepareWotrDotnetTest" BeforeTargets="_VSTestConsole;_VSTestMSBuild" Condition="'$(WotrIsLibrary)'!='true' and '$(IsTestProject)'=='true' and '$(WotrLegacyRunner)'!='true'">
+    <CallTarget Targets="BuildProject" Condition="'$(VSTestNoBuild)'!='true'" />
+    <PropertyGroup>
+      <_WotrOriginalSettings>$([MSBuild]::ValueOrDefault('$(VSTestSetting)', '$(RunSettingsFilePath)'))</_WotrOriginalSettings>
+      <WotrReportDirectory Condition="'$(WotrReportDirectory)'=='' and '$(VSTestResultsDirectory)'!=''">$(VSTestResultsDirectory)/wotr/$(MSBuildProjectName)/</WotrReportDirectory>
+      <WotrReportDirectory Condition="'$(WotrReportDirectory)'==''">$(TargetDir)wotr-reports/</WotrReportDirectory>
+    </PropertyGroup>
+    <WotR.Testing.Build.PrepareTestRun WorkDirectory="$(WotrWorkDirectory)" InputRoot="$(WotrInputRoot)"
+        MonoHost="$(WotrMonoHost)" RunnerDirectory="$(WotrRunnerDirectory)" Runtime="$(WotrRuntime)" OriginalConsole="$(VSTestConsolePath)" BootstrapDirectory="$(WotrBootstrapDirectory)" SourceDirectory="$(TargetDir)"
+        OriginalSettings="$(_WotrOriginalSettings)" OriginalAdapterPath="$(VSTestTestAdapterPath)"
+        ReportDirectory="$(WotrReportDirectory)" TimeoutSeconds="$(WotrTestTimeoutSeconds)">
+      <Output TaskParameter="PreparedSettings" PropertyName="VSTestSetting" />
+      <Output TaskParameter="AdapterPath" PropertyName="VSTestTestAdapterPath" />
+      <Output TaskParameter="RunReport" PropertyName="_WotrRunReport" />
+      <Output TaskParameter="EnvironmentDirectory" PropertyName="_WotrEnvironmentDirectory" />
+      <Output TaskParameter="PreparedConsole" PropertyName="VSTestConsolePath" />
+    </WotR.Testing.Build.PrepareTestRun>
+  </Target>
+
+  <Target Name="ValidateWotrDotnetTest" AfterTargets="_VSTestConsole;_VSTestMSBuild"
+      Condition="'$(WotrIsLibrary)'!='true' and '$(IsTestProject)'=='true' and '$(VSTestListTests)'!='true' and '$(WotrLegacyRunner)'!='true'">
+    <WotR.Testing.Build.ValidateTestRun RunReport="$(_WotrRunReport)" EnvironmentDirectory="$(_WotrEnvironmentDirectory)" MinimumPassed="$(WotrMinimumPassed)" Runtime="$(WotrRuntime)" />
+  </Target>
 
   <!-- Runner for Invoke-WotrOfflineTests.ps1 -Runtime mono: downloaded into the NuGet cache, never referenced. -->
   <ItemGroup Condition="'$(WotrIsLibrary)'!='true'">

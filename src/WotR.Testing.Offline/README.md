@@ -19,7 +19,7 @@ for use together with the game and Unity assemblies.
 
 ## Use it in a mod's test project
 
-Requirements: Windows, the .NET SDK, PowerShell 7, a UnityModManager mod with
+Requirements: Windows, .NET SDK 8 or later, a UnityModManager mod with
 `Info.json` in its build output, and the game installed (or a snapshot from
 `New-WotrSnapshot.ps1`).
 
@@ -36,7 +36,7 @@ Requirements: Windows, the .NET SDK, PowerShell 7, a UnityModManager mod with
   <ItemGroup>
     <!-- Optional: mods named in Info.json Requirements, loaded first. -->
     <WotrDependencyMod Include="../deps/TabletopTweaks-Core/TabletopTweaks-Core.dll" />
-    <PackageReference Include="WotR.Testing" Version="0.1.0-preview.1" />
+    <PackageReference Include="WotR.Testing" Version="0.1.0-preview.2" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
@@ -46,13 +46,11 @@ Requirements: Windows, the .NET SDK, PowerShell 7, a UnityModManager mod with
 
 `WotR.Testing` is the meta-package for all WotR.Testing components; referencing
 `WotR.Testing.Offline` directly works the same. The build targets are imported
-automatically. Its runner and snapshot
-scripts are in the package's `tools/` folder, which the project reports as
-`WotrToolsDirectory`:
+automatically. Run the test project directly:
 
 ```powershell
-$tools = dotnet msbuild tests/MyMod.Tests/MyMod.Tests.csproj -getProperty:WotrToolsDirectory
-pwsh -NoProfile -File "$($tools.Trim())Invoke-WotrOfflineTests.ps1" -Project tests/MyMod.Tests/MyMod.Tests.csproj
+dotnet test tests/MyMod.Tests/MyMod.Tests.csproj
+dotnet test tests/MyMod.Tests/MyMod.Tests.csproj --filter "FullyQualifiedName~MyFeat" --logger trx
 ```
 
 ### From a Git submodule
@@ -77,10 +75,22 @@ pwsh -NoProfile -File "$($tools.Trim())Invoke-WotrOfflineTests.ps1" -Project tes
 </Project>
 ```
 
-The default `-Runtime mono` of `Invoke-WotrOfflineTests.ps1` runs xUnit v2 test
-projects on the game's own Mono runtime; other test frameworks can use
-`-Runtime netfx`. Add `xunit.runner.json` with `"appDomain": "denied"` and `"shadowCopy": false`,
-copied to the output. Build the mod without deploying it to the game.
+Use `dotnet test` with either installation method. It runs the existing VSTest host
+and xUnit v2 adapter on the game's own Mono runtime by default; test discovery,
+Theory rows, filters and loggers keep their normal behavior. AppDomain isolation
+and shadow copying are disabled automatically for Mono. `--settings` merges the
+user's settings and preserves their supported paths and environment variables.
+Use `-p:WotrRuntime=netfx` for .NET Framework; other test frameworks on Mono are not
+yet verified. Build the mod without deploying it to the game.
+
+Every execution writes fresh environment reports, checks that their reported
+runtime matches the selected runtime and fails on zero tests, missing reports,
+initialization failure, timeouts, unexplained skips, or fewer than
+`WotrMinimumPassed` passing tests. `--list-tests` only discovers tests.
+The report directory is printed after a successful VSTest run; a native VSTest
+failure already returns a nonzero exit code. PowerShell 7 is only required for the
+optional snapshot script and the previous runner, which remain in `tools/` for
+compatibility (`WotrToolsDirectory` locates them).
 
 ```csharp
 public sealed class MyModGame : WotrGameFixture
@@ -126,12 +136,15 @@ when a path reaches Unity engine code; such results are reported as
 
 | Name | Purpose |
 |---|---|
+| `WotrRuntime` | `mono` (default, the game's Unity Mono through VSTest) or `netfx` |
+| `WotrTestTimeoutSeconds` | VSTest session timeout (default 900); an explicit `TestSessionTimeout` in user runsettings takes precedence |
+| `WotrMinimumPassed` | Minimum passing tests (default 1); skips do not count |
 | `WotrModAssembly` | Built mod DLL (required). `Info.json` and private DLLs such as `BlueprintCore.dll` are read from its directory |
 | `WotrDependencyMod` (items) | Other built mods loaded with it, ordered by `Requirements`/`LoadAfter` |
 | `WotrXunitConsoleVersion` | xUnit v2 console runner for `-Runtime mono` (default 2.9.2), downloaded with `PackageDownload` |
 | `WotrInputRoot` / `WOTR_INPUT_ROOT` | Game root; otherwise `WotrSnapshotDirectory` (with `manifest.json`), then `WrathInstallDir`/`WrathPath`/`WRATH_PATH` |
 | `WotrWorkDirectory` | Rewritten runtime cache and per-run state (default `obj/wotr/`) |
-| `WotrReportDirectory` / `WOTR_OFFLINE_REPORT_DIR` | Where `environment.json` is written |
+| `WotrReportDirectory` | Base for fresh per-run environment reports; otherwise `--results-directory`/`wotr/<project>`, then `wotr-reports` beside the test assembly. `dotnet test` sets `WOTR_OFFLINE_REPORT_DIR` for its test process |
 | `WOTR_ALLOW_UNVERIFIED_VERSION=1` | Run on a game version not yet verified (reported as unverified) |
 | `WotrDlc` / `WOTR_DLC` | Available DLCs: `all` (default), `none`, `local` (installed in the Steam library) or names such as `Dlc4,Dlc6` |
 | `WOTR_NO_UPDATE_CHECK=1` | Skip the BlueprintCore release check (also `-NoUpdateCheck` on the runner) |

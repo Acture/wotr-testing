@@ -1,5 +1,8 @@
 <Solution>
   <Project Path="src/WotR.Testing.MonoHost/WotR.Testing.MonoHost.csproj" />
+  <Project Path="src/WotR.Testing.VSTest/WotR.Testing.VSTest.csproj" />
+  <Project Path="src/WotR.Testing.Build/WotR.Testing.Build.csproj" />
+  <Project Path="src/WotR.Testing.VSTestBootstrap/WotR.Testing.VSTestBootstrap.csproj" />
   <Project Path="src/WotR.Testing.Offline/WotR.Testing.Offline.csproj" />
   <Project Path="src/WotR.Testing/WotR.Testing.csproj" />
 </Solution>

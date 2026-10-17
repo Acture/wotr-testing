@@ -25,25 +25,25 @@ components (today `WotR.Testing.Offline`, which carries the build targets, the t
 runner and the Mono host); the packages contain no game files.
 
 ```powershell
-$tools = dotnet msbuild tests/MyMod.OfflineTests/MyMod.OfflineTests.csproj -getProperty:WotrToolsDirectory
-pwsh -NoProfile -File "$($tools.Trim())Invoke-WotrOfflineTests.ps1" -Project tests/MyMod.OfflineTests/MyMod.OfflineTests.csproj
+dotnet test tests/MyMod.OfflineTests/MyMod.OfflineTests.csproj
 ```
 
 To follow unreleased changes, use this repository as a Git submodule instead: import
 `external/wotr-testing/src/WotR.Testing.Offline/build/WotR.Testing.Offline.targets`,
-reference `WotR.Testing.Offline.csproj` and run
-`external/wotr-testing/scripts/Invoke-WotrOfflineTests.ps1`. See the
+reference `WotR.Testing.Offline.csproj` and use the same `dotnet test` command. See the
 [library README](src/WotR.Testing.Offline/README.md) for complete projects and the
 API, and [docs/offline.md](docs/offline.md) for how it works, every environment
 adaptation and the known limits.
 
-The tests run on the game's own Mono runtime by default; `-Runtime netfx` uses .NET
-Framework instead, with the differences listed in
+The tests run on the game's own Mono runtime by default. Standard `--list-tests`,
+`--filter`, `--settings`, `--no-build` and `--logger trx` work through VSTest and the
+test framework's adapter. `-p:WotrRuntime=netfx` uses .NET Framework instead, with the differences listed in
 [docs/offline.md](docs/offline.md#runtimes).
+The previous PowerShell runner remains available for existing consumers.
 
 ## Building
 
-Requires Windows, the .NET SDK and a WotR installation. Set `WrathInstallDir` with
+Requires Windows, .NET SDK 8 or later and a WotR installation. Set `WrathInstallDir` with
 `/p:WrathInstallDir=...`, the `WrathPath`/`WRATH_PATH` environment variable, or an
 ignored `GamePath.props` at the repository root:
 

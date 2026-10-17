@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../../GamePath.props" Condition="Exists('../../../GamePath.props')" />
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <Import Project="../../../src/WotR.Testing.Offline/build/WotR.Testing.Offline.targets" />
+  <PropertyGroup>
+    <!-- No mod is initialized by this synthetic fixture; use an existing compile-time reference. -->
+    <WotrModAssembly>$(WotrInputRoot)/Wrath_Data/Managed/Assembly-CSharp.dll</WotrModAssembly>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+    <ProjectReference Include="../../../src/WotR.Testing.Offline/WotR.Testing.Offline.csproj" />
+  </ItemGroup>
+</Project>

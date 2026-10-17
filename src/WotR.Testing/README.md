@@ -11,6 +11,7 @@ In-game testing is planned and will be added here.
 
 Reference `WotR.Testing` from a .NET Framework 4.8 xUnit v2 test project and follow the
 [WotR.Testing.Offline guide](https://github.com/Acture/wotr-testing/blob/main/src/WotR.Testing.Offline/README.md).
+Run it with `dotnet test`; the game's Unity Mono runtime is selected automatically.
 The packages contain no game files: game assemblies are referenced at compile time
 from your own installation. License: AGPL-3.0 with an
 [additional permission](https://github.com/Acture/wotr-testing/blob/main/LICENSE-EXCEPTION.md)

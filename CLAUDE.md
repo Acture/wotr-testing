@@ -13,6 +13,9 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   and README.
 - `src/WotR.Testing.MonoHost/`: `wotr-mono-host`, starts the game's own Unity Mono
   runtime (the default test runtime) from the inputs.
+  `src/WotR.Testing.VSTest/`, `src/WotR.Testing.VSTestBootstrap/` and
+  `src/WotR.Testing.Build/` integrate it with `dotnet test`, isolate SDK host
+  dependencies and validate reports. These tools contain no game files.
   Planned: `src/WotR.Testing.InGame/` for in-game testing (added to the meta-package),
   and a shared library both use once they need one.
 - `scripts/`: `Invoke-WotrOfflineTests.ps1` (generic runner) and
@@ -61,7 +64,9 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   uvx ruff==0.16.10 format --check --config .ruff.toml tests
   uvx ty==0.0.82 check tests
   ```
-- The library has no tests of its own yet. Verify changes through a consumer: the
+- Opt-in runner integration tests: restore `tests/fixtures/MonoTests/MonoTests.csproj`,
+  set `WOTR_TEST_INTEGRATION=1`, then run the Python suite above. They need local
+  game inputs and skip in public CI. Verify real game behavior through a consumer: the
   AttributeFeats repository (`external/wotr-testing` submodule) runs
   `pwsh -NoProfile -File scripts/Invoke-OfflineMechanicsTests.ps1`, currently 10/10
   on the default Unity Mono runtime. Changes to mod loading should also be checked

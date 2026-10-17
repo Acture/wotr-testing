@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- `dotnet test` is the default entry point, including for NuGet-only consumers.
+  The package automatically starts VSTest's ordinary testhost on the game's Unity
+  Mono runtime and uses the project's existing adapter; discovery, Theory rows,
+  filters, user runsettings, `--no-build` and standard loggers such as TRX work
+  through VSTest. PowerShell is no longer required to run tests. Requires .NET SDK
+  8 or later on Windows; verified with SDK 10.0.401 and xUnit v2.
+- The local Mono VSTest host isolates its Json.NET assembly identity so it cannot
+  replace the game's incompatible Json.NET. SDK method instructions and game
+  method bodies are unchanged; both copies and host-file hashes are recorded in
+  `environment.json.testHost`. No SDK cache or game files are packaged.
+- `WotrRuntime=netfx` explicitly selects .NET Framework. `WotrTestTimeoutSeconds`
+  (default 900) and `WotrMinimumPassed` (default 1) configure the run. Fresh reports
+  are checked for the selected runtime, initialization errors, unexplained skips,
+  zero passing tests and missing files. The existing PowerShell runner is retained
+  for compatibility. Migration: replace script-path lookup and invocation with
+  `dotnet test <project>`; replace `-Runtime netfx` with `-p:WotrRuntime=netfx`.
+
 ## 0.1.0-preview.1 - 2026-10-16
 
 - Harmony copies: `-Harmony` (`WotrHarmony`, `WOTR_HARMONY`) chooses the

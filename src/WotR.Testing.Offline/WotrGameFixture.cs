@@ -7,6 +7,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Xml.Linq;
 
 namespace WotR.Testing.Offline
 {
@@ -111,6 +112,7 @@ namespace WotR.Testing.Offline
                     forbiddenModulesLoaded = LoadedForbiddenModules().ToArray(),
                     forbiddenProcessesStartedDuringRun = ForbiddenProcessesStartedDuringRun().ToArray(),
                 },
+                testHost = TestHostReport(),
                 inputs = OfflineRuntime.Inputs == null ? null : new
                 {
                     root = OfflineRuntime.Inputs.InputRoot,
@@ -140,6 +142,24 @@ namespace WotR.Testing.Offline
                 logWarnings = logs.Where(l => l.Severity == "Warning").Take(200).ToArray(),
                 modLogs = ModLogSink.Write(Path.Combine(ReportDirectory(), "logs")),
                 observations = Observations,
+            };
+        }
+
+        private static object TestHostReport()
+        {
+            var path = Environment.GetEnvironmentVariable("WOTR_VSTEST_HOST_INFO");
+            if (string.IsNullOrEmpty(path)) return null;
+            var manifest = XDocument.Load(path).Root;
+            return new {
+                originalHost = (string)manifest.Attribute("originalHost"),
+                isolatedHost = (string)manifest.Attribute("isolatedHost"),
+                assemblies = AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic &&
+                    (a.GetName().Name == "Newtonsoft.Json" || a.GetName().Name == "WotR.TestHost.Newtonsoft.Json"))
+                    .Select(a => new { name = a.GetName().Name, version = a.GetName().Version.ToString(), location = a.Location, sha256 = OfflineRuntime.FileSha256(a.Location) }).ToArray(),
+                files = manifest.Elements("File").Select(e => new {
+                    name = (string)e.Attribute("name"), originalSha256 = (string)e.Attribute("originalSha256"),
+                    isolatedSha256 = (string)e.Attribute("isolatedSha256"), rewritten = (bool)e.Attribute("rewritten")
+                }).ToArray()
             };
         }
 

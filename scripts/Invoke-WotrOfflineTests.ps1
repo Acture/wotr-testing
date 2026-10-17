@@ -197,7 +197,7 @@ if ($ready -and $Runtime -eq 'mono') {
 if ($ready -and $Runtime -eq 'netfx') {
     $env:WOTR_OFFLINE_REPORT_DIR = $ResultsDirectory
     try {
-        $arguments = @('test', $project, '--no-build', '--configuration', $Configuration,
+        $arguments = @('test', $project, '--no-build', '--configuration', $Configuration, '-p:WotrLegacyRunner=true',
             '--logger', "trx;LogFileName=$trxName", '--results-directory', $ResultsDirectory,
             '--blame-hang', '--blame-hang-timeout', "$($TimeoutMinutes)m")
         if ($Filter) { $arguments += @('--filter', $Filter) }

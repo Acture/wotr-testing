@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0-preview.2 - 2026-10-18
+
 - `dotnet test` is the default entry point, including for NuGet-only consumers.
   The package automatically starts VSTest's ordinary testhost on the game's Unity
   Mono runtime and uses the project's existing adapter; discovery, Theory rows,

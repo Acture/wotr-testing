@@ -21,14 +21,17 @@ TRX_NS = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
 	os.name == "nt" and os.environ.get("WOTR_TEST_INTEGRATION") == "1",
 	"Set WOTR_TEST_INTEGRATION=1 on Windows with local WotR inputs to run CLI integration tests.",
 )
-class DotnetTestIntegrationTests(unittest.TestCase):
+class DotnetTestHarness(unittest.TestCase):
+	project: Path = PROJECT
+	build_result: subprocess.CompletedProcess[str]
+
 	@classmethod
 	def setUpClass(cls) -> None:
-		result = subprocess.run(
+		cls.build_result = subprocess.run(
 			[
 				"dotnet",
 				"build",
-				str(PROJECT),
+				str(cls.project),
 				"--no-restore",
 				"-m:1",
 				"-nr:false",
@@ -41,10 +44,13 @@ class DotnetTestIntegrationTests(unittest.TestCase):
 			errors="replace",
 			timeout=180,
 		)
-		if result.returncode:
-			raise RuntimeError(result.stdout + result.stderr)
 
 	def setUp(self) -> None:
+		self.assertEqual(
+			self.build_result.returncode,
+			0,
+			self.build_result.stdout + self.build_result.stderr,
+		)
 		output = ROOT / "artifacts/test-results/dotnet-test-integration"
 		output.mkdir(parents=True, exist_ok=True)
 		# Keep diagnostics in ignored artifacts. mkdir inherits workspace ACLs on Windows.
@@ -59,7 +65,7 @@ class DotnetTestIntegrationTests(unittest.TestCase):
 		expected_runtime: str = "unity-mono",
 		results: Path | None = None,
 		environment_overrides: dict[str, str] | None = None,
-		project: Path = PROJECT,
+		project: Path | None = None,
 	) -> subprocess.CompletedProcess[str]:
 		environment = os.environ.copy()
 		environment.update(WOTR_TEST_SCENARIO=scenario, WOTR_TEST_EXPECT_RUNTIME=expected_runtime)
@@ -69,7 +75,7 @@ class DotnetTestIntegrationTests(unittest.TestCase):
 			[
 				"dotnet",
 				"test",
-				str(project),
+				str(project or self.project),
 				"--no-build",
 				"--no-restore",
 				"-m:1",
@@ -89,18 +95,28 @@ class DotnetTestIntegrationTests(unittest.TestCase):
 			timeout=60,
 		)
 
-	def assert_success(self, result: subprocess.CompletedProcess[str], passed: int) -> None:
+	def assert_success(
+		self,
+		result: subprocess.CompletedProcess[str],
+		passed: int,
+		*,
+		expected_runtime: str = "unity-mono",
+		results: Path | None = None,
+	) -> None:
+		results = results or self.results
 		self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-		report = next(self.results.glob("*.trx"))
+		report = next(results.glob("*.trx"))
 		counters = ET.parse(report).find("t:ResultSummary/t:Counters", TRX_NS)
 		assert counters is not None
 		self.assertEqual(int(counters.attrib["passed"]), passed)
-		environment_reports = list(self.results.rglob("environment.json"))
+		environment_reports = list(results.rglob("environment.json"))
 		self.assertEqual(len(environment_reports), 1)
 		data = json.loads(environment_reports[0].read_text(encoding="utf-8-sig"))
 		self.assertTrue(data["synthetic"])
-		self.assertEqual(data["process"]["runtimeKind"], "unity-mono")
+		self.assertEqual(data["process"]["runtimeKind"], expected_runtime)
 
+
+class DotnetTestIntegrationTests(DotnetTestHarness):
 	def test_default_mono_theory_rows_native_skip_and_trx(self) -> None:
 		self.assert_success(self.run_cli("--filter", "Category!=UnexplainedSkip"), 3)
 

@@ -2,6 +2,8 @@
 
 - [Offline testing](offline.md): how it works, inputs, reports, environment
   boundaries and known limits
+- [Randomized property tests](fuzzing.md): FsCheck generators, shrinking, seed
+  replay and game-state cleanup through `dotnet test`
 - [WotR.Testing.Offline library](../src/WotR.Testing.Offline/README.md): project
   setup, build properties and API
 - [Changelog](../CHANGELOG.md)

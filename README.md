@@ -41,6 +41,10 @@ test framework's adapter. `-p:WotrRuntime=netfx` uses .NET Framework instead, wi
 [docs/offline.md](docs/offline.md#runtimes).
 The previous PowerShell runner remains available for existing consumers.
 
+`WotR.Testing` also includes FsCheck.Xunit for `[Property]` tests with generated
+inputs, counterexample shrinking and seed replay. See [randomized property
+tests](docs/fuzzing.md) for examples and game-state cleanup.
+
 ## Building
 
 Requires Windows, .NET SDK 8 or later and a WotR installation. Set `WrathInstallDir` with
@@ -68,7 +72,7 @@ repository because it has no game files.
 | --- | --- |
 | `src/` | Libraries and their MSBuild targets ([overview](src/README.md)) |
 | `scripts/` | Test runner and game-file snapshot scripts, called by consumers through the submodule |
-| `tests/` | Repository checks; library tests and synthetic fixtures once they exist |
+| `tests/` | Repository checks and synthetic fixtures for native runtime and FsCheck integration |
 | `docs/` | Public documentation ([index](docs/README.md)) |
 | `data/` | No datasets; game files never belong in this repository |
 | `.github/` | CI, pull request template and CODEOWNERS |

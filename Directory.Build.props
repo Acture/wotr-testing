@@ -5,6 +5,7 @@
     <BaseIntermediateOutputPath>$(WotrTestingRepositoryRoot)artifacts/obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
     <PackageOutputPath>$(WotrTestingRepositoryRoot)artifacts/packages/</PackageOutputPath>
     <!-- Version of every package built from this repository. -->
-    <Version>0.1.0-preview.2</Version>
+    <Version>0.1.0-preview.3</Version>
+    <FsCheckXunitVersion>3.5.0</FsCheckXunitVersion>
   </PropertyGroup>
 </Project>

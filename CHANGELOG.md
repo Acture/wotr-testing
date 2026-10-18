@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.0-preview.3 - 2026-10-18
+
+- `WotR.Testing` includes FsCheck.Xunit 3.5.0 for native `[Property]` tests through
+  `dotnet test`: generated inputs, custom generators, shrinking and `Replay`.
+  `WotR.Testing.Offline` remains independent of FsCheck. See
+  [fuzzing](docs/fuzzing.md) for examples, per-sample cleanup and skip limitations.
+
 ## 0.1.0-preview.2 - 2026-10-18
 
 - `dotnet test` is the default entry point, including for NuGet-only consumers.

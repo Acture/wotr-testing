@@ -47,6 +47,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           [xml]$properties = Get-Content -LiteralPath Directory.Build.props -Raw
           $version = [string]$properties.Project.PropertyGroup.Version
+          $fsCheckVersion = [string]$properties.Project.PropertyGroup.FsCheckXunitVersion
           if ($env:RELEASE_TAG -cne "v$version") { throw 'Release tag must match the repository package version.' }
           $releaseJson = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json tagName,targetCommitish,assets,isDraft
           if ($LASTEXITCODE -ne 0) { throw 'Could not read the draft release.' }
@@ -74,7 +75,9 @@ jobs:
               if ($metadata.repository.url -cne 'https://github.com/Acture/wotr-testing' -or $metadata.repository.commit -cne $env:GITHUB_SHA) { throw 'Package source commit mismatch.' }
               if ($packageId -eq 'WotR.Testing') {
                 $dependency = @($metadata.dependencies.group.dependency)
-                if ($dependency.Count -ne 1 -or $dependency[0].id -cne 'WotR.Testing.Offline' -or $dependency[0].version -cne $version) { throw 'Meta-package must reference the matching offline component.' }
+                $offline = @($dependency | Where-Object { $_.id -ceq 'WotR.Testing.Offline' })
+                $fsCheck = @($dependency | Where-Object { $_.id -ceq 'FsCheck.Xunit' })
+                if ($dependency.Count -ne 2 -or $offline.Count -ne 1 -or $fsCheck.Count -ne 1 -or $offline[0].version -cne $version -or $fsCheck[0].version -cne $fsCheckVersion -or !$fsCheckVersion) { throw 'Meta-package must reference the matching offline component and the pinned FsCheck.Xunit version.' }
               }
             } finally { $archive.Dispose() }
             dotnet msbuild "src/$packageId/$packageId.csproj" -target:VerifyWotrPackage "-property:PackageVersion=$version" "-property:PackageOutputAbsolutePath=$packageDirectory" -property:Configuration=Release

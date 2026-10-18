@@ -24,6 +24,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="FsCheck.Xunit" Version="$(FsCheckXunitVersion)" />
     <!-- PrivateAssets none: the component's build targets reach the consumer (through its buildTransitive/ folder). -->
     <ProjectReference Include="../WotR.Testing.Offline/WotR.Testing.Offline.csproj" PrivateAssets="none" />
   </ItemGroup>

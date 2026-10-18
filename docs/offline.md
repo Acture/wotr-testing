@@ -12,6 +12,10 @@ animation, input or the live UI.
 
 ## What runs
 
+Randomized mechanics tests can use FsCheck.Xunit through the `WotR.Testing`
+meta-package. See [randomized property tests](fuzzing.md) for generators, shrinking,
+replay and the lifecycle of game state across samples.
+
 | Part | Source |
 |---|---|
 | Game code | `Assembly-CSharp`, `Assembly-CSharp-firstpass`, Owlcat and Unity managed assemblies from the inputs |

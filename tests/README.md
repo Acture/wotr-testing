@@ -21,5 +21,17 @@ python -m unittest discover -s tests -p 'test_dotnet_test.py' -v
 ```
 
 Diagnostics stay in ignored `artifacts/`; do not publish runtime or SDK caches.
+
+`test_fuzzing.py` uses `fixtures/FuzzTests/` to check FsCheck.Xunit received through
+the meta-project: native discovery, generated samples, constrained generators,
+shrinking, replay, exhausted preconditions, environment errors and native-only
+skips on Mono/netfx. Restore that fixture as well, then use the same opt-in flag:
+
+```powershell
+dotnet restore tests/fixtures/FuzzTests/FuzzTests.csproj
+$env:WOTR_TEST_INTEGRATION = '1'
+python -m unittest discover -s tests -p 'test_*.py' -v
+```
+
 Real game behavior is verified through a consumer mod's offline tests (see
 [CLAUDE.md](../CLAUDE.md)).

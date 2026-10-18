@@ -36,7 +36,7 @@ Requirements: Windows, .NET SDK 8 or later, a UnityModManager mod with
   <ItemGroup>
     <!-- Optional: mods named in Info.json Requirements, loaded first. -->
     <WotrDependencyMod Include="../deps/TabletopTweaks-Core/TabletopTweaks-Core.dll" />
-    <PackageReference Include="WotR.Testing" Version="0.1.0-preview.2" />
+    <PackageReference Include="WotR.Testing" Version="0.1.0-preview.3" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
@@ -82,6 +82,12 @@ and shadow copying are disabled automatically for Mono. `--settings` merges the
 user's settings and preserves their supported paths and environment variables.
 Use `-p:WotrRuntime=netfx` for .NET Framework; other test frameworks on Mono are not
 yet verified. Build the mod without deploying it to the game.
+
+The `WotR.Testing` meta-package includes FsCheck.Xunit for native `[Property]`
+tests. Source consumers referencing this Offline project directly can add
+`FsCheck.Xunit` 3.5.0 themselves, or reference the meta-project. See
+[randomized property tests](https://github.com/Acture/wotr-testing/blob/main/docs/fuzzing.md)
+for generation, shrinking, replay and per-sample state cleanup.
 
 Every execution writes fresh environment reports, checks that their reported
 runtime matches the selected runtime and fails on zero tests, missing reports,

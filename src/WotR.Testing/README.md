@@ -6,12 +6,16 @@ its own; it references the components:
 | Package | Use |
 |---|---|
 | [`WotR.Testing.Offline`](https://www.nuget.org/packages/WotR.Testing.Offline) | Runs UnityModManager mods against the real game assemblies, blueprint pack and settings on the game's own Unity Mono runtime (or .NET Framework), without starting the game |
+| [`FsCheck.Xunit`](https://www.nuget.org/packages/FsCheck.Xunit/3.5.0) | Native xUnit v2 `[Property]` tests with generated inputs, shrinking and seed replay |
 
 In-game testing is planned and will be added here.
 
 Reference `WotR.Testing` from a .NET Framework 4.8 xUnit v2 test project and follow the
 [WotR.Testing.Offline guide](https://github.com/Acture/wotr-testing/blob/main/src/WotR.Testing.Offline/README.md).
 Run it with `dotnet test`; the game's Unity Mono runtime is selected automatically.
+See [randomized property tests](https://github.com/Acture/wotr-testing/blob/main/docs/fuzzing.md)
+for FsCheck examples, constrained generators and game-state cleanup. Consumers
+using the Offline component directly can add FsCheck.Xunit explicitly.
 The packages contain no game files: game assemblies are referenced at compile time
 from your own installation. License: AGPL-3.0 with an
 [additional permission](https://github.com/Acture/wotr-testing/blob/main/LICENSE-EXCEPTION.md)

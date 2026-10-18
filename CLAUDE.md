@@ -21,8 +21,8 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
 - `scripts/`: `Invoke-WotrOfflineTests.ps1` (generic runner) and
   `New-WotrSnapshot.ps1` (game-file snapshot). Consumers call these paths through
   the submodule; moving them is a breaking change.
-- `tests/`: repository checks and their tests; library behavior tests and small
-  synthetic fixtures (`tests/fixtures/`) once they exist.
+- `tests/`: repository checks, CLI integration tests and small synthetic fixtures
+  (`tests/fixtures/`) for the native runtime and FsCheck.
 - `docs/`: public documentation. `data/`: no datasets; game files never go there.
 - `.github/`: CI, pull request template and CODEOWNERS.
 - `notes/`: optional private notes submodule; public builds and checks must not
@@ -65,6 +65,7 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   uvx ty==0.0.82 check tests
   ```
 - Opt-in runner integration tests: restore `tests/fixtures/MonoTests/MonoTests.csproj`,
+  and `tests/fixtures/FuzzTests/FuzzTests.csproj` for FsCheck integration,
   set `WOTR_TEST_INTEGRATION=1`, then run the Python suite above. They need local
   game inputs and skip in public CI. Verify real game behavior through a consumer: the
   AttributeFeats repository (`external/wotr-testing` submodule) runs

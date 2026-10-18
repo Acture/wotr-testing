@@ -11,6 +11,24 @@ from test_dotnet_test import ROOT, TRX_NS, DotnetTestHarness
 class FsCheckIntegrationTests(DotnetTestHarness):
 	project = ROOT / "tests/fixtures/FuzzTests/FuzzTests.csproj"
 
+	def test_automatic_interface_fuzzer_on_both_runtimes(self) -> None:
+		for runtime in ("mono", "netfx"):
+			with self.subTest(runtime=runtime):
+				results = self.results / runtime
+				result = self.run_cli(
+					"--filter",
+					"FullyQualifiedName~InterfaceTests",
+					f"-p:WotrRuntime={runtime}",
+					expected_runtime="unity-mono" if runtime == "mono" else "netfx",
+					results=results,
+				)
+				self.assert_success(
+					result,
+					3,
+					expected_runtime="unity-mono" if runtime == "mono" else "netfx",
+					results=results,
+				)
+
 	def test_property_executes_generated_samples(self) -> None:
 		self.check_property("AddsCommutatively")
 

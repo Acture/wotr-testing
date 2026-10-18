@@ -65,14 +65,14 @@ namespace WotR.Testing.VSTest
             var isolated = TestHostIsolation.Prepare(host, Value("WorkDirectory"));
             host = isolated.Host;
             var args = new[] { "--runtime", mono, "--config", Path.Combine(inputRoot, "MonoBleedingEdge", "etc"),
-                "--assemblies", classLibrary, "--", host };
+                "--assemblies", classLibrary, "--", Value("MonoHost"), "--testhost", host, source };
             return new TestProcessStartInfo {
                 FileName = Value("MonoHost"),
-                Arguments = string.Join(" ", args.Select(Quote)) + " " + connectionInfo.ToCommandLineOptions()
-                    + " --testsourcepath " + Quote(source),
+                Arguments = string.Join(" ", args.Select(Quote)) + " " + connectionInfo.ToCommandLineOptions(),
                 WorkingDirectory = Path.GetDirectoryName(source),
                 EnvironmentVariables = new Dictionary<string, string>(environmentVariables ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase) {
-                    ["WOTR_VSTEST_HOST_INFO"] = isolated.Manifest
+                    ["WOTR_VSTEST_HOST_INFO"] = isolated.Manifest,
+                    ["WOTR_VSTEST_HOST_BOOTSTRAP"] = Value("MonoHost")
                 }
             };
         }

@@ -83,11 +83,13 @@ user's settings and preserves their supported paths and environment variables.
 Use `-p:WotrRuntime=netfx` for .NET Framework; other test frameworks on Mono are not
 yet verified. Build the mod without deploying it to the game.
 
-The `WotR.Testing` meta-package includes FsCheck.Xunit for native `[Property]`
-tests. Source consumers referencing this Offline project directly can add
-`FsCheck.Xunit` 3.5.0 themselves, or reference the meta-project. See
-[randomized property tests](https://github.com/Acture/wotr-testing/blob/main/docs/fuzzing.md)
-for generation, shrinking, replay and per-sample state cleanup.
+Register a mod interface and a fresh-instance factory with
+`game.Fuzz<IMyApi>(() => new MyApi())`. The library automatically generates method
+calls and arguments, shrinks unexpected failures and saves exact replay cases in
+the environment report. `WotR.Testing.Fuzzing` is included by this component;
+the meta-package also includes FsCheck.Xunit for author-written `[Property]`
+tests. See [interface fuzzing](https://github.com/Acture/wotr-testing/blob/main/docs/fuzzing.md)
+for custom generators, replay and per-sequence state cleanup.
 
 Every execution writes fresh environment reports, checks that their reported
 runtime matches the selected runtime and fails on zero tests, missing reports,

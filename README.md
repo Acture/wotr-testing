@@ -5,6 +5,7 @@ Test tooling for Pathfinder: Wrath of the Righteous mods.
 | Component | Status |
 |---|---|
 | [`WotR.Testing.Offline`](src/WotR.Testing.Offline/README.md) | Runs UnityModManager mods against the real game assemblies, vanilla blueprint pack and settings on the game's own Unity Mono runtime (or .NET Framework), without starting the game or the Unity player |
+| [`WotR.Testing.Fuzzing`](src/WotR.Testing.Fuzzing/README.md) | Automatically generates method calls and argument values for interfaces selected by a mod author, shrinks failures and replays saved cases |
 | In-game testing | Planned: running tests inside the game for paths that need the Unity engine |
 
 The repository contains no game files. Game assemblies are referenced at compile
@@ -21,8 +22,8 @@ is a preview and the API may change.
 Create a .NET Framework 4.8 (or 4.8.1) xUnit v2 project, add the `WotR.Testing`
 NuGet package (preview), set `WotrModAssembly` to your built mod and add a
 `WotrDependencyMod` item for each mod it requires. `WotR.Testing` references the
-components (today `WotR.Testing.Offline`, which carries the build targets, the test
-runner and the Mono host); the packages contain no game files.
+components (`WotR.Testing.Offline`, which carries the build targets, test runner
+and Mono host, and `WotR.Testing.Fuzzing`); the packages contain no game files.
 
 ```powershell
 dotnet test tests/MyMod.OfflineTests/MyMod.OfflineTests.csproj
@@ -41,9 +42,18 @@ test framework's adapter. `-p:WotrRuntime=netfx` uses .NET Framework instead, wi
 [docs/offline.md](docs/offline.md#runtimes).
 The previous PowerShell runner remains available for existing consumers.
 
-`WotR.Testing` also includes FsCheck.Xunit for `[Property]` tests with generated
-inputs, counterexample shrinking and seed replay. See [randomized property
-tests](docs/fuzzing.md) for examples and game-state cleanup.
+Mod authors can register an interface and factory to fuzz their API automatically:
+
+```csharp
+[Fact]
+public void FuzzMyApi() => Fuzz.Check<IMyModApi>(() => new MyModApi());
+```
+
+`WotR.Testing.Fuzzing.Fuzz` discovers the selected interface's methods, generates
+arguments and call sequences, shrinks failures and saves replayable cases. Use
+`game.Fuzz<IMyModApi>(...)` to include the results in the offline environment
+report. See [interface fuzzing](docs/fuzzing.md) for custom generators and limits.
+The meta-package also includes FsCheck.Xunit for author-written `[Property]` tests.
 
 ## Building
 
@@ -63,8 +73,8 @@ ignored `GamePath.props` at the repository root:
 dotnet build WotR.Testing.slnx
 ```
 
-Outputs go to the ignored `artifacts/` directory. Public CI cannot build this
-repository because it has no game files.
+Outputs go to the ignored `artifacts/` directory. Public CI runs the independent
+fuzzing library's tests; building the offline library needs game files.
 
 ## Repository layout
 

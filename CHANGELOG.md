@@ -4,10 +4,23 @@
 
 ## 0.1.0-preview.3 - 2026-10-18
 
-- `WotR.Testing` includes FsCheck.Xunit 3.5.0 for native `[Property]` tests through
-  `dotnet test`: generated inputs, custom generators, shrinking and `Replay`.
-  `WotR.Testing.Offline` remains independent of FsCheck. See
-  [fuzzing](docs/fuzzing.md) for examples, per-sample cleanup and skip limitations.
+- New `WotR.Testing.Fuzzing` component: mod authors register an interface and an
+  instance factory with `Fuzz.Check<IMyApi>(...)`; the library automatically
+  generates method calls, argument values and stateful sequences. Failures are
+  shrunk and saved for exact replay. Supports FsCheck generators and explicit
+  codecs for custom argument types, inherited interfaces, overloads and Task
+  methods; fresh targets are disposed after each sequence or shrink attempt.
+- `WotrGameFixture.Fuzz<IMyApi>(...)` records results in `environment.json` and
+  classifies unavailable Unity paths separately. All-unavailable runs fail.
+  Fuzzing detects unexpected exceptions; gameplay invariants need assertions in
+  the selected API or separate property tests. See [interface fuzzing](docs/fuzzing.md).
+- `WotR.Testing` also includes FsCheck.Xunit 3.5.0 for author-written `[Property]`
+  tests with generated inputs, custom generators, shrinking and seed replay.
+- Mono installs the offline assembly resolver before SDK test discovery. This
+  prevents an early game-typed field in a test adapter from caching an unresolved
+  game assembly reference before the test assembly's module initializer runs.
+  SDK and game method instructions remain unchanged; reports record the managed
+  bootstrap's path and hash.
 
 ## 0.1.0-preview.2 - 2026-10-18
 

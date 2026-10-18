@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Xml.Linq;
+using WotR.Testing.Fuzzing;
 
 namespace WotR.Testing.Offline
 {
@@ -60,6 +61,22 @@ namespace WotR.Testing.Offline
         public void RequireGame()
         {
             if (startupError != null) throw startupError;
+        }
+
+        /// <summary>
+        /// Generates calls to the selected interface, using a fresh target for each sequence and shrink attempt.
+        /// Records the report in environment.json; paths reaching Unity native code are counted as unavailable.
+        /// </summary>
+        public FuzzReport Fuzz<TApi>(Func<TApi> factory, FuzzOptions options = null)
+        {
+            RequireGame();
+            var configured = (options ?? new FuzzOptions()).Clone();
+            var isUnavailable = configured.IsUnavailable;
+            configured.IsUnavailable = error => UnityNative.IsUnavailable(error) || (isUnavailable?.Invoke(error) ?? false);
+            var report = Fuzzing.Fuzz.Run(factory, configured);
+            Observations["fuzz-" + typeof(TApi).FullName + "-" + Guid.NewGuid().ToString("N")] = report;
+            if (!report.Succeeded) throw new FuzzFailureException(report);
+            return report;
         }
 
         /// <summary>
@@ -150,7 +167,9 @@ namespace WotR.Testing.Offline
             var path = Environment.GetEnvironmentVariable("WOTR_VSTEST_HOST_INFO");
             if (string.IsNullOrEmpty(path)) return null;
             var manifest = XDocument.Load(path).Root;
+            var bootstrap = Environment.GetEnvironmentVariable("WOTR_VSTEST_HOST_BOOTSTRAP");
             return new {
+                bootstrap = string.IsNullOrEmpty(bootstrap) ? null : new { path = bootstrap, sha256 = OfflineRuntime.FileSha256(bootstrap) },
                 originalHost = (string)manifest.Attribute("originalHost"),
                 isolatedHost = (string)manifest.Attribute("isolatedHost"),
                 assemblies = AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic &&

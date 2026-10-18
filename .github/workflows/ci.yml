@@ -12,6 +12,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  fuzzing:
+    name: Interface fuzzing
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          submodules: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '8.0.x'
+      - name: Test automatic interface generation, shrinking and replay
+        run: dotnet test tests/WotR.Testing.Fuzzing.Tests/WotR.Testing.Fuzzing.Tests.csproj --configuration Release
   repository:
     name: Repository checks
     runs-on: ubuntu-latest

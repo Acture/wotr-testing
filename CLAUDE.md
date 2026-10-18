@@ -11,6 +11,8 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
 - `src/WotR.Testing/`: `WotR.Testing` meta-package (no code; depends on the
   components). `src/WotR.Testing.Offline/`: offline library, its `build/*.targets`
   and README.
+- `src/WotR.Testing.Fuzzing/`: game-independent automatic interface fuzzer;
+  `tests/WotR.Testing.Fuzzing.Tests/` runs on .NET 8 without game inputs.
 - `src/WotR.Testing.MonoHost/`: `wotr-mono-host`, starts the game's own Unity Mono
   runtime (the default test runtime) from the inputs.
   `src/WotR.Testing.VSTest/`, `src/WotR.Testing.VSTestBootstrap/` and
@@ -74,7 +76,9 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   with a mod that has a dependency mod (TabletopTweaks-Base with -Core).
   Point its submodule at a local branch to test before publishing. Do not claim
   untested behavior has passed.
-- Public CI has no game files and cannot build this repository yet.
+- Run `dotnet test tests/WotR.Testing.Fuzzing.Tests/WotR.Testing.Fuzzing.Tests.csproj`
+  for game-independent fuzzing tests. Public CI runs these; building the offline
+  library still needs game files.
 - Use CLI and code; do not use computer use or launch the game for offline work.
 
 ## Changes

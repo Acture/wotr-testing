@@ -12,9 +12,12 @@ animation, input or the live UI.
 
 ## What runs
 
-Randomized mechanics tests can use FsCheck.Xunit through the `WotR.Testing`
-meta-package. See [randomized property tests](fuzzing.md) for generators, shrinking,
-replay and the lifecycle of game state across samples.
+Mod authors can register an interface and a factory with
+`game.Fuzz<IMyModApi>(() => new MyModApi())`. The library generates method calls
+and parameters, shrinks failures and records replayable cases in
+`environment.json.observations`. Sequences reaching Unity native code are counted
+as unavailable, and an all-unavailable run fails. See [interface fuzzing](fuzzing.md)
+for generators, replay and the lifecycle of game state across samples.
 
 | Part | Source |
 |---|---|
@@ -123,6 +126,12 @@ the run, beneath `WotrReportDirectory` when set. Otherwise it is beneath
 `--results-directory`/`wotr/<project>` when supplied, then `wotr-reports` beside the
 test assembly. The test process receives this path as `WOTR_OFFLINE_REPORT_DIR`;
 reports left by an earlier run cannot satisfy the current run's checks.
+
+On Mono, a managed entry point in `wotr-mono-host` installs the offline assembly
+resolver in the consumer's AppDomain before invoking the SDK testhost. This also
+covers game-typed fields inspected during test discovery, before a module
+initializer would run. The SDK's method instructions remain unchanged. The
+bootstrap path and hash are recorded in `environment.json.testHost.bootstrap`.
 
 | File | Contents |
 |---|---|

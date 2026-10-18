@@ -4,6 +4,14 @@
 private-material boundaries and that no game files are tracked;
 `test_check_repository.py` covers those rules. CI runs both.
 
+`WotR.Testing.Fuzzing.Tests/` tests automatic interface method discovery, generated
+call sequences, custom argument generators, shrinking, exact replay, cleanup and
+failure classification on .NET 8. It needs no game files and runs in public CI:
+
+```powershell
+dotnet test tests/WotR.Testing.Fuzzing.Tests/WotR.Testing.Fuzzing.Tests.csproj
+```
+
 `test_dotnet_test.py` has opt-in CLI integration tests using the synthetic
 `fixtures/MonoTests/` project and the locally installed game's Mono runtime. They
 check discovery, Theory rows, filtering, runsettings, TRX, explicit netfx, host
@@ -23,7 +31,7 @@ python -m unittest discover -s tests -p 'test_dotnet_test.py' -v
 Diagnostics stay in ignored `artifacts/`; do not publish runtime or SDK caches.
 
 `test_fuzzing.py` uses `fixtures/FuzzTests/` to check FsCheck.Xunit received through
-the meta-project: native discovery, generated samples, constrained generators,
+the meta-project, plus the automatic interface fuzzer: native discovery, generated samples, constrained generators,
 shrinking, replay, exhausted preconditions, environment errors and native-only
 skips on Mono/netfx. Restore that fixture as well, then use the same opt-in flag:
 

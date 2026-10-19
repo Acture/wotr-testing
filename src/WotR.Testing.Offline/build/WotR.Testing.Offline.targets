@@ -121,6 +121,9 @@
       <_WotrRunReportDirectory>$(WotrReportDirectory)</_WotrRunReportDirectory>
       <_WotrRunReportDirectory Condition="'$(_WotrRunReportDirectory)'=='' and '$(VSTestResultsDirectory)'!=''">$(VSTestResultsDirectory)/wotr/$(MSBuildProjectName)/</_WotrRunReportDirectory>
       <_WotrRunReportDirectory Condition="'$(_WotrRunReportDirectory)'==''">$(TargetDir)wotr-reports/</_WotrRunReportDirectory>
+      <!-- Microsoft.Testing.Platform receives the results directory only at run time. -->
+      <_WotrReportBelowResults>null</_WotrReportBelowResults>
+      <_WotrReportBelowResults Condition="'$(WotrReportDirectory)'==''">&quot;wotr/$(MSBuildProjectName)&quot;</_WotrReportBelowResults>
       <_WotrModAssemblies>@(_WotrModUnderTest->'&quot;%(FullPath)&quot;', ', ')</_WotrModAssemblies>
       <_WotrFuzzSeed>null</_WotrFuzzSeed>
       <_WotrFuzzSeed Condition="'$(WotrFuzzSeed)'!=''">$(WotrFuzzSeed)</_WotrFuzzSeed>
@@ -146,7 +149,8 @@
   "fuzzSeed": $(_WotrFuzzSeed),
   "fuzzReplay": $(_WotrFuzzReplay),
   "inGameOptionsGiven": $(_WotrInGameOptionsGiven),
-  "launchInBackground": $(WotrInGameLaunchInBackground.ToLowerInvariant())
+  "launchInBackground": $(WotrInGameLaunchInBackground.ToLowerInvariant()),
+  "reportBelowResults": $(_WotrReportBelowResults)
 }</_WotrRunSettingsJson>
     </PropertyGroup>
     <WriteLinesToFile File="$(_WotrSettings)" Lines="$(_WotrRunSettingsJson)" Overwrite="true" />

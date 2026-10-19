@@ -27,6 +27,10 @@ namespace WotR.Testing.Client
         [DataMember(Name = "classLibrary", Order = 8)] public string ClassLibrary { get; set; }
         [DataMember(Name = "supportFiles", Order = 9)] public List<string> SupportFiles { get; set; }
         [DataMember(Name = "expectedModules", Order = 10)] public List<ModuleIdentity> ExpectedModules { get; set; }
+        /// <summary>Declared partitions outside the requested scope, for the run report.</summary>
+        [DataMember(Name = "excluded", Order = 11)] public List<ManifestPartition> Excluded { get; set; }
+        /// <summary>Planned partitions the ordinary xUnit adapter runs, for the run report.</summary>
+        [DataMember(Name = "runByVSTest", Order = 12)] public List<ManifestPartition> RunByVSTest { get; set; }
 
         public static RunManifest Read(string path) => ProtocolJson.Deserialize<RunManifest>(File.ReadAllText(path));
 
@@ -34,8 +38,8 @@ namespace WotR.Testing.Client
 
         public (ExecutionPlan Plan, RunOptions Options) Resolve(bool listOnly)
         {
-            var plan = ExecutionPlan.FromPartitions(RequestedMode, RequestedKind,
-                Partitions.Select(item => new Partition(item.Mode, item.Kind, item.Declared)).ToList(), Settings.FuzzSeed, Replay);
+            var plan = ExecutionPlan.FromPartitions(RequestedMode, RequestedKind, ManifestPartition.ToPlan(Partitions),
+                ManifestPartition.ToPlan(Excluded), ManifestPartition.ToPlan(RunByVSTest), Settings.FuzzSeed, Replay);
             var partition = new PartitionSettings {
                 TestAssembly = Settings.TestAssembly, RunId = RunId, ListOnly = listOnly,
                 TestTimeoutSeconds = Settings.TestTimeoutSeconds > 0 ? Settings.TestTimeoutSeconds : 60,
@@ -60,5 +64,11 @@ namespace WotR.Testing.Client
         [DataMember(Name = "mode", Order = 0)] public string Mode { get; set; }
         [DataMember(Name = "kind", Order = 1)] public string Kind { get; set; }
         [DataMember(Name = "declared", Order = 2)] public int Declared { get; set; }
+
+        public static List<ManifestPartition> FromPlan(IEnumerable<Partition> partitions)
+            => partitions.Select(partition => new ManifestPartition { Mode = partition.Mode, Kind = partition.Kind, Declared = partition.Declared }).ToList();
+
+        internal static List<Partition> ToPlan(IEnumerable<ManifestPartition> partitions)
+            => (partitions ?? Enumerable.Empty<ManifestPartition>()).Select(item => new Partition(item.Mode, item.Kind, item.Declared)).ToList();
     }
 }

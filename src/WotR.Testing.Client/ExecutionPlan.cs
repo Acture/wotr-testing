@@ -41,13 +41,16 @@ namespace WotR.Testing.Client
         public IReadOnlyList<Partition> Partitions { get; private set; }
         /// <summary>Declared partitions the requested scope leaves out.</summary>
         public IReadOnlyList<Partition> Excluded { get; private set; }
+        /// <summary>Planned partitions VSTest runs with its own xUnit adapter, outside these reports (ordinary offgame tests).</summary>
+        public IReadOnlyList<Partition> RunByVSTest { get; private set; } = new List<Partition>();
         public int? FuzzSeed { get; private set; }
         public ReplaySelection Replay { get; private set; }
 
         /// <summary>A plan resolved earlier, by the build task for the VSTest adapter.</summary>
-        public static ExecutionPlan FromPartitions(string mode, string kind, IReadOnlyList<Partition> partitions, int? fuzzSeed, ReplaySelection replay)
+        public static ExecutionPlan FromPartitions(string mode, string kind, IReadOnlyList<Partition> partitions, IReadOnlyList<Partition> excluded,
+            IReadOnlyList<Partition> runByVSTest, int? fuzzSeed, ReplaySelection replay)
             => new ExecutionPlan {
-                RequestedMode = mode, RequestedKind = kind, Partitions = partitions, Excluded = new List<Partition>(), FuzzSeed = fuzzSeed, Replay = replay
+                RequestedMode = mode, RequestedKind = kind, Partitions = partitions, Excluded = excluded, RunByVSTest = runByVSTest, FuzzSeed = fuzzSeed, Replay = replay
             };
 
         public static ExecutionPlan Resolve(TestScope scope, string mode, string kind, int? fuzzSeed, string replayFile, string offgameRuntime, bool inGameOptionsGiven)

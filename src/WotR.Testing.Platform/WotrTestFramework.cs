@@ -22,6 +22,7 @@ namespace WotR.Testing.Platform
     /// </summary>
     internal sealed class WotrTestFramework : ITestFramework, IDataProducer
     {
+        private const string ResultsDirectory = "results-directory";
         private readonly ICommandLineOptions options;
 
         public WotrTestFramework(ICommandLineOptions options) => this.options = options;
@@ -46,7 +47,11 @@ namespace WotR.Testing.Platform
                 var discovery = context.Request is DiscoverTestExecutionRequest;
                 if (!options.TryGetOptionArgumentList(WotrOptions.Settings, out var settingsPath))
                     throw new PlanException("No WotR run settings. Reference WotR.Testing and run through `dotnet test` with the Microsoft.Testing.Platform runner.");
+                WotrOptions.Check(options);
                 var settings = RunSettings.Read(settingsPath[0]);
+                // The same precedence as VSTest: WotrReportDirectory, then the results directory, then the output folder.
+                if (settings.ReportBelowResults != null && options.TryGetOptionArgumentList(ResultsDirectory, out var results))
+                    settings.ReportDirectory = Path.Combine(Path.GetFullPath(results[0]), settings.ReportBelowResults);
                 var kind = options.IsOptionSet(WotrOptions.Fuzz) ? TestDescriptor.FuzzKind : options.IsOptionSet(WotrOptions.Tests) ? TestDescriptor.TestKind : null;
                 var (plan, run) = RunSetup.Create(settings, Argument(WotrOptions.Mode), kind,
                     Argument(WotrOptions.FuzzSeed) is string seed ? int.Parse(seed, CultureInfo.InvariantCulture) : (int?)null,

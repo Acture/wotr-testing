@@ -94,6 +94,8 @@ namespace WotR.Testing.Client
                     ["problems"] = partition.Problems
                 }).ToList(),
                 ["excluded"] = plan.Excluded.Select(partition => new Dictionary<string, object> { ["name"] = partition.Name, ["declared"] = partition.Declared }).ToList(),
+                // Their results are in VSTest's own reports (TRX, environment.json), not in partition reports here.
+                ["runByVSTest"] = plan.RunByVSTest.Select(partition => new Dictionary<string, object> { ["name"] = partition.Name, ["declared"] = partition.Declared }).ToList(),
                 ["problems"] = summary.Problems,
                 ["succeeded"] = summary.Succeeded
             }));

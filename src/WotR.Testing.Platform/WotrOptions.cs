@@ -6,6 +6,7 @@ using Microsoft.Testing.Extensions.TrxReport.Abstractions;
 using Microsoft.Testing.Platform.CommandLine;
 using Microsoft.Testing.Platform.Extensions;
 using Microsoft.Testing.Platform.Extensions.CommandLine;
+using WotR.Testing.Client;
 
 namespace WotR.Testing.Platform
 {
@@ -34,23 +35,22 @@ namespace WotR.Testing.Platform
             new CommandLineOption(Settings, "Run settings written by the WotR.Testing build targets.", ArgumentArity.ExactlyOne, true)
         };
 
-        public Task<ValidationResult> ValidateOptionArgumentsAsync(CommandLineOption option, string[] arguments)
-        {
-            if (option.Name == Mode && arguments[0] != "auto" && arguments[0] != "offgame" && arguments[0] != "ingame")
-                return ValidationResult.InvalidTask("--mode must be auto, offgame or ingame, not " + arguments[0] + ".");
-            if (option.Name == FuzzSeed && !int.TryParse(arguments[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
-                return ValidationResult.InvalidTask("--fuzz-seed needs an integer.");
-            if (option.Name == FuzzReplay && !File.Exists(arguments[0]))
-                return ValidationResult.InvalidTask("--fuzz-replay file not found: " + arguments[0]);
-            return ValidationResult.ValidTask;
-        }
+        // `dotnet test` shows only the exit code of a rejected command line, not the reason. The framework checks the
+        // values instead and reports a mistake as a failed node with its message (Check).
+        public Task<ValidationResult> ValidateOptionArgumentsAsync(CommandLineOption option, string[] arguments) => ValidationResult.ValidTask;
 
-        public Task<ValidationResult> ValidateCommandLineOptionsAsync(ICommandLineOptions options)
+        public Task<ValidationResult> ValidateCommandLineOptionsAsync(ICommandLineOptions options) => ValidationResult.ValidTask;
+
+        /// <summary>Rejects values the run plan does not check itself, in terms of these options.</summary>
+        internal static void Check(ICommandLineOptions options)
         {
-            if (options.IsOptionSet(Fuzz) && options.IsOptionSet(Tests)) return ValidationResult.InvalidTask("--fuzz and --tests cannot be combined; omit both to run both kinds.");
-            if (options.IsOptionSet(Tests) && (options.IsOptionSet(FuzzSeed) || options.IsOptionSet(FuzzReplay)))
-                return ValidationResult.InvalidTask("--fuzz-seed and --fuzz-replay cannot be combined with --tests.");
-            return ValidationResult.ValidTask;
+            if (options.TryGetOptionArgumentList(Mode, out var mode) && mode[0] != "auto" && mode[0] != "offgame" && mode[0] != "ingame")
+                throw new PlanException("--mode must be auto, offgame or ingame, not " + mode[0] + ".");
+            if (options.IsOptionSet(Fuzz) && options.IsOptionSet(Tests)) throw new PlanException("--fuzz and --tests cannot be combined; omit both to run both kinds.");
+            if (options.TryGetOptionArgumentList(FuzzSeed, out var seed) && !int.TryParse(seed[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                throw new PlanException("--fuzz-seed needs an integer, not " + seed[0] + ".");
+            if (options.TryGetOptionArgumentList(FuzzReplay, out var replay) && !File.Exists(replay[0]))
+                throw new PlanException("--fuzz-replay file not found: " + replay[0]);
         }
 
         /// <summary>The consumer project name, from its settings file name (&lt;assembly&gt;.wotr-settings.json).</summary>

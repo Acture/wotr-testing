@@ -103,11 +103,13 @@ namespace WotR.Testing.Build
             if (OffgameTests && scope.Count(Welcome.InGame, TestDescriptor.TestKind) > 0) changes.Add(new XElement("Filter", TestDescriptor.ModeTrait + "!=" + Welcome.InGame));
             var others = plan.Partitions.Where(partition => !IsOffgameTests(partition)).ToList();
             foreach (var partition in plan.Partitions) Log.LogMessage(MessageImportance.High, "WotR partition: " + partition.Name + " (" + partition.Declared + " declared)");
+            foreach (var partition in plan.Excluded) Log.LogMessage(MessageImportance.High, "WotR partition excluded by the selection: " + partition.Name + " (" + partition.Declared + " declared)");
             if (others.Count == 0) return changes;
             var inGame = others.Any(partition => partition.Mode == Welcome.InGame);
             var manifest = new RunManifest {
                 Settings = settings, RequestedMode = plan.RequestedMode, RequestedKind = plan.RequestedKind, Replay = plan.Replay,
-                Partitions = others.Select(partition => new ManifestPartition { Mode = partition.Mode, Kind = partition.Kind, Declared = partition.Declared }).ToList(),
+                Partitions = ManifestPartition.FromPlan(others), Excluded = ManifestPartition.FromPlan(plan.Excluded),
+                RunByVSTest = ManifestPartition.FromPlan(plan.Partitions.Where(IsOffgameTests)),
                 ReportDirectory = EnvironmentDirectory, RunId = Path.GetFileName(directory),
                 // Everything that needs assembly metadata is resolved here, outside the .NET Framework test host.
                 ClassLibrary = Runtime == "mono" && others.Any(partition => partition.Mode == Welcome.OffGame) ? OffgameWorker.PrepareClassLibrary(settings.InputRoot, settings.WorkDirectory) : null,

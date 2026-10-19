@@ -34,6 +34,8 @@ namespace WotR.Testing.Client
         [DataMember(Name = "inGameOptionsGiven", Order = 18)] public bool InGameOptionsGiven { get; set; }
         /// <summary>A game this run starts leaves the focus to the user while it loads; false lets it take the focus.</summary>
         [DataMember(Name = "launchInBackground", Order = 19)] public bool? LaunchInBackground { get; set; }
+        /// <summary>Report folder below a results directory given at run time; null when WotrReportDirectory was set.</summary>
+        [DataMember(Name = "reportBelowResults", Order = 20)] public string ReportBelowResults { get; set; }
 
         public static RunSettings Read(string path) => ProtocolJson.Deserialize<RunSettings>(File.ReadAllText(path));
 

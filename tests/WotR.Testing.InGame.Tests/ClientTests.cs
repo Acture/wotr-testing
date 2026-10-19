@@ -139,10 +139,14 @@ public class ReportTests
                 Settings = new RunSettings { TestAssembly = "C:/t/Tests.dll", Runtime = "mono", Connection = "attach", TestTimeoutSeconds = 7, FuzzSeed = 9 },
                 RequestedMode = "auto", RequestedKind = "all", ReportDirectory = "C:/r", RunId = "run",
                 Partitions = new List<ManifestPartition> { new ManifestPartition { Mode = "ingame", Kind = "fuzz", Declared = 2 } },
+                Excluded = new List<ManifestPartition> { new ManifestPartition { Mode = "offgame", Kind = "fuzz", Declared = 1 } },
+                RunByVSTest = new List<ManifestPartition> { new ManifestPartition { Mode = "offgame", Kind = "tests", Declared = 3 } },
                 SupportFiles = new List<string> { "C:/f/System.Runtime.dll" }, ExpectedModules = new List<ModuleIdentity> { new ModuleIdentity { Name = "Mod", Mvid = "m" } }
             }.Write(file);
             var (plan, options) = RunManifest.Read(file).Resolve(false);
             Assert.Equal("ingame/fuzz", Assert.Single(plan.Partitions).Name);
+            Assert.Equal("offgame/fuzz", Assert.Single(plan.Excluded).Name);
+            Assert.Equal(3, Assert.Single(plan.RunByVSTest).Declared);
             Assert.Equal(9, plan.FuzzSeed);
             Assert.Equal("attach", options.Connection);
             Assert.Equal(7, options.Settings.TestTimeoutSeconds);

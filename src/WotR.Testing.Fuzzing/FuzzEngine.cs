@@ -16,6 +16,7 @@ namespace WotR.Testing.Fuzzing
         private readonly MethodSpec[] methods;
         private readonly FuzzReport report;
         private readonly List<string> skipped = new List<string>();
+        private bool blocking;
 
         internal FuzzEngine(Type api, FuzzOptions options)
         {
@@ -37,7 +38,22 @@ namespace WotR.Testing.Fuzzing
             report = new FuzzReport { Seed = this.options.Seed, SelectedMethods = methods.Select(method => method.Key).ToArray(), SkippedReasons = skipped.AsReadOnly() };
         }
 
+        // The synchronous API runs the same asynchronous core and blocks on each target task on the caller's thread,
+        // so every await in the core finds its task complete and the whole run finishes before these return.
         internal FuzzReport Run(Func<object> factory)
+        {
+            blocking = true;
+            return RunAsync(() => Task.FromResult(factory())).GetAwaiter().GetResult();
+        }
+
+        internal FuzzReport Replay(Func<object> factory, string serializedCase)
+        {
+            blocking = true;
+            return ReplayAsync(() => Task.FromResult(factory()), serializedCase).GetAwaiter().GetResult();
+        }
+
+        /// <summary>Awaits the factory and every target task in order, resuming on the caller's synchronization context.</summary>
+        internal async Task<FuzzReport> RunAsync(Func<Task<object>> factory)
         {
             var random = new FuzzRandom(options.Seed);
             for (int iteration = 0; iteration < options.Cases; iteration++)
@@ -59,12 +75,12 @@ namespace WotR.Testing.Fuzzing
                     FailInfrastructure("generation", null, exception);
                     return report;
                 }
-                var result = Execute(factory, calls);
+                var result = await ExecuteAsync(factory, calls);
                 Count(result);
                 if (result.Failure != null)
                 {
                     var failing = calls.Take(result.FailingIndex + 1).ToList();
-                    if (result.Failure.Kind == "invocation") failing = Minimize(factory, failing, result.Failure);
+                    if (result.Failure.Kind == "invocation") failing = await MinimizeAsync(factory, failing, result.Failure);
                     report.ReplayCase = Save(failing);
                     return report;
                 }
@@ -74,7 +90,8 @@ namespace WotR.Testing.Fuzzing
             return report;
         }
 
-        internal FuzzReport Replay(Func<object> factory, string serializedCase)
+        /// <summary>Validates the case before constructing a target and throws for an invalid one; then replays it once.</summary>
+        internal Task<FuzzReport> ReplayAsync(Func<Task<object>> factory, string serializedCase)
         {
             if (serializedCase == null) throw new ArgumentNullException(nameof(serializedCase));
             SavedCase saved;
@@ -96,11 +113,28 @@ namespace WotR.Testing.Fuzzing
                 throw new ArgumentException("Invalid or incompatible replay case. Use the same interface version, method selection and argument codecs.", nameof(serializedCase), exception);
             }
             report.Seed = saved.Seed;
-            var result = Execute(factory, saved.Calls);
+            return ReplayAsync(factory, saved.Calls, serializedCase);
+        }
+
+        private async Task<FuzzReport> ReplayAsync(Func<Task<object>> factory, List<SavedCall> calls, string serializedCase)
+        {
+            var result = await ExecuteAsync(factory, calls);
             Count(result);
             if (result.Unavailable != null) report.Status = FuzzStatus.AllSkipped;
             report.ReplayCase = serializedCase;
             return report;
+        }
+
+        /// <summary>Adapts a typed factory task without blocking; a null task stays null so the engine reports it.</summary>
+        internal static Task<object> Untyped<T>(Task<T> task) => task == null ? null : UntypedAsync(task);
+
+        private static async Task<object> UntypedAsync<T>(Task<T> task) => await task;
+
+        // The asynchronous API awaits plainly, so continuations return to the caller's synchronization context (Unity's
+        // main thread in game). The synchronous API blocks here first, as it always has; the await then completes at once.
+        private void BlockIfSynchronous(Task task)
+        {
+            if (blocking) task.GetAwaiter().GetResult();
         }
 
         private string Save(List<SavedCall> calls) => JsonSerializer.Serialize(new SavedCase {
@@ -114,11 +148,16 @@ namespace WotR.Testing.Fuzzing
             return methods.FirstOrDefault(method => method.Key == call.Method) ?? throw new ArgumentException("Unknown or excluded replay method: " + call.Method);
         }
 
-        private Execution Execute(Func<object> factory, List<SavedCall> calls)
+        private async Task<Execution> ExecuteAsync(Func<Task<object>> factory, List<SavedCall> calls)
         {
             var result = new Execution();
             object target;
-            try { target = factory() ?? throw new InvalidOperationException("The interface factory returned null."); }
+            try
+            {
+                var created = factory() ?? throw new InvalidOperationException("The interface factory returned a null task.");
+                BlockIfSynchronous(created);
+                target = await created ?? throw new InvalidOperationException("The interface factory returned null.");
+            }
             catch (Exception exception) { result.Failure = Failure("factory", null, exception); return result; }
             bool cleanupSupported = true;
             try
@@ -153,7 +192,11 @@ namespace WotR.Testing.Fuzzing
                     try
                     {
                         var returned = Invoke(method.Method, target, arguments);
-                        if (returned is Task task) task.GetAwaiter().GetResult();
+                        if (returned is Task task)
+                        {
+                            BlockIfSynchronous(task);
+                            await task;
+                        }
                         else if (typeof(Task).IsAssignableFrom(method.Method.ReturnType)) throw new InvalidOperationException("A Task-returning method returned null.");
                         result.CallsCompleted++;
                     }
@@ -230,7 +273,7 @@ namespace WotR.Testing.Fuzzing
             else { report.CasesPassed++; report.Status = FuzzStatus.Passed; }
         }
 
-        private List<SavedCall> Minimize(Func<object> factory, List<SavedCall> current, FuzzFinding finding)
+        private async Task<List<SavedCall>> MinimizeAsync(Func<Task<object>> factory, List<SavedCall> current, FuzzFinding finding)
         {
             var seen = new HashSet<string>(StringComparer.Ordinal) { Save(current) };
             // Remove contiguous chunks, then individual calls. Every attempt uses a new target.
@@ -244,9 +287,9 @@ namespace WotR.Testing.Fuzzing
                     {
                         if (current.Count <= chunk) break;
                         var candidate = current.Take(start).Concat(current.Skip(start + chunk)).ToList();
-                        int accepted = TryCandidate(factory, candidate, finding, seen, out var trimmed);
-                        if (accepted < 0) return current;
-                        if (accepted > 0) { current = trimmed; progress = true; break; }
+                        var attempt = await TryCandidateAsync(factory, candidate, finding, seen);
+                        if (attempt.Outcome < 0) return current;
+                        if (attempt.Outcome > 0) { current = attempt.Calls; progress = true; break; }
                     }
                 } while (progress && report.ShrinkAttempts < options.MaxShrinks);
             }
@@ -268,9 +311,9 @@ namespace WotR.Testing.Fuzzing
                                 if (report.ShrinkAttempts >= options.MaxShrinks) break;
                                 var candidate = current.Select(call => new SavedCall { Method = call.Method, Arguments = (string[])call.Arguments.Clone() }).ToList();
                                 candidate[index].Arguments[argument] = generator.Serialize(smaller);
-                                int accepted = TryCandidate(factory, candidate, finding, seen, out var trimmed);
-                                if (accepted < 0) return current;
-                                if (accepted > 0) { current = trimmed; progress = true; break; }
+                                var attempt = await TryCandidateAsync(factory, candidate, finding, seen);
+                                if (attempt.Outcome < 0) return current;
+                                if (attempt.Outcome > 0) { current = attempt.Calls; progress = true; break; }
                             }
                         }
                     }
@@ -280,23 +323,21 @@ namespace WotR.Testing.Fuzzing
             return current;
         }
 
-        private int TryCandidate(Func<object> factory, List<SavedCall> candidate, FuzzFinding original,
-            HashSet<string> seen, out List<SavedCall> trimmed)
+        private async Task<Attempt> TryCandidateAsync(Func<Task<object>> factory, List<SavedCall> candidate, FuzzFinding original,
+            HashSet<string> seen)
         {
-            trimmed = candidate;
             report.ShrinkAttempts++;
-            if (!seen.Add(Save(candidate))) return 0;
-            var result = Execute(factory, candidate);
+            if (!seen.Add(Save(candidate))) return Attempt.Rejected;
+            var result = await ExecuteAsync(factory, candidate);
             if (result.Failure != null && result.Failure.Kind != "invocation")
             {
                 report.Failure = result.Failure;
                 report.Status = FuzzStatus.InfrastructureFailure;
-                return -1;
+                return Attempt.Aborted;
             }
-            if (result.Failure == null || result.Failure.Method != original.Method || result.Failure.ExceptionType != original.ExceptionType) return 0;
+            if (result.Failure == null || result.Failure.Method != original.Method || result.Failure.ExceptionType != original.ExceptionType) return Attempt.Rejected;
             report.Failure = result.Failure;
-            trimmed = candidate.Take(result.FailingIndex + 1).ToList();
-            return 1;
+            return new Attempt(1, candidate.Take(result.FailingIndex + 1).ToList());
         }
 
         private void FailInfrastructure(string kind, string method, Exception exception)
@@ -306,6 +347,16 @@ namespace WotR.Testing.Fuzzing
             Kind = kind, Method = method, ExceptionType = exception.GetType().FullName,
             Message = exception.Message, ExceptionDetails = exception.ToString()
         };
+
+        /// <summary>Outcome &gt; 0: reproduces the finding (calls trimmed after the failing one); 0: rejected; &lt; 0: infrastructure failure.</summary>
+        private sealed class Attempt
+        {
+            internal static readonly Attempt Rejected = new Attempt(0, null);
+            internal static readonly Attempt Aborted = new Attempt(-1, null);
+            internal readonly int Outcome;
+            internal readonly List<SavedCall> Calls;
+            internal Attempt(int outcome, List<SavedCall> calls) { Outcome = outcome; Calls = calls; }
+        }
 
         private sealed class Execution
         {

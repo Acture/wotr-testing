@@ -24,10 +24,11 @@ namespace WotR.Testing.InGame.Host
                 entry.Logger.Error("Unobserved exception from test code on the main thread: " + error);
             };
             environment = new HostEnvironment(dispatcher, entry);
-            // A game a test run started stays minimized while it loads and keeps updating when unfocused.
-            if (LaunchRequest.ReadRecent()?.Minimize == true) {
+            // A game a test run started leaves the focus to the user while it loads and keeps updating when unfocused.
+            var launch = LaunchRequest.ReadRecent();
+            if (launch?.Background == true) {
                 Application.runInBackground = true;
-                background = new BackgroundWindow(() => environment.Loaded);
+                if (launch.ReturnFocus != 0) background = new BackgroundWindow(launch.ReturnFocus, () => environment.Loaded);
             }
             InGameRuntime.Attach(dispatcher, environment.MarkDirty);
             var frames = 0;

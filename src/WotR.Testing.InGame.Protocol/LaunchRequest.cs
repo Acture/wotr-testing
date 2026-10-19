@@ -15,16 +15,18 @@ namespace WotR.Testing.InGame.Protocol
         public static readonly TimeSpan Validity = TimeSpan.FromMinutes(10);
 
         [DataMember(Name = "requested", Order = 0)] public string Requested { get; set; }
-        /// <summary>Minimize the window while the game loads, so it does not take the focus from the user's work.</summary>
-        [DataMember(Name = "minimize", Order = 1)] public bool Minimize { get; set; }
+        /// <summary>Keep the game from taking the focus from the user's work while it loads.</summary>
+        [DataMember(Name = "background", Order = 1)] public bool Background { get; set; }
+        /// <summary>The window that had the focus when the run started the game, which gets it back.</summary>
+        [DataMember(Name = "returnFocus", Order = 2)] public long ReturnFocus { get; set; }
 
         public static string FilePath => Path.Combine(Path.GetDirectoryName(HostAdvertisement.Directory), "launch-request.json");
 
-        public static void Write(bool minimize)
+        public static void Write(bool background, long returnFocus)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
             File.WriteAllText(FilePath, ProtocolJson.Serialize(new LaunchRequest {
-                Requested = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), Minimize = minimize
+                Requested = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture), Background = background, ReturnFocus = returnFocus
             }));
         }
 

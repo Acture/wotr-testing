@@ -66,8 +66,8 @@
       WotrInGameConnection    auto (default: attach to a running game with the host, launch only when no game runs),
                               attach or launch.
       WotrInGamePid           Process to attach to when several games run.
-      WotrInGameLaunchMinimized  true (default): a game this run starts stays minimized while it loads, so it does
-                              not take the focus; false shows it normally.
+      WotrInGameLaunchInBackground  true (default): a game this run starts gives the focus back to the window that
+                              had it while it loads; false lets it take the focus.
       WotrInGameTestTimeoutSeconds     Per test or fuzz target, default 60.
       WotrInGameStartupTimeoutSeconds  Game start and loading, default 300.
       WotrFuzzSeed, WotrFuzzReplay     Seed for every fuzz target; a saved case file to replay exactly.
@@ -82,7 +82,7 @@
     <_WotrInGameOptionsGiven Condition="'$(WotrInGameConnection)'!='' or '$(WotrInGamePid)'!=''">true</_WotrInGameOptionsGiven>
     <WotrInGameConnection Condition="'$(WotrInGameConnection)'==''">auto</WotrInGameConnection>
     <WotrInGamePid Condition="'$(WotrInGamePid)'==''">0</WotrInGamePid>
-    <WotrInGameLaunchMinimized Condition="'$(WotrInGameLaunchMinimized)'==''">true</WotrInGameLaunchMinimized>
+    <WotrInGameLaunchInBackground Condition="'$(WotrInGameLaunchInBackground)'==''">true</WotrInGameLaunchInBackground>
     <WotrInGameTestTimeoutSeconds Condition="'$(WotrInGameTestTimeoutSeconds)'==''">60</WotrInGameTestTimeoutSeconds>
     <WotrInGameStartupTimeoutSeconds Condition="'$(WotrInGameStartupTimeoutSeconds)'==''">300</WotrInGameStartupTimeoutSeconds>
     <_WotrGlobalJson>$([MSBuild]::GetPathOfFileAbove('global.json', '$(MSBuildProjectDirectory)'))</_WotrGlobalJson>
@@ -143,7 +143,7 @@
   "fuzzSeed": $(_WotrFuzzSeed),
   "fuzzReplay": $(_WotrFuzzReplay),
   "inGameOptionsGiven": $(_WotrInGameOptionsGiven),
-  "launchMinimized": $(WotrInGameLaunchMinimized.ToLowerInvariant())
+  "launchInBackground": $(WotrInGameLaunchInBackground.ToLowerInvariant())
 }</_WotrRunSettingsJson>
     </PropertyGroup>
     <WriteLinesToFile File="$(_WotrSettings)" Lines="$(_WotrRunSettingsJson)" Overwrite="true" />

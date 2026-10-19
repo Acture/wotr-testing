@@ -38,7 +38,7 @@ namespace WotR.Testing.Client
                 Connection = string.IsNullOrEmpty(settings.Connection) ? ConnectionModes.Auto : settings.Connection,
                 ProcessId = settings.ProcessId, InstallRoot = settings.InstallRoot,
                 MinimumPassed = settings.MinimumPassed > 0 ? settings.MinimumPassed : 1,
-                LaunchMinimized = settings.LaunchMinimized ?? true
+                LaunchInBackground = settings.LaunchInBackground ?? true
             });
         }
 

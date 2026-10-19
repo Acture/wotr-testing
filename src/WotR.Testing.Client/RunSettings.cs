@@ -32,8 +32,8 @@ namespace WotR.Testing.Client
         [DataMember(Name = "fuzzReplay", Order = 17)] public string FuzzReplay { get; set; }
         /// <summary>True when the project set in-game connection options, which an offgame-only run rejects.</summary>
         [DataMember(Name = "inGameOptionsGiven", Order = 18)] public bool InGameOptionsGiven { get; set; }
-        /// <summary>A game this run starts stays minimized while it loads; false shows it normally.</summary>
-        [DataMember(Name = "launchMinimized", Order = 19)] public bool? LaunchMinimized { get; set; }
+        /// <summary>A game this run starts leaves the focus to the user while it loads; false lets it take the focus.</summary>
+        [DataMember(Name = "launchInBackground", Order = 19)] public bool? LaunchInBackground { get; set; }
 
         public static RunSettings Read(string path) => ProtocolJson.Deserialize<RunSettings>(File.ReadAllText(path));
 

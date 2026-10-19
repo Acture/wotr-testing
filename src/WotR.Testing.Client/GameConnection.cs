@@ -57,7 +57,7 @@ namespace WotR.Testing.Client
         /// and no game from that installation runs. Never falls back from a running game without the host.
         /// </summary>
         public static async Task<GameConnection> ConnectAsync(string mode, string installRoot, int processId, TimeSpan startupTimeout,
-            bool launchMinimized, Action<string> log, CancellationToken cancellationToken)
+            bool launchInBackground, Action<string> log, CancellationToken cancellationToken)
         {
             if (!ConnectionModes.IsValid(mode)) throw new ArgumentException("WotrInGameConnection must be auto, attach or launch.");
             installRoot = Normalize(installRoot);
@@ -79,10 +79,10 @@ namespace WotR.Testing.Client
             if (processId != 0) throw new ConnectionException(ConnectionException.NoGame, "Process " + processId + " is not a running game.");
             if (mode == ConnectionModes.Attach)
                 throw new ConnectionException(ConnectionException.NoGame, "No running game with the WotR.Testing host; start the game or use WotrInGameConnection=auto.");
-            return await LaunchAsync(installRoot, startupTimeout, launchMinimized, log, cancellationToken).ConfigureAwait(false);
+            return await LaunchAsync(installRoot, startupTimeout, launchInBackground, log, cancellationToken).ConfigureAwait(false);
         }
 
-        private static async Task<GameConnection> LaunchAsync(string installRoot, TimeSpan startupTimeout, bool minimized, Action<string> log, CancellationToken cancellationToken)
+        private static async Task<GameConnection> LaunchAsync(string installRoot, TimeSpan startupTimeout, bool background, Action<string> log, CancellationToken cancellationToken)
         {
             var executable = Path.Combine(installRoot, GameExecutable);
             if (!File.Exists(executable)) throw new ConnectionException(ConnectionException.LaunchFailed, "The game executable was not found: " + executable);
@@ -90,7 +90,7 @@ namespace WotR.Testing.Client
             var started = DateTime.Now;
             log?.Invoke("Starting " + executable + "; waiting up to " + startupTimeout.TotalSeconds + " seconds for the WotR.Testing host.");
             // Read by the host of every process this launch produces, including one that Steam starts in its place.
-            LaunchRequest.Write(minimized);
+            LaunchRequest.Write(background, background ? GetForegroundWindow().ToInt64() : 0);
             try {
                 using (Process.Start(new ProcessStartInfo(executable) { WorkingDirectory = installRoot, UseShellExecute = true })) { }
             }
@@ -171,5 +171,7 @@ namespace WotR.Testing.Client
         }
 
         internal static string Normalize(string path) => Path.GetFullPath(path).TrimEnd('\\', '/');
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     }
 }

@@ -17,7 +17,7 @@ namespace WotR.Testing.Client
         public int ProcessId { get; set; }
         public string InstallRoot { get; set; }
         public int MinimumPassed { get; set; } = 1;
-        public bool LaunchMinimized { get; set; } = true;
+        public bool LaunchInBackground { get; set; } = true;
     }
 
     public sealed class RunSummary
@@ -53,7 +53,7 @@ namespace WotR.Testing.Client
                     if (partition.Mode == Welcome.InGame && game == null && gameError == null) {
                         try {
                             game = await GameConnection.ConnectAsync(options.Connection, options.InstallRoot, options.ProcessId,
-                                TimeSpan.FromSeconds(settings.StartupTimeoutSeconds), options.LaunchMinimized, observer.Log, cancellationToken).ConfigureAwait(false);
+                                TimeSpan.FromSeconds(settings.StartupTimeoutSeconds), options.LaunchInBackground, observer.Log, cancellationToken).ConfigureAwait(false);
                             observer.Log("In-game partitions use process " + game.Host.ProcessId + " (" + game.Mode + (game.Owned ? ", started by this run" : "") + ").");
                         }
                         catch (Exception error) when (!(error is OperationCanceledException)) { gameError = error; }

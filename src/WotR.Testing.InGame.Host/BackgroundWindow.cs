@@ -1,28 +1,29 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 
 namespace WotR.Testing.InGame.Host
 {
     /// <summary>
-    /// Keeps a game that a test run started minimized while it loads, so the window does not take the focus from the
-    /// user's work. Minimizing hands the focus back to the window that had it. Stops once the game has loaded; the user
-    /// can restore the window at any time after that.
+    /// Keeps a game that a test run started from taking the focus while it loads: whenever the game becomes the
+    /// foreground window, the focus goes back to the window the user had, as an Alt+Tab would. The game is never
+    /// minimized by code: minimizing a fullscreen player during startup can stall it. Stops once the game has loaded.
     /// </summary>
     internal sealed class BackgroundWindow : IDisposable
     {
-        private const int Minimize = 6;
+        private readonly IntPtr returnTo;
         private readonly Func<bool> loaded;
         private readonly Timer timer;
+        private readonly uint process = (uint)Process.GetCurrentProcess().Id;
         private readonly DateTime deadline = DateTime.UtcNow.AddMinutes(10);
         private DateTime? loadedAt;
 
-        internal BackgroundWindow(Func<bool> loaded)
+        internal BackgroundWindow(long returnTo, Func<bool> loaded)
         {
+            this.returnTo = new IntPtr(returnTo);
             this.loaded = loaded;
-            timer = new Timer(_ => Check(), null, TimeSpan.Zero, TimeSpan.FromMilliseconds(500));
+            timer = new Timer(_ => Check(), null, TimeSpan.Zero, TimeSpan.FromMilliseconds(250));
         }
 
         private void Check()
@@ -30,40 +31,23 @@ namespace WotR.Testing.InGame.Host
             try {
                 if (loaded()) loadedAt = loadedAt ?? DateTime.UtcNow;
                 // A few seconds past loading: the main menu may still activate the window once.
-                if (DateTime.UtcNow > deadline || (loadedAt.HasValue && DateTime.UtcNow - loadedAt.Value > TimeSpan.FromSeconds(10))) {
+                if (DateTime.UtcNow > deadline || (loadedAt.HasValue && DateTime.UtcNow - loadedAt.Value > TimeSpan.FromSeconds(15)) || !IsWindow(returnTo)) {
                     Dispose();
                     return;
                 }
-                var window = GameWindow();
-                if (window != IntPtr.Zero && !IsIconic(window)) ShowWindowAsync(window, Minimize);
+                var foreground = GetForegroundWindow();
+                GetWindowThreadProcessId(foreground, out var owner);
+                // The foreground process may hand the focus to another window.
+                if (owner == process) SetForegroundWindow(returnTo);
             }
             catch (Exception) { Dispose(); }
         }
 
-        private static IntPtr GameWindow()
-        {
-            var process = (uint)Process.GetCurrentProcess().Id;
-            var found = IntPtr.Zero;
-            EnumWindows((window, _) => {
-                GetWindowThreadProcessId(window, out var owner);
-                if (owner != process || !IsWindowVisible(window)) return true;
-                var name = new StringBuilder(64);
-                GetClassName(window, name, name.Capacity);
-                if (name.ToString() != "UnityWndClass") return true;
-                found = window;
-                return false;
-            }, IntPtr.Zero);
-            return found;
-        }
-
         public void Dispose() => timer.Dispose();
 
-        private delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
-        [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
+        [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
+        [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr window);
         [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
-        [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
-        [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr window);
-        [DllImport("user32.dll")] private static extern bool ShowWindowAsync(IntPtr window, int command);
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder name, int capacity);
     }
 }

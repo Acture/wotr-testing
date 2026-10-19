@@ -4,7 +4,7 @@ using Xunit;
 
 namespace InGameTests;
 
-public sealed class ModeTests
+public sealed class ModeTests : IClassFixture<WotR.Testing.IntegrationFixture.RuntimeReport>
 {
     [Fact]
     public void Untagged_cases_run_offgame_only() => Assert.False(InGameRuntime.IsAvailable);

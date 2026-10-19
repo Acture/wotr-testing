@@ -174,7 +174,7 @@ namespace WotR.Testing.Runner
                 LeaseResult refusal = null;
                 if (Environment.Dirty != null)
                     refusal = new LeaseResult { Reason = LeaseResult.Dirty, Detail = "Earlier work left this process unusable: " + Environment.Dirty + ". Restart it." };
-                else if (request.Kind != TestDescriptor.TestKind)
+                else if (request.Kind != TestDescriptor.TestKind && request.Kind != TestDescriptor.FuzzKind)
                     refusal = new LeaseResult { Reason = LeaseResult.Invalid, Detail = "Unsupported workload: " + (request.Kind ?? "none") };
                 else {
                     lock (server.leaseGate) {
@@ -224,7 +224,7 @@ namespace WotR.Testing.Runner
 
             private IReadOnlyList<TestDescriptor> DiscoverTests()
             {
-                tests = Environment.CreateBridge(testAssembly);
+                tests = Environment.CreateBridge(testAssembly, lease.Kind);
                 return tests.Discover();
             }
 
@@ -242,7 +242,7 @@ namespace WotR.Testing.Runner
                     if (foreign.Count > 0) throw new InvalidOperationException("Cases not declared for " + Environment.Mode + ": " + string.Join(", ", foreign.Take(10).Select(id => discovered[id].DisplayName)));
                     if (ids.Count > 0) {
                         var timeout = TimeSpan.FromSeconds(lease.TestTimeoutSeconds > 0 ? lease.TestTimeoutSeconds : 60);
-                        var counts = await tests.Run(ids, Environment, writer, timeout, canceled.Token).ConfigureAwait(false);
+                        var counts = await tests.Run(ids, request, Environment, writer, timeout, canceled.Token).ConfigureAwait(false);
                         final.Passed = counts.Passed;
                         final.Failed = counts.Failed;
                         final.Skipped = counts.Skipped;

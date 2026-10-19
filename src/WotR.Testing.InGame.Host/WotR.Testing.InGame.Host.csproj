@@ -28,14 +28,15 @@
     <ProjectReference Include="../WotR.Testing.Runner/WotR.Testing.Runner.csproj" />
     <!-- Shipped, never referenced in code: loaded beside the test project's xUnit. -->
     <ProjectReference Include="../WotR.Testing.Runner.Xunit/WotR.Testing.Runner.Xunit.csproj" />
+    <ProjectReference Include="../WotR.Testing.Runner.Fuzzing/WotR.Testing.Runner.Fuzzing.csproj" />
     <ProjectReference Include="../WotR.Testing.InGame/WotR.Testing.InGame.csproj" />
     <ProjectReference Include="../WotR.Testing.InGame.Protocol/WotR.Testing.InGame.Protocol.csproj" />
   </ItemGroup>
 
   <!-- Not loadable from the Mods folder: the host copies it beside each test project's xUnit. -->
   <Target Name="StoreWotrXunitBridge" AfterTargets="Build">
-    <Copy SourceFiles="$(OutDir)WotR.Testing.Runner.Xunit.dll" DestinationFiles="$(OutDir)WotR.Testing.Runner.Xunit.bridge" />
-    <Delete Files="$(OutDir)WotR.Testing.Runner.Xunit.dll;$(OutDir)WotR.Testing.Runner.Xunit.pdb" />
+    <Copy SourceFiles="$(OutDir)WotR.Testing.Runner.Xunit.dll;$(OutDir)WotR.Testing.Runner.Fuzzing.dll" DestinationFiles="$(OutDir)WotR.Testing.Runner.Xunit.bridge;$(OutDir)WotR.Testing.Runner.Fuzzing.bridge" />
+    <Delete Files="$(OutDir)WotR.Testing.Runner.Xunit.dll;$(OutDir)WotR.Testing.Runner.Xunit.pdb;$(OutDir)WotR.Testing.Runner.Fuzzing.dll;$(OutDir)WotR.Testing.Runner.Fuzzing.pdb" />
   </Target>
 
   <!-- UMM needs a numeric version; prerelease labels are dropped. -->

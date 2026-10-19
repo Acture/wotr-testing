@@ -55,7 +55,95 @@
     <WotrBuildTasksAssembly Condition="'$(WotrBuildTasksAssembly)'==''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../artifacts/bin/WotR.Testing.Build/$(Configuration)/netstandard2.0/WotR.Testing.Build.dll'))</WotrBuildTasksAssembly>
     <WotrMonoHost Condition="'$(WotrMonoHost)'==''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../artifacts/bin/WotR.Testing.MonoHost/$(Configuration)/wotr-mono-host.exe'))</WotrMonoHost>
     <WotrBootstrapDirectory Condition="'$(WotrBootstrapDirectory)'==''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../artifacts/bin/WotR.Testing.VSTestBootstrap/$(Configuration)/net8.0/'))</WotrBootstrapDirectory>
+    <WotrPlatform Condition="'$(WotrPlatform)'=='' and Exists('$(MSBuildThisFileDirectory)../tools/platform/wotr-testing-platform.dll')">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/platform/wotr-testing-platform.dll'))</WotrPlatform>
+    <WotrPlatform Condition="'$(WotrPlatform)'==''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../artifacts/bin/WotR.Testing.Platform/$(Configuration)/net8.0/wotr-testing-platform.dll'))</WotrPlatform>
   </PropertyGroup>
+
+  <!--
+    Unified scope (offgame and in-game tests and fuzz targets). Defaults run everything the test assembly declares.
+      WotrTestMode            auto (default), offgame or ingame.
+      WotrTestKind            all (default), tests or fuzz.
+      WotrInGameConnection    auto (default: attach to a running game with the host, launch only when no game runs),
+                              attach or launch.
+      WotrInGamePid           Process to attach to when several games run.
+      WotrInGameTestTimeoutSeconds     Per test or fuzz target, default 60.
+      WotrInGameStartupTimeoutSeconds  Game start and loading, default 300.
+      WotrFuzzSeed, WotrFuzzReplay     Seed for every fuzz target; a saved case file to replay exactly.
+      WotrInGameMod           Items: built assemblies the in-game host requires loaded with the same build (MVID).
+                              Default: WotrModAssembly and WotrDependencyMod.
+      WotrTestingPlatform     true when the Microsoft.Testing.Platform runner is selected in global.json (detected).
+  -->
+  <PropertyGroup>
+    <WotrTestMode Condition="'$(WotrTestMode)'==''">auto</WotrTestMode>
+    <WotrTestKind Condition="'$(WotrTestKind)'==''">all</WotrTestKind>
+    <_WotrInGameOptionsGiven>false</_WotrInGameOptionsGiven>
+    <_WotrInGameOptionsGiven Condition="'$(WotrInGameConnection)'!='' or '$(WotrInGamePid)'!=''">true</_WotrInGameOptionsGiven>
+    <WotrInGameConnection Condition="'$(WotrInGameConnection)'==''">auto</WotrInGameConnection>
+    <WotrInGamePid Condition="'$(WotrInGamePid)'==''">0</WotrInGamePid>
+    <WotrInGameTestTimeoutSeconds Condition="'$(WotrInGameTestTimeoutSeconds)'==''">60</WotrInGameTestTimeoutSeconds>
+    <WotrInGameStartupTimeoutSeconds Condition="'$(WotrInGameStartupTimeoutSeconds)'==''">300</WotrInGameStartupTimeoutSeconds>
+    <_WotrGlobalJson>$([MSBuild]::GetPathOfFileAbove('global.json', '$(MSBuildProjectDirectory)'))</_WotrGlobalJson>
+    <WotrTestingPlatform Condition="'$(WotrTestingPlatform)'=='' and '$(_WotrGlobalJson)'!='' and $([System.IO.File]::ReadAllText('$(_WotrGlobalJson)').Contains('Microsoft.Testing.Platform'))">true</WotrTestingPlatform>
+  </PropertyGroup>
+
+  <!-- Microsoft.Testing.Platform: `dotnet test` starts the WotR test application for this project's tests. -->
+  <PropertyGroup Condition="'$(WotrTestingPlatform)'=='true' and '$(WotrIsLibrary)'!='true'">
+    <IsTestingPlatformApplication>true</IsTestingPlatformApplication>
+  </PropertyGroup>
+
+  <Target Name="RouteWotrTestingPlatform" BeforeTargets="ComputeRunArguments" DependsOnTargets="WriteWotrRunSettings"
+      Condition="'$(WotrTestingPlatform)'=='true' and '$(WotrIsLibrary)'!='true'">
+    <Error Condition="!Exists('$(WotrPlatform)')" Text="[ENV_MISSING] The WotR test application was not found: $(WotrPlatform)" />
+    <PropertyGroup>
+      <_WotrDotnet>$(DOTNET_HOST_PATH)</_WotrDotnet>
+      <_WotrDotnet Condition="'$(_WotrDotnet)'=='' and '$(NetCoreRoot)'!=''">$([MSBuild]::EnsureTrailingSlash('$(NetCoreRoot)'))dotnet.exe</_WotrDotnet>
+      <_WotrDotnet Condition="'$(_WotrDotnet)'==''">dotnet</_WotrDotnet>
+      <RunCommand>$(_WotrDotnet)</RunCommand>
+      <RunArguments>exec &quot;$(WotrPlatform)&quot; --wotr-settings &quot;$(_WotrSettings)&quot;</RunArguments>
+      <RunWorkingDirectory>$(TargetDir)</RunWorkingDirectory>
+    </PropertyGroup>
+  </Target>
+
+  <!-- Written per invocation, so -p overrides apply with and without a build. -->
+  <Target Name="WriteWotrRunSettings">
+    <ItemGroup>
+      <!-- The builds the in-game host compares with the modules the game loaded: WotrInGameMod, by default the mods under test. -->
+      <_WotrModUnderTest Include="@(WotrInGameMod)" />
+      <_WotrModUnderTest Include="$(WotrModAssembly)" Condition="'@(WotrInGameMod)'=='' and '$(WotrModAssembly)'!=''" />
+      <_WotrModUnderTest Include="@(WotrDependencyMod)" Condition="'@(WotrInGameMod)'==''" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_WotrSettings>$(TargetDir)$(TargetName).wotr-settings.json</_WotrSettings>
+      <WotrReportDirectory Condition="'$(WotrReportDirectory)'==''">$(TargetDir)wotr-reports/</WotrReportDirectory>
+      <_WotrModAssemblies>@(_WotrModUnderTest->'&quot;%(FullPath)&quot;', ', ')</_WotrModAssemblies>
+      <_WotrFuzzSeed>null</_WotrFuzzSeed>
+      <_WotrFuzzSeed Condition="'$(WotrFuzzSeed)'!=''">$(WotrFuzzSeed)</_WotrFuzzSeed>
+      <_WotrFuzzReplay>null</_WotrFuzzReplay>
+      <_WotrFuzzReplay Condition="'$(WotrFuzzReplay)'!=''">&quot;$([System.IO.Path]::GetFullPath('$(WotrFuzzReplay)').Replace('\','/'))&quot;</_WotrFuzzReplay>
+      <_WotrRunSettingsJson>{
+  "testAssembly": "$(TargetPath.Replace('\','/'))",
+  "inputRoot": "$([System.IO.Path]::GetFullPath('$(WotrInputRoot)').Replace('\','/'))",
+  "installRoot": "$([System.IO.Path]::GetFullPath('$(WrathInstallDir)').Replace('\','/'))",
+  "monoHost": "$(WotrMonoHost.Replace('\','/'))",
+  "workDirectory": "$([System.IO.Path]::GetFullPath('$(WotrWorkDirectory)').Replace('\','/'))",
+  "reportDirectory": "$([System.IO.Path]::GetFullPath('$(WotrReportDirectory)').Replace('\','/'))",
+  "runtime": "$(WotrRuntime)",
+  "mode": "$(WotrTestMode)",
+  "kind": "$(WotrTestKind)",
+  "connection": "$(WotrInGameConnection)",
+  "processId": $(WotrInGamePid),
+  "testTimeoutSeconds": $(WotrInGameTestTimeoutSeconds),
+  "startupTimeoutSeconds": $(WotrInGameStartupTimeoutSeconds),
+  "runTimeoutSeconds": $(WotrTestTimeoutSeconds),
+  "minimumPassed": $(WotrMinimumPassed),
+  "modAssemblies": [$(_WotrModAssemblies.Replace('\','/'))],
+  "fuzzSeed": $(_WotrFuzzSeed),
+  "fuzzReplay": $(_WotrFuzzReplay),
+  "inGameOptionsGiven": $(_WotrInGameOptionsGiven)
+}</_WotrRunSettingsJson>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_WotrSettings)" Lines="$(_WotrRunSettingsJson)" Overwrite="true" />
+  </Target>
 
   <UsingTask TaskName="WotR.Testing.Build.PrepareTestRun" AssemblyFile="$(WotrBuildTasksAssembly)" />
   <UsingTask TaskName="WotR.Testing.Build.ValidateTestRun" AssemblyFile="$(WotrBuildTasksAssembly)" />

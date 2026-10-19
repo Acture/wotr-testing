@@ -21,6 +21,7 @@
     <ProjectReference Include="../WotR.Testing.Runner/WotR.Testing.Runner.csproj" />
     <!-- Shipped, never referenced in code: loaded beside the test project's xUnit. -->
     <ProjectReference Include="../WotR.Testing.Runner.Xunit/WotR.Testing.Runner.Xunit.csproj" />
+    <ProjectReference Include="../WotR.Testing.Runner.Fuzzing/WotR.Testing.Runner.Fuzzing.csproj" />
   </ItemGroup>
 
 </Project>

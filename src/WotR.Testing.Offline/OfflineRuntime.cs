@@ -33,6 +33,9 @@ namespace WotR.Testing.Offline
         /// <summary>"unity-mono" or "netfx".</summary>
         public static string RuntimeKind => IsUnityMono ? "unity-mono" : "netfx";
 
+        /// <summary>Set by the WotR.Testing in-game host before any test code loads.</summary>
+        public static bool IsInGame => AppDomain.CurrentDomain.GetData("WotR.Testing.Mode") as string == "ingame";
+
         public static OfflineInputs Inputs { get; private set; }
         public static string RuntimeDirectory => runtimeDirectory;
 
@@ -58,6 +61,9 @@ namespace WotR.Testing.Offline
 
         private static int resolverInstalled;
         private static Exception prepareError;
+
+        /// <summary>Why the resolver could not prepare the runtime folder, if it tried and failed; game types then do not load.</summary>
+        public static Exception PreparationError => prepareError;
         [ThreadStatic] private static bool resolving;
 
         /// <summary>
@@ -68,6 +74,9 @@ namespace WotR.Testing.Offline
         [ModuleInitializer]
         public static void InstallResolver()
         {
+            // Inside the game's player every game assembly is already loaded; offline resolution must stay off there,
+            // even when the test assembly's generated module initializer calls this.
+            if (IsInGame) return;
             if (System.Threading.Interlocked.Exchange(ref resolverInstalled, 1) == 1) return;
             AppDomain.CurrentDomain.AssemblyResolve += (_, args) =>
             {

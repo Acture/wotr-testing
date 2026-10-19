@@ -15,7 +15,7 @@ namespace WotR.Testing.Runner
         IReadOnlyList<TestDescriptor> Discover();
 
         /// <summary>Runs the selected cases one at a time, streaming TestStarted and TestFinished events.</summary>
-        Task<RunCounts> Run(IReadOnlyCollection<string> ids, RunnerEnvironment environment, EventWriter writer,
+        Task<RunCounts> Run(IReadOnlyCollection<string> ids, Run request, RunnerEnvironment environment, EventWriter writer,
             TimeSpan testTimeout, CancellationToken cancellationToken);
     }
 
@@ -30,16 +30,21 @@ namespace WotR.Testing.Runner
     public static class TestBridges
     {
         public const string XunitAssembly = "WotR.Testing.Runner.Xunit";
+        public const string FuzzAssembly = "WotR.Testing.Runner.Fuzzing";
+
+        /// <summary>The bridge assembly for a workload: ordinary xUnit tests or registered fuzz targets.</summary>
+        public static string AssemblyFor(string kind) => kind == TestDescriptor.FuzzKind ? FuzzAssembly : XunitAssembly;
 
         /// <summary>
-        /// Loads the xUnit bridge from <paramref name="directory"/>. Next to the test project's xUnit, its references bind
-        /// the same way as the test assembly's own, whatever the host process's probing rules are.
+        /// Loads a bridge from <paramref name="directory"/>. Next to the test project's own xUnit or fuzzing library, its
+        /// references bind the same way as the test assembly's, whatever the host process's probing rules are.
         /// </summary>
-        public static ITestBridge LoadXunit(string directory, Assembly tests)
+        public static ITestBridge Load(string directory, string kind, Assembly tests)
         {
-            var path = Path.Combine(directory, XunitAssembly + ".dll");
-            if (!File.Exists(path)) throw new FileNotFoundException("The runner's xUnit bridge is missing.", path);
-            var type = Assembly.LoadFrom(path).GetType(XunitAssembly + ".XunitBridge", true);
+            var name = AssemblyFor(kind);
+            var path = Path.Combine(directory, name + ".dll");
+            if (!File.Exists(path)) throw new FileNotFoundException("The runner's " + kind + " bridge is missing.", path);
+            var type = Assembly.LoadFrom(path).GetType(name + (kind == TestDescriptor.FuzzKind ? ".FuzzBridge" : ".XunitBridge"), true);
             return (ITestBridge)Activator.CreateInstance(type, tests);
         }
     }

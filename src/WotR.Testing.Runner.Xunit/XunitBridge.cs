@@ -50,7 +50,7 @@ namespace WotR.Testing.Runner.Xunit
         }
 
         /// <summary>Runs the selected cases in discovery order, one at a time, streaming start and result events.</summary>
-        public async Task<RunCounts> Run(IReadOnlyCollection<string> ids, RunnerEnvironment environment, EventWriter writer,
+        public async Task<RunCounts> Run(IReadOnlyCollection<string> ids, Run request, RunnerEnvironment environment, EventWriter writer,
             TimeSpan testTimeout, CancellationToken cancellationToken)
         {
             var selected = new HashSet<string>(ids, StringComparer.Ordinal);
@@ -64,7 +64,7 @@ namespace WotR.Testing.Runner.Xunit
                 var finished = runner.RunAsync();
                 // A timed-out test cannot be stopped; the session ends without waiting for it.
                 await Task.WhenAny(finished, sink.Abandoned).ConfigureAwait(false);
-                if (finished.IsFaulted) sink.Fail("xUnit failed: " + finished.Exception.GetBaseException());
+                if (finished.IsFaulted) sink.Fail("xUnit failed: " + RunnerEnvironment.Describe(finished.Exception.GetBaseException()));
             }
             return sink.Counts;
         }

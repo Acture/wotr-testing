@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Runtime.Serialization;
 using System.Security.Cryptography;
 using System.Threading;
+using System.Threading.Tasks;
 using Kingmaker;
 using Kingmaker.EntitySystem.Persistence;
 using UnityEngine;
@@ -111,12 +112,15 @@ namespace WotR.Testing.InGame.Host
             LoadedTests tests;
             lock (this.tests) this.tests.TryGetValue(name, out tests);
             if (tests != null) {
-                if (tests.Hash == hash) return Use(lease, tests);
+                if (tests.Hash == hash) {
+                    RefreshData(Path.GetDirectoryName(source), tests.Directory);
+                    return Use(lease, tests);
+                }
                 refusal = Refuse(LeaseResult.RestartRequired, name + " changed since this game process loaded it. Restart the game to load the new build; changed test assemblies are not reloaded in place.");
                 return null;
             }
             if (loaded.ContainsKey(name)) throw new InvalidOperationException("The game already loaded an assembly named " + name + "; rename the test project.");
-            var directory = Shadow(source, hash, loaded.Keys, lease.SupportFiles ?? new List<string>());
+            var directory = Shadow(source, hash, loaded, lease.SupportFiles ?? new List<string>());
             shadow = directory;
             var assembly = Assembly.LoadFrom(Path.Combine(directory, Path.GetFileName(source)));
             var hostLibrary = typeof(InGameRuntime).Assembly.GetName();
@@ -131,6 +135,15 @@ namespace WotR.Testing.InGame.Host
             return Use(lease, tests);
         }
 
+        /// <summary>Data files beside the tests may change between runs of one build; assemblies may not.</summary>
+        private static void RefreshData(string source, string shadow)
+        {
+            foreach (var file in Directory.GetFiles(source).Where(file => Path.GetExtension(file).ToLowerInvariant() == ".json"))
+                File.Copy(file, Path.Combine(shadow, Path.GetFileName(file)), true);
+            foreach (var file in Directory.GetFiles(shadow, "*.json").Where(file => !File.Exists(Path.Combine(source, Path.GetFileName(file)))))
+                File.Delete(file);
+        }
+
         private Assembly Use(Lease lease, LoadedTests tests)
         {
             leased = lease;
@@ -141,42 +154,72 @@ namespace WotR.Testing.InGame.Host
 
         /// <summary>
         /// Copies the runner-owned files, so the build can replace its output while the game keeps them open. Game,
-        /// Harmony and mod assemblies are never copied: references bind to the copies the player loaded.
+        /// Harmony and mod assemblies are never copied: references bind to the copies the player loaded. A strong-named
+        /// library that the player has only in another version (often loaded by some other mod) is copied, so the tests
+        /// get the version they were built with beside the other one.
         /// </summary>
-        private string Shadow(string source, string hash, IEnumerable<string> loadedNames, IEnumerable<string> supportFiles)
+        private string Shadow(string source, string hash, Dictionary<string, List<Assembly>> loaded, IEnumerable<string> supportFiles)
         {
             var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WotR.Testing", "shadow",
                 System.Diagnostics.Process.GetCurrentProcess().Id.ToString(), Path.GetFileNameWithoutExtension(source) + "-" + hash.Substring(0, 16));
             if (Directory.Exists(directory)) return directory;
-            var excluded = new HashSet<string>(loadedNames, StringComparer.OrdinalIgnoreCase);
+            var player = new Dictionary<string, List<AssemblyName>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in loaded) player[pair.Key] = pair.Value.Select(assembly => assembly.GetName()).ToList();
             foreach (var folder in new[] { managed, Path.Combine(managed, "UnityModManager") })
-                foreach (var file in Directory.GetFiles(folder, "*.dll")) excluded.Add(Path.GetFileNameWithoutExtension(file));
+                foreach (var file in Directory.GetFiles(folder, "*.dll")) {
+                    var name = Path.GetFileNameWithoutExtension(file);
+                    if (!player.ContainsKey(name)) player[name] = new List<AssemblyName>();
+                    try { player[name].Add(AssemblyName.GetAssemblyName(file)); }
+                    catch (BadImageFormatException) { /* Native library: never shadowed. */ }
+                }
             var staging = directory + ".tmp-" + Guid.NewGuid().ToString("N");
             Directory.CreateDirectory(staging);
             foreach (var file in Directory.GetFiles(Path.GetDirectoryName(source)).Concat(supportFiles.Select(Path.GetFullPath))) {
                 var extension = Path.GetExtension(file).ToLowerInvariant();
                 if (extension != ".dll" && extension != ".pdb" && extension != ".json" && extension != ".config") continue;
                 var assemblyName = extension == ".dll" || extension == ".pdb" ? Path.GetFileNameWithoutExtension(file) : null;
-                if (assemblyName != null && excluded.Contains(assemblyName) && !string.Equals(file, source, StringComparison.OrdinalIgnoreCase)) continue;
+                if (assemblyName != null && !string.Equals(file, source, StringComparison.OrdinalIgnoreCase) && player.TryGetValue(assemblyName, out var copies) &&
+                    BindsToPlayer(Path.ChangeExtension(file, ".dll"), copies)) continue;
                 File.Copy(file, Path.Combine(staging, Path.GetFileName(file)), true);
             }
-            // The bridge binds to this test project's xUnit only from the same directory. The mod folder keeps it under
-            // another extension, so mods that load every DLL in the Mods folders cannot load the wrong copy first.
-            File.Copy(Path.Combine(Path.GetDirectoryName(typeof(TestBridges).Assembly.Location), TestBridges.XunitAssembly + ".bridge"),
-                Path.Combine(staging, TestBridges.XunitAssembly + ".dll"), true);
+            // A bridge binds to this test project's xUnit or fuzzing library only from the same directory. The mod folder
+            // keeps bridges under another extension, so mods that load every DLL in the Mods folders cannot load them first.
+            foreach (var bridge in new[] { TestBridges.XunitAssembly, TestBridges.FuzzAssembly })
+                File.Copy(Path.Combine(Path.GetDirectoryName(typeof(TestBridges).Assembly.Location), bridge + ".bridge"),
+                    Path.Combine(staging, bridge + ".dll"), true);
             try { Directory.Move(staging, directory); }
             catch (IOException) when (Directory.Exists(directory)) { Directory.Delete(staging, true); }
             return directory;
         }
 
-        public override ITestBridge CreateBridge(Assembly tests)
+        /// <summary>Whether a test-output assembly would bind to the player's copy: same version, or not strong-named.</summary>
+        private static bool BindsToPlayer(string file, List<AssemblyName> copies)
         {
-            var bridge = TestBridges.LoadXunit(current.Directory, tests);
-            // LoadFrom returns an already loaded copy with the same identity; it is usable only beside an xUnit.
+            if (copies.Count == 0) return true;
+            AssemblyName own;
+            try { own = AssemblyName.GetAssemblyName(file); }
+            catch (Exception) { return true; }
+            var token = own.GetPublicKeyToken();
+            return token == null || token.Length == 0 || copies.Any(copy => copy.Version == own.Version);
+        }
+
+        public override ITestBridge CreateBridge(Assembly tests, string kind)
+        {
+            var bridge = TestBridges.Load(current.Directory, kind, tests);
+            // LoadFrom returns an already loaded copy with the same identity; it is usable only beside its framework.
             var location = Path.GetDirectoryName(bridge.GetType().Assembly.Location);
-            if (!File.Exists(Path.Combine(location, "xunit.execution.desktop.dll")))
-                throw new InvalidOperationException("The xUnit bridge was loaded from " + location + ", where no xUnit is available. Restart the game.");
+            var framework = kind == TestDescriptor.FuzzKind ? "WotR.Testing.Fuzzing.dll" : "xunit.execution.desktop.dll";
+            if (!File.Exists(Path.Combine(location, framework)))
+                throw new InvalidOperationException("The " + kind + " bridge was loaded from " + location + ", where " + framework + " is missing. Restart the game.");
             return bridge;
+        }
+
+        /// <summary>Fuzz factories, calls and cleanup run on Unity's main thread, awaiting frames without blocking it.</summary>
+        public override async Task<T> RunInContext<T>(Func<Task<T>> body)
+        {
+            var result = default(T);
+            await dispatcher.Run(async () => { result = await body(); }, InGameRuntime.SessionCancellation).ConfigureAwait(false);
+            return result;
         }
 
         public override void SessionStarting(CancellationToken canceled)

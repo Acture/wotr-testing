@@ -58,9 +58,18 @@ namespace WotR.Testing.Runner
         /// <summary>Partition details for the client's environment report, as JSON.</summary>
         public virtual string EnvironmentReport(Lease lease) => null;
 
-        /// <summary>The test framework bridge for a leased assembly; by default the one beside this library.</summary>
-        public virtual ITestBridge CreateBridge(Assembly tests)
-            => TestBridges.LoadXunit(System.IO.Path.GetDirectoryName(typeof(RunnerEnvironment).Assembly.Location), tests);
+        /// <summary>The bridge for a leased assembly and workload; by default the one beside this library.</summary>
+        public virtual ITestBridge CreateBridge(Assembly tests, string kind)
+            => TestBridges.Load(System.IO.Path.GetDirectoryName(typeof(RunnerEnvironment).Assembly.Location), kind, tests);
+
+        /// <summary>An exception with the loader errors that a type-load failure hides behind its own message.</summary>
+        public static string Describe(Exception error)
+        {
+            var text = error.ToString();
+            if (error.GetBaseException() is ReflectionTypeLoadException load && load.LoaderExceptions != null)
+                text += "\nLoader errors:\n  " + string.Join("\n  ", load.LoaderExceptions.Where(item => item != null).Select(item => item.Message).Distinct().Take(10));
+            return text;
+        }
 
         public static string PackageVersion(Assembly assembly)
         {

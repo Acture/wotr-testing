@@ -135,8 +135,16 @@ namespace WotR.Testing.MonoHost
 
             public override string EnvironmentReport(Lease request) => ProtocolJson.Serialize(new WorkerReport {
                 Mode = Mode, RuntimeKind = RuntimeKind, ProcessId = Process.GetCurrentProcess().Id, TestAssembly = source,
-                ReportDirectory = request?.ReportDirectory, Dirty = Dirty
+                ReportDirectory = request?.ReportDirectory, Dirty = Dirty, OfflinePreparationError = OfflinePreparationError()
             });
+
+            // Read by name: the offline library is the test project's copy, not a reference of this host.
+            private static string OfflinePreparationError()
+            {
+                var offline = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(assembly => assembly.GetName().Name == "WotR.Testing.Offline");
+                var error = offline?.GetType("WotR.Testing.Offline.OfflineRuntime")?.GetProperty("PreparationError")?.GetValue(null) as Exception;
+                return error?.ToString();
+            }
         }
 
         [DataContract]
@@ -148,6 +156,7 @@ namespace WotR.Testing.MonoHost
             [DataMember(Name = "testAssembly", Order = 3)] public string TestAssembly { get; set; }
             [DataMember(Name = "reportDirectory", Order = 4)] public string ReportDirectory { get; set; }
             [DataMember(Name = "dirty", Order = 5)] public string Dirty { get; set; }
+            [DataMember(Name = "offlinePreparationError", Order = 6)] public string OfflinePreparationError { get; set; }
         }
     }
 }

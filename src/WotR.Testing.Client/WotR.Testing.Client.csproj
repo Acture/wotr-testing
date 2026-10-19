@@ -14,6 +14,8 @@
     <!-- The .NET SDK process supplies this framework assembly (.NET 8+). -->
     <PackageReference Include="System.Reflection.Metadata" Version="8.0.1" PrivateAssets="all" />
     <ProjectReference Include="../WotR.Testing.InGame.Protocol/WotR.Testing.InGame.Protocol.csproj" />
+    <!-- The offline runtime's class-library preparation, shared with the VSTest runtime provider. -->
+    <Compile Include="../WotR.Testing.VSTest/MonoClassLibrary.cs" Link="MonoClassLibrary.cs" />
   </ItemGroup>
 
 </Project>

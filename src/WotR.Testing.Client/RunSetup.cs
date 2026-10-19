@@ -37,7 +37,8 @@ namespace WotR.Testing.Client
                 Settings = partition, ReportDirectory = reportRoot,
                 Connection = string.IsNullOrEmpty(settings.Connection) ? ConnectionModes.Auto : settings.Connection,
                 ProcessId = settings.ProcessId, InstallRoot = settings.InstallRoot,
-                MinimumPassed = settings.MinimumPassed > 0 ? settings.MinimumPassed : 1
+                MinimumPassed = settings.MinimumPassed > 0 ? settings.MinimumPassed : 1,
+                LaunchMinimized = settings.LaunchMinimized ?? true
             });
         }
 

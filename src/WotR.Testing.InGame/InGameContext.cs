@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 namespace WotR.Testing.InGame
 {
     /// <summary>One test body's view of the game: frame waits and resources that are cleaned up after it.</summary>
-    public sealed class InGameContext
+    public sealed partial class InGameContext
     {
         private readonly MainThreadDispatcher dispatcher;
         private readonly List<Func<Task>> cleanups = new List<Func<Task>>();

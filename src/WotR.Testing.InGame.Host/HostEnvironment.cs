@@ -60,6 +60,7 @@ namespace WotR.Testing.InGame.Host
         public override int MainThreadId => dispatcher.MainThreadId;
         public override long FrameCount => dispatcher.FrameCount;
         public override string Readiness => readiness;
+        internal bool Loaded => dispatcher.MainThreadId != 0 && (readiness == "main-menu" || readiness.StartsWith("area:", StringComparison.Ordinal));
 
         /// <summary>Main thread only.</summary>
         internal void RefreshReadiness()

@@ -14,6 +14,7 @@ namespace WotR.Testing.InGame.Host
         private static HostEnvironment environment;
         private static RunnerServer server;
         private static HostAdvertisement advertisement;
+        private static BackgroundWindow background;
 
         internal static bool Start(UnityModManager.ModEntry entry)
         {
@@ -23,6 +24,11 @@ namespace WotR.Testing.InGame.Host
                 entry.Logger.Error("Unobserved exception from test code on the main thread: " + error);
             };
             environment = new HostEnvironment(dispatcher, entry);
+            // A game a test run started stays minimized while it loads and keeps updating when unfocused.
+            if (LaunchRequest.ReadRecent()?.Minimize == true) {
+                Application.runInBackground = true;
+                background = new BackgroundWindow(() => environment.Loaded);
+            }
             InGameRuntime.Attach(dispatcher, environment.MarkDirty);
             var frames = 0;
             // Update runs on Unity's main thread once per frame while this mod is active.
@@ -46,6 +52,7 @@ namespace WotR.Testing.InGame.Host
             var running = Interlocked.Exchange(ref server, null);
             if (running == null) return;
             advertisement.Remove();
+            background?.Dispose();
             running.Dispose();
             dispatcher.Stop();
         }

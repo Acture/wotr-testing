@@ -17,6 +17,7 @@ namespace WotR.Testing.Client
         public int ProcessId { get; set; }
         public string InstallRoot { get; set; }
         public int MinimumPassed { get; set; } = 1;
+        public bool LaunchMinimized { get; set; } = true;
     }
 
     public sealed class RunSummary
@@ -52,7 +53,7 @@ namespace WotR.Testing.Client
                     if (partition.Mode == Welcome.InGame && game == null && gameError == null) {
                         try {
                             game = await GameConnection.ConnectAsync(options.Connection, options.InstallRoot, options.ProcessId,
-                                TimeSpan.FromSeconds(settings.StartupTimeoutSeconds), observer.Log, cancellationToken).ConfigureAwait(false);
+                                TimeSpan.FromSeconds(settings.StartupTimeoutSeconds), options.LaunchMinimized, observer.Log, cancellationToken).ConfigureAwait(false);
                             observer.Log("In-game partitions use process " + game.Host.ProcessId + " (" + game.Mode + (game.Owned ? ", started by this run" : "") + ").");
                         }
                         catch (Exception error) when (!(error is OperationCanceledException)) { gameError = error; }
@@ -73,10 +74,11 @@ namespace WotR.Testing.Client
                     catch (Exception error) { summary.Problems.Add("The game started by this run could not be closed: " + error.Message); }
                 }
             }
-            if (!options.Settings.ListOnly) {
+            // A failed partition already explains why nothing ran there.
+            if (!options.Settings.ListOnly && summary.Partitions.All(partition => partition.Problems.Count == 0)) {
                 var selected = summary.Partitions.Sum(partition => partition.Selected.Count);
                 if (selected == 0) summary.Problems.Add("Zero tests: no case or fuzz target matched the selection in any partition.");
-                else if (summary.Passed < options.MinimumPassed)
+                else if (summary.Failed == 0 && summary.Passed < options.MinimumPassed)
                     summary.Problems.Add("Too few passed tests: " + summary.Passed + " passed, at least " + options.MinimumPassed + " required (skipped tests do not count).");
             }
             summary.ReportFile = Path.Combine(options.ReportDirectory, "wotr-run.json");

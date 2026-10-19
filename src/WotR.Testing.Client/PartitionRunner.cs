@@ -107,7 +107,11 @@ namespace WotR.Testing.Client
                 else result.Selected.AddRange(result.Discovered.Where(test => observer.Select(partition, test)));
                 client.Received += message => {
                     if (message is TestStarted started && byId.TryGetValue(started.TestId, out var test)) observer.Started(partition, test, started);
-                    else if (message is TestFinished finished && byId.TryGetValue(finished.TestId, out test)) observer.Finished(partition, test, finished);
+                    else if (message is TestFinished finished && byId.TryGetValue(finished.TestId, out test)) {
+                        if (finished.ReplayCase != null && finished.Outcome == TestFinished.Failed && settings.Replay == null)
+                            finished.Message += "\n" + SaveReplay(settings, partition, finished);
+                        observer.Finished(partition, test, finished);
+                    }
                 };
                 var ids = settings.ListOnly ? new List<string>() : result.Selected.Select(test => test.Id).ToList();
                 result.Final = await client.RunAsync(new Run { TestIds = ids, FuzzSeed = settings.FuzzSeed, FuzzReplayCase = settings.Replay?.Case }, cancellationToken).ConfigureAwait(false);
@@ -139,6 +143,22 @@ namespace WotR.Testing.Client
                 result.ReportFile = WriteReport(settings, result);
             }
             return result;
+        }
+
+        /// <summary>Writes a fuzz finding as a replay file (the format of FuzzReplayFile) and says how to replay it.</summary>
+        private static string SaveReplay(PartitionSettings settings, Partition partition, TestFinished finished)
+        {
+            try {
+                var directory = Path.Combine(settings.ReportDirectory, "replays");
+                Directory.CreateDirectory(directory);
+                var name = new string(finished.TestId.Select(c => char.IsLetterOrDigit(c) || c == '.' || c == '-' ? c : '_').ToArray());
+                var path = Path.Combine(directory, (name.Length > 120 ? name.Substring(0, 120) : name) + ".json");
+                File.WriteAllText(path, JsonText.Write(new Dictionary<string, object> {
+                    ["FormatVersion"] = 1, ["Target"] = finished.TestId, ["Mode"] = partition.Mode, ["Case"] = finished.ReplayCase
+                }));
+                return "Saved replay case: " + path + "\nReplay it exactly with: dotnet test --fuzz-replay \"" + path + "\" (or -p:WotrFuzzReplay=\"" + path + "\")";
+            }
+            catch (Exception error) { return "The replay case could not be saved: " + error.Message; }
         }
 
         /// <summary>Offline tests write environment.json through WotrGameFixture; it must exist and match the runtime.</summary>

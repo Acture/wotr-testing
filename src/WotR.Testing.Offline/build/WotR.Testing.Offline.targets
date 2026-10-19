@@ -66,6 +66,8 @@
       WotrInGameConnection    auto (default: attach to a running game with the host, launch only when no game runs),
                               attach or launch.
       WotrInGamePid           Process to attach to when several games run.
+      WotrInGameLaunchMinimized  true (default): a game this run starts stays minimized while it loads, so it does
+                              not take the focus; false shows it normally.
       WotrInGameTestTimeoutSeconds     Per test or fuzz target, default 60.
       WotrInGameStartupTimeoutSeconds  Game start and loading, default 300.
       WotrFuzzSeed, WotrFuzzReplay     Seed for every fuzz target; a saved case file to replay exactly.
@@ -80,6 +82,7 @@
     <_WotrInGameOptionsGiven Condition="'$(WotrInGameConnection)'!='' or '$(WotrInGamePid)'!=''">true</_WotrInGameOptionsGiven>
     <WotrInGameConnection Condition="'$(WotrInGameConnection)'==''">auto</WotrInGameConnection>
     <WotrInGamePid Condition="'$(WotrInGamePid)'==''">0</WotrInGamePid>
+    <WotrInGameLaunchMinimized Condition="'$(WotrInGameLaunchMinimized)'==''">true</WotrInGameLaunchMinimized>
     <WotrInGameTestTimeoutSeconds Condition="'$(WotrInGameTestTimeoutSeconds)'==''">60</WotrInGameTestTimeoutSeconds>
     <WotrInGameStartupTimeoutSeconds Condition="'$(WotrInGameStartupTimeoutSeconds)'==''">300</WotrInGameStartupTimeoutSeconds>
     <_WotrGlobalJson>$([MSBuild]::GetPathOfFileAbove('global.json', '$(MSBuildProjectDirectory)'))</_WotrGlobalJson>
@@ -139,7 +142,8 @@
   "modAssemblies": [$(_WotrModAssemblies.Replace('\','/'))],
   "fuzzSeed": $(_WotrFuzzSeed),
   "fuzzReplay": $(_WotrFuzzReplay),
-  "inGameOptionsGiven": $(_WotrInGameOptionsGiven)
+  "inGameOptionsGiven": $(_WotrInGameOptionsGiven),
+  "launchMinimized": $(WotrInGameLaunchMinimized.ToLowerInvariant())
 }</_WotrRunSettingsJson>
     </PropertyGroup>
     <WriteLinesToFile File="$(_WotrSettings)" Lines="$(_WotrRunSettingsJson)" Overwrite="true" />

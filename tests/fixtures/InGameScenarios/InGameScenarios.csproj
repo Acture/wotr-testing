@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    In-game cases against real game state: native assets, a loaded save, a spawned unit and its view, a player-dependent
+    prerequisite, and distinct failure classes. Asserts only what the game itself reports; no game rules are restated.
+    The save to load is chosen by the integration tests (wotr-test-scenario.json beside the build output).
+  -->
+  <Import Project="../../../GamePath.props" Condition="Exists('../../../GamePath.props')" />
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <Import Project="../../../src/WotR.Testing.Offline/build/WotR.Testing.Offline.targets" />
+  <PropertyGroup>
+    <WotrModAssembly>$(MSBuildThisFileDirectory)../../../artifacts/bin/SyntheticMod/$(Configuration)/net48/SyntheticMod.dll</WotrModAssembly>
+  </PropertyGroup>
+  <ItemGroup>
+    <WotrInGameMod Include="$(WotrInputRoot)/Wrath_Data/Managed/Assembly-CSharp.dll" />
+    <ProjectReference Include="../SyntheticMod/SyntheticMod.csproj" ReferenceOutputAssembly="false" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+    <ProjectReference Include="../../../src/WotR.Testing/WotR.Testing.csproj" />
+    <ProjectReference Include="../../../src/WotR.Testing.InGame/WotR.Testing.InGame.csproj" />
+  </ItemGroup>
+
+</Project>

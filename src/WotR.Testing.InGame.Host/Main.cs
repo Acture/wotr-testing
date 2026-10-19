@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using UnityModManagerNet;
@@ -28,8 +29,9 @@ namespace WotR.Testing.InGame.Host
             }
         }
 
+        // Only the host's own libraries: the tests' copies of the offline and fuzzing libraries load beside the tests.
         private static bool IsOwn(string path)
-            => Path.GetFileName(path).StartsWith("WotR.Testing.", StringComparison.Ordinal);
+            => new[] { "WotR.Testing.InGame.dll", "WotR.Testing.InGame.Protocol.dll", "WotR.Testing.Runner.dll" }.Contains(Path.GetFileName(path));
 
         // Separate method: its types resolve only after the handler above is installed.
         [MethodImpl(MethodImplOptions.NoInlining)]

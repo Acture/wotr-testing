@@ -13,7 +13,10 @@ namespace WotR.Testing.VSTestBootstrap
         private static int Main(string[] args)
         {
             try {
-                var settings = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "bootstrap.xml")).Root;
+                // Beyond MAX_PATH the host reports a \\?\ path, which XML loading by name misreads as a network host.
+                var baseDirectory = AppContext.BaseDirectory.StartsWith(@"\\?\", StringComparison.Ordinal) ? AppContext.BaseDirectory.Substring(4) : AppContext.BaseDirectory;
+                XElement settings;
+                using (var stream = File.OpenRead(Path.Combine(baseDirectory, "bootstrap.xml"))) settings = XDocument.Load(stream).Root;
                 if (Environment.GetEnvironmentVariable("WOTR_VSTEST_ARGUMENTS_LOG") is string trace && trace.Length > 0) File.WriteAllLines(trace, args);
                 var consolePath = settings.Element("Console").Value;
                 var resolver = new AssemblyDependencyResolver(consolePath);

@@ -16,6 +16,9 @@
     <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
     <GenerateTestingPlatformEntryPoint>false</GenerateTestingPlatformEntryPoint>
     <GenerateProgramFile>false</GenerateProgramFile>
+    <!-- Packed into tools/platform: no apphost and no translated platform messages. -->
+    <UseAppHost>false</UseAppHost>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <ItemGroup>

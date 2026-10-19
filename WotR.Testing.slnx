@@ -6,6 +6,7 @@
   <Project Path="src/WotR.Testing.TestAdapter/WotR.Testing.TestAdapter.csproj" />
   <Project Path="src/WotR.Testing.InGame/WotR.Testing.InGame.csproj" />
   <Project Path="src/WotR.Testing.InGame.Host/WotR.Testing.InGame.Host.csproj" />
+  <Project Path="src/WotR.Testing.InGame.Package/WotR.Testing.InGame.Package.csproj" />
   <Project Path="src/WotR.Testing.Runner/WotR.Testing.Runner.csproj" />
   <Project Path="src/WotR.Testing.Runner.Xunit/WotR.Testing.Runner.Xunit.csproj" />
   <Project Path="src/WotR.Testing.Runner.Fuzzing/WotR.Testing.Runner.Fuzzing.csproj" />

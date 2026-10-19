@@ -143,8 +143,9 @@ seed; `FuzzTarget.ReplayAsync(case)` replays a saved case exactly. A provider th
 throws or returns null fails the call with `InvalidOperationException` before any
 target is constructed. `FuzzReplayFile` reads and writes `{ FormatVersion, Target,
 Mode, Case }` JSON for command-line replay, with `Mode` `offgame` or `ingame`.
-Selecting registered targets from `dotnet test` is not available yet in this package
-version; call these APIs from your own tests.
+Through `WotR.Testing`, `dotnet test` runs registered targets in their environments
+and replays saved cases; see
+[interface fuzzing](https://github.com/Acture/wotr-testing/blob/main/docs/fuzzing.md#run-registered-targets-from-dotnet-test).
 
 Reports and cases can contain author-supplied mod data. Keep game files and data
 snapshots local; never publish them in reports, packages or test artifacts.

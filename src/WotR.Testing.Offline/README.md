@@ -158,6 +158,14 @@ when a path reaches Unity engine code; such results are reported as
 | `WOTR_NO_UPDATE_CHECK=1` | Skip the BlueprintCore release check (also `-NoUpdateCheck` on the runner) |
 | `WotrHarmony` / `WOTR_HARMONY` | The `0Harmony.dll` the run loads: `umm` (default, UnityModManager's copy), `game` (`Wrath_Data/Managed`) or a path; the runner's `-Harmony` also takes a `Lib.Harmony` version such as `2.2.2` |
 | `WotrHarmonyReference` (items) / `WOTR_HARMONY_REFERENCES` | Harmony copies the mods are compared with (default `game`); members they lack are warned. The runner's `-HarmonyReference` also takes versions |
+| `WotrTestMode` | `auto` (default: every environment the assembly declares), `offgame` or `ingame` ([in-game testing](https://github.com/Acture/wotr-testing/blob/main/docs/ingame.md#run)) |
+| `WotrTestKind` | `all` (default), `tests` or `fuzz` (registered `[WotrFuzz]` targets) |
+| `WotrFuzzSeed` / `WotrFuzzReplay` | One seed for every fuzz target / a saved case to replay exactly |
+| `WotrInGameConnection`, `WotrInGamePid` | `auto` (default), `attach` or `launch`; the game to attach to |
+| `WotrInGameLaunchInBackground` | `true` (default): a game the run starts gives the focus back while it loads |
+| `WotrInGameTestTimeoutSeconds`, `WotrInGameStartupTimeoutSeconds` | Per in-game case or target (default 60); game start and loading (default 300) |
+| `WotrInGameMod` (items) | Builds the in-game host requires loaded (default `WotrModAssembly` and `WotrDependencyMod`) |
+| `WotrTestingPlatform` | `true` when `global.json` selects Microsoft.Testing.Platform (detected); `dotnet test` then starts the WotR test application with `--mode`, `--tests`, `--fuzz`, `--fuzz-seed` and `--fuzz-replay` |
 
 ## API
 

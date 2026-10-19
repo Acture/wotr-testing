@@ -38,7 +38,7 @@ jobs:
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '8.0.x'
-      - name: Test the host protocol and main-thread dispatcher without a game
+      - name: Test the host protocol, dispatcher, planning and client without a game
         run: dotnet test tests/WotR.Testing.InGame.Tests/WotR.Testing.InGame.Tests.csproj --configuration Release
   repository:
     name: Repository checks

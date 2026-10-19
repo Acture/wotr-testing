@@ -113,7 +113,11 @@ dotnet test path/to/MyMod.OfflineTests.csproj --filter "FullyQualifiedName~MyFea
 dotnet test path/to/MyMod.OfflineTests.csproj --list-tests
 ```
 
-The package imports the integration automatically. VSTest builds the project and
+The package imports the integration automatically. Before running, the build
+plans the run from the test assembly's metadata: ordinary offgame tests, registered
+fuzz targets and [in-game](ingame.md) cases form separate partitions, and by default
+every declared partition runs. A project without in-game cases or `[WotrFuzz]`
+registrations runs exactly as before. VSTest builds the project and
 uses the existing test adapter, with a session timeout of 15 minutes by default
 (`WotrTestTimeoutSeconds`, or an explicit `TestSessionTimeout` in user runsettings).
 `--filter`, `--settings`, `--no-build`, `--results-directory` and standard loggers

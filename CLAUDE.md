@@ -18,8 +18,11 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   `src/WotR.Testing.VSTest/`, `src/WotR.Testing.VSTestBootstrap/` and
   `src/WotR.Testing.Build/` integrate it with `dotnet test`, isolate SDK host
   dependencies and validate reports. These tools contain no game files.
-  Planned: `src/WotR.Testing.InGame/` for in-game testing (added to the meta-package),
-  and a shared library both use once they need one.
+- In progress, not packaged: `src/WotR.Testing.InGame/` (in-game testing; so far the
+  Unity-independent main-thread dispatcher) and `src/WotR.Testing.InGame.Protocol/`
+  (adapter/host messages, framing, session checks);
+  `tests/WotR.Testing.InGame.Tests/` runs both without game inputs. Planned: the UMM
+  host, external adapter and meta-package wiring.
 - `scripts/`: `Invoke-WotrOfflineTests.ps1` (generic runner) and
   `New-WotrSnapshot.ps1` (game-file snapshot). Consumers call these paths through
   the submodule; moving them is a breaking change.
@@ -77,8 +80,11 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   Point its submodule at a local branch to test before publishing. Do not claim
   untested behavior has passed.
 - Run `dotnet test tests/WotR.Testing.Fuzzing.Tests/WotR.Testing.Fuzzing.Tests.csproj`
-  for game-independent fuzzing tests. Public CI runs these; building the offline
-  library still needs game files.
+  for game-independent fuzzing tests and
+  `dotnet test tests/WotR.Testing.InGame.Tests/WotR.Testing.InGame.Tests.csproj` for
+  the in-game protocol and dispatcher (also net48 on Windows). Public CI runs these;
+  building the offline library still needs game files. They do not show that
+  anything works inside the player.
 - Use CLI and code; do not use computer use or launch the game for offline work.
 
 ## Changes

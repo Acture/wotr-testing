@@ -1,5 +1,7 @@
 <Solution>
   <Project Path="src/WotR.Testing.Fuzzing/WotR.Testing.Fuzzing.csproj" />
+  <Project Path="src/WotR.Testing.InGame.Protocol/WotR.Testing.InGame.Protocol.csproj" />
+  <Project Path="src/WotR.Testing.InGame/WotR.Testing.InGame.csproj" />
   <Project Path="src/WotR.Testing.MonoHost/WotR.Testing.MonoHost.csproj" />
   <Project Path="src/WotR.Testing.VSTest/WotR.Testing.VSTest.csproj" />
   <Project Path="src/WotR.Testing.Build/WotR.Testing.Build.csproj" />

@@ -9,9 +9,11 @@
 | `WotR.Testing.Build/` | MSBuild tasks merging runsettings and validating native VSTest results and environment reports |
 | `WotR.Testing.VSTest/` | Unity Mono runtime provider, SDK host dependency isolation and result logger |
 | `WotR.Testing.VSTestBootstrap/` | Registers the runtime provider before entering the installed SDK's unmodified VSTest CLI |
+| `WotR.Testing.InGame/` | In progress, not packaged: tests inside the running game. So far only the Unity-independent main-thread dispatcher |
+| `WotR.Testing.InGame.Protocol/` | In progress, not packaged: versioned messages, framing and session checks between the external adapter and the in-game host |
 
-Planned: `WotR.Testing.InGame/` for tests that need the Unity engine, added to the
-`WotR.Testing` meta-package, and a shared library both use once they need one. The test runner and snapshot scripts live in
+Not yet implemented: the in-game UMM host, its external test adapter and the
+`WotR.Testing` meta-package wiring; nothing has run inside the game. The test runner and snapshot scripts live in
 the top-level `scripts/`, because consumers call them by path through the
 submodule.
 

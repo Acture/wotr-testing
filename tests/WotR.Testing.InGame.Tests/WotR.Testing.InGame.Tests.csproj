@@ -13,7 +13,10 @@
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
     <ProjectReference Include="../../src/WotR.Testing.InGame.Protocol/WotR.Testing.InGame.Protocol.csproj" />
-    <!-- Compiled from source: the in-game project will reference game assemblies, these tests must not need them. -->
+    <ProjectReference Include="../../src/WotR.Testing.Client/WotR.Testing.Client.csproj" />
+    <!-- Scanned from metadata, never run. -->
+    <ProjectReference Include="../fixtures/ScopeSamples/ScopeSamples.csproj" />
+    <!-- Compiled from source: the in-game project references game assemblies, these tests must not need them. -->
     <Compile Include="../../src/WotR.Testing.InGame/MainThreadDispatcher.cs" Link="MainThreadDispatcher.cs" />
   </ItemGroup>
 </Project>

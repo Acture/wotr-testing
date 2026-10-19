@@ -16,6 +16,7 @@
     <ProjectReference Include="../WotR.Testing.InGame.Protocol/WotR.Testing.InGame.Protocol.csproj" />
     <!-- The offline runtime's class-library preparation, shared with the VSTest runtime provider. -->
     <Compile Include="../WotR.Testing.VSTest/MonoClassLibrary.cs" Link="MonoClassLibrary.cs" />
+    <InternalsVisibleTo Include="WotR.Testing.InGame.Tests" />
   </ItemGroup>
 
 </Project>

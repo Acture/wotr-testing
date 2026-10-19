@@ -25,7 +25,7 @@ namespace WotR.Testing.Client
         /// <summary>Declared cases or targets for a mode (offgame, ingame) and kind (tests, fuzz).</summary>
         public int Count(string mode, string kind) => counts.TryGetValue(mode + "/" + kind, out var count) ? count : 0;
 
-        private void Add(string mode, string kind) => counts[mode + "/" + kind] = Count(mode, kind) + 1;
+        internal void Add(string mode, string kind) => counts[mode + "/" + kind] = Count(mode, kind) + 1;
 
         public static TestScope Scan(string assemblyPath)
         {

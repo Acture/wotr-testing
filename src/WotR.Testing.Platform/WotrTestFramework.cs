@@ -108,10 +108,13 @@ namespace WotR.Testing.Platform
                     new TestNodeUpdateMessage(context.Request.Session.SessionUid, node)), TaskScheduler.Default).Unwrap();
             }
 
+            // The TRX report needs a type and method for every result, or it fails the whole run.
             internal void Problem(string uid, string name, string message, string report)
                 => Publish(new TestNode {
                     Uid = uid, DisplayName = name,
-                    Properties = new PropertyBag(new FailedTestNodeStateProperty(message + (report == null ? "" : "\nReport: " + report)))
+                    Properties = new PropertyBag(new FailedTestNodeStateProperty(message + (report == null ? "" : "\nReport: " + report)),
+                        new TestMethodIdentifierProperty("WotR.Testing", "WotR", "Run", uid.Replace('/', '_'), 0, Array.Empty<string>(), "System.Void"),
+                        new TrxFullyQualifiedTypeNameProperty("WotR.Run"))
                 });
         }
 

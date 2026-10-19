@@ -24,6 +24,8 @@ namespace WotR.Testing.Client
     {
         public List<PartitionResult> Partitions { get; } = new List<PartitionResult>();
         public List<string> Problems { get; } = new List<string>();
+        /// <summary>How the run reached and left the game; `dotnet test` does not show these messages on success.</summary>
+        public List<string> Log { get; } = new List<string>();
         public string ReportFile { get; set; }
         public bool Succeeded => Problems.Count == 0 && Partitions.All(partition => partition.Succeeded);
         public int Passed => Partitions.Sum(partition => partition.Passed);
@@ -41,6 +43,11 @@ namespace WotR.Testing.Client
         public static async Task<RunSummary> RunAsync(ExecutionPlan plan, RunOptions options, IPartitionObserver observer, CancellationToken cancellationToken)
         {
             var summary = new RunSummary();
+            void Log(string message)
+            {
+                lock (summary.Log) summary.Log.Add(DateTime.UtcNow.ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture) + " " + message);
+                observer.Log(message);
+            }
             GameConnection game = null;
             Exception gameError = null;
             try {
@@ -53,8 +60,8 @@ namespace WotR.Testing.Client
                     if (partition.Mode == Welcome.InGame && game == null && gameError == null) {
                         try {
                             game = await GameConnection.ConnectAsync(options.Connection, options.InstallRoot, options.ProcessId,
-                                TimeSpan.FromSeconds(settings.StartupTimeoutSeconds), options.LaunchInBackground, observer.Log, cancellationToken).ConfigureAwait(false);
-                            observer.Log("In-game partitions use process " + game.Host.ProcessId + " (" + game.Mode + (game.Owned ? ", started by this run" : "") + ").");
+                                TimeSpan.FromSeconds(settings.StartupTimeoutSeconds), options.LaunchInBackground, Log, cancellationToken).ConfigureAwait(false);
+                            Log("In-game partitions use process " + game.Host.ProcessId + " (" + game.Mode + (game.Owned ? ", started by this run" : "") + ").");
                         }
                         catch (Exception error) when (!(error is OperationCanceledException)) { gameError = error; }
                     }
@@ -70,7 +77,7 @@ namespace WotR.Testing.Client
             }
             finally {
                 if (game != null) {
-                    try { await game.ShutdownOwnedAsync(observer.Log).ConfigureAwait(false); }
+                    try { await game.ShutdownOwnedAsync(Log).ConfigureAwait(false); }
                     catch (Exception error) { summary.Problems.Add("The game started by this run could not be closed: " + error.Message); }
                 }
             }
@@ -97,6 +104,7 @@ namespace WotR.Testing.Client
                 // Their results are in VSTest's own reports (TRX, environment.json), not in partition reports here.
                 ["runByVSTest"] = plan.RunByVSTest.Select(partition => new Dictionary<string, object> { ["name"] = partition.Name, ["declared"] = partition.Declared }).ToList(),
                 ["problems"] = summary.Problems,
+                ["log"] = summary.Log,
                 ["succeeded"] = summary.Succeeded
             }));
             return summary;

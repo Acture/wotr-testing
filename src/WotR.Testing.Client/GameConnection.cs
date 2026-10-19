@@ -38,6 +38,10 @@ namespace WotR.Testing.Client
         public const string GameExecutable = "Wrath.exe";
         public static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(5);
         public static readonly TimeSpan ShutdownGrace = TimeSpan.FromSeconds(15);
+        /// <summary>Termination finishes asynchronously; the next run must not find the process still exiting.</summary>
+        public static readonly TimeSpan TerminationWait = TimeSpan.FromSeconds(30);
+        /// <summary>How long a game process without a window (starting or exiting) may take before it counts as running.</summary>
+        public static readonly TimeSpan SettleTime = TimeSpan.FromSeconds(20);
 
         private GameConnection(HostAdvertisement host, string mode, bool owned)
         {
@@ -62,6 +66,16 @@ namespace WotR.Testing.Client
             if (!ConnectionModes.IsValid(mode)) throw new ArgumentException("WotrInGameConnection must be auto, attach or launch.");
             installRoot = Normalize(installRoot);
             var hosts = Matching(installRoot, processId);
+            List<Process> running;
+            // A game without a window is starting (its host may still advertise) or exiting (for example the one the previous
+            // run closed). Neither is a running game without the host yet.
+            var settle = DateTime.UtcNow + SettleTime;
+            while (hosts.Count == 0 && (running = GameProcesses(installRoot, processId)).Count > 0 &&
+                running.Any(process => !HasWindow(process)) && DateTime.UtcNow < settle) {
+                log?.Invoke("Waiting for game process " + string.Join(", ", running.Select(p => p.Id)) + " to finish starting or exiting.");
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+                hosts = Matching(installRoot, processId);
+            }
             if (hosts.Count == 1) {
                 if (mode == ConnectionModes.Launch && processId == 0) {
                     throw new ConnectionException(ConnectionException.Ambiguous, "launch was requested, but the game already runs with the host (process " +
@@ -72,7 +86,7 @@ namespace WotR.Testing.Client
             if (hosts.Count > 1)
                 throw new ConnectionException(ConnectionException.Ambiguous, "Several running games have the host (processes " +
                     string.Join(", ", hosts.Select(host => host.ProcessId)) + "). Choose one with WotrInGamePid.");
-            var running = GameProcesses(installRoot).Where(process => processId == 0 || process.Id == processId).ToList();
+            running = GameProcesses(installRoot, processId);
             if (running.Count > 0)
                 throw new ConnectionException(ConnectionException.HostNotLoaded, "The game runs (process " + string.Join(", ", running.Select(p => p.Id)) +
                     ") without the WotR.Testing host. Install it with the InstallWotrInGameHost target, enable it in UnityModManager and restart the game.");
@@ -147,7 +161,11 @@ namespace WotR.Testing.Client
                 if (!process.HasExited) {
                     log?.Invoke("The game did not exit within " + ShutdownGrace.TotalSeconds + " seconds; terminating process " + process.Id + ".");
                     process.Kill();
+                    deadline = DateTime.UtcNow + TerminationWait;
+                    while (!process.HasExited && DateTime.UtcNow < deadline) await Task.Delay(250).ConfigureAwait(false);
+                    if (!process.HasExited) log?.Invoke("Process " + process.Id + " was still exiting " + TerminationWait.TotalSeconds + " seconds after termination.");
                 }
+                if (process.HasExited) log?.Invoke("The game started by this run exited.");
             }
         }
 
@@ -158,16 +176,30 @@ namespace WotR.Testing.Client
                     string.Equals(Normalize(host.InstallRoot), installRoot, StringComparison.OrdinalIgnoreCase) &&
                     (processId == 0 || host.ProcessId == processId)).ToList();
 
-        private static List<Process> GameProcesses(string installRoot)
+        private static List<Process> GameProcesses(string installRoot, int processId)
         {
             var result = new List<Process>();
             foreach (var process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(GameExecutable))) {
+                if (processId != 0 && process.Id != processId) continue;
+                try {
+                    if (process.HasExited) continue;
+                }
+                catch (Exception) { /* No access: assume it runs. */ }
                 string path = null;
                 try { path = process.MainModule?.FileName; }
                 catch (Exception) { /* Another user's process or no access: count it only by name. */ }
                 if (path == null || string.Equals(Normalize(Path.GetDirectoryName(path)), installRoot, StringComparison.OrdinalIgnoreCase)) result.Add(process);
             }
             return result;
+        }
+
+        private static bool HasWindow(Process process)
+        {
+            try {
+                process.Refresh();
+                return process.MainWindowHandle != IntPtr.Zero;
+            }
+            catch (Exception) { return true; }
         }
 
         internal static string Normalize(string path) => Path.GetFullPath(path).TrimEnd('\\', '/');

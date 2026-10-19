@@ -19,6 +19,9 @@ namespace WotR.Testing.Platform
                 args = args.Concat(new[] { "--report-trx-filename", WotrOptions.ProjectName(args[source + 1]) + "_{arch}.trx" }).ToArray();
             var builder = await TestApplication.CreateBuilderAsync(args);
             builder.CommandLine.AddProvider(() => new WotrOptions());
+#pragma warning disable TPEXP // The platform marks its tree filter experimental; it provides --treenode-filter.
+            Microsoft.Testing.Platform.Helpers.TestApplicationBuilderExtensions.AddTreeNodeFilterService(builder, new WotrOptions());
+#pragma warning restore TPEXP
             builder.RegisterTestFramework(_ => new TestFrameworkCapabilities(new TrxCapability()),
                 (_, services) => new WotrTestFramework(services.GetCommandLineOptions()));
             builder.AddTrxReportProvider();

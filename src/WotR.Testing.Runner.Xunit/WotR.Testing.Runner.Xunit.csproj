@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    xUnit v2 discovery and execution for the runner. Loaded at run time from the directory of the test project's xUnit,
+    so its xUnit references bind exactly like the test assembly's.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>WotR.Testing.Runner.Xunit</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <!-- Compile-time only: at run time xUnit must be the test project's own copy, or its attributes would not match. -->
+    <PackageReference Include="xunit.extensibility.execution" Version="2.9.2" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="xunit.extensibility.core" Version="2.9.2" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="xunit.abstractions" Version="2.0.3" PrivateAssets="all" ExcludeAssets="runtime" />
+    <ProjectReference Include="../WotR.Testing.Runner/WotR.Testing.Runner.csproj" />
+  </ItemGroup>
+
+</Project>

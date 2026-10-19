@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    UnityModManager development mod that runs tests inside the player for external adapters. Installed explicitly into
+    the game's Mods folder; contains no game files. Its output folder is the complete mod payload.
+  -->
+  <Import Project="$(MSBuildThisFileDirectory)../../GamePath.props" Condition="Exists('$(MSBuildThisFileDirectory)../../GamePath.props')" />
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>WotR.Testing.InGame.Host</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <WotrManaged>$(WrathInstallDir)/Wrath_Data/Managed</WotrManaged>
+  </PropertyGroup>
+
+  <Target Name="EnsureWotrHostReferences" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(WotrManaged)/UnityModManager/UnityModManager.dll')" Text="[ENV_MISSING] WotR installation with UnityModManager not found. Set WrathInstallDir (for example in GamePath.props)." />
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="$(WotrManaged)/UnityModManager/UnityModManager.dll" Private="false" />
+    <Reference Include="$(WotrManaged)/UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="$(WotrManaged)/Assembly-CSharp.dll" Private="false" />
+    <Reference Include="$(WotrManaged)/Owlcat.Runtime.Core.dll" Private="false" />
+    <ProjectReference Include="../WotR.Testing.Runner/WotR.Testing.Runner.csproj" />
+    <!-- Shipped, never referenced in code: loaded beside the test project's xUnit. -->
+    <ProjectReference Include="../WotR.Testing.Runner.Xunit/WotR.Testing.Runner.Xunit.csproj" />
+    <ProjectReference Include="../WotR.Testing.InGame/WotR.Testing.InGame.csproj" />
+    <ProjectReference Include="../WotR.Testing.InGame.Protocol/WotR.Testing.InGame.Protocol.csproj" />
+  </ItemGroup>
+
+  <!-- Not loadable from the Mods folder: the host copies it beside each test project's xUnit. -->
+  <Target Name="StoreWotrXunitBridge" AfterTargets="Build">
+    <Copy SourceFiles="$(OutDir)WotR.Testing.Runner.Xunit.dll" DestinationFiles="$(OutDir)WotR.Testing.Runner.Xunit.bridge" />
+    <Delete Files="$(OutDir)WotR.Testing.Runner.Xunit.dll;$(OutDir)WotR.Testing.Runner.Xunit.pdb" />
+  </Target>
+
+  <!-- UMM needs a numeric version; prerelease labels are dropped. -->
+  <Target Name="WriteWotrHostInfo" AfterTargets="Build">
+    <PropertyGroup>
+      <_WotrHostVersion>$(Version.Split('-')[0])</_WotrHostVersion>
+      <_WotrHostInfo>{
+  "Id": "WotR.Testing.Host",
+  "DisplayName": "WotR.Testing in-game host",
+  "Author": "Acture",
+  "Version": "$(_WotrHostVersion)",
+  "ManagerVersion": "0.27.0",
+  "Requirements": [],
+  "AssemblyName": "WotR.Testing.InGame.Host.dll",
+  "EntryMethod": "WotR.Testing.InGame.Host.Main.Load",
+  "HomePage": "https://github.com/Acture/wotr-testing"
+}</_WotrHostInfo>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(OutDir)Info.json" Lines="$(_WotrHostInfo)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
+
+</Project>

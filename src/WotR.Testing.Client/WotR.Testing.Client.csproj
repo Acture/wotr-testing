@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Shared by the external adapters (VSTest and Microsoft.Testing.Platform): connection policy, offgame workers, the
+    execution plan and reports. Runs in .NET SDK processes only, never in the game or a worker.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The .NET SDK process supplies this framework assembly (.NET 8+). -->
+    <PackageReference Include="System.Reflection.Metadata" Version="8.0.1" PrivateAssets="all" />
+    <ProjectReference Include="../WotR.Testing.InGame.Protocol/WotR.Testing.InGame.Protocol.csproj" />
+  </ItemGroup>
+
+</Project>

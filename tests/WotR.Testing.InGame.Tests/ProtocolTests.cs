@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Pipes;
+using System.Net;
+using System.Net.Sockets;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -214,11 +215,24 @@ public class SessionTrackerTests
         tracker.Accept(new TestStarted { SessionId = "s", Sequence = 2, TestId = "t" });
         tracker.Accept(Finished(3, "t", TestFinished.Passed));
         Assert.Throws<ProtocolException>(() => tracker.Accept(Finished(4, "t", TestFinished.Passed)));
-        var restart = new SessionTracker("s");
-        restart.Accept(new Welcome { SessionId = "s", Sequence = 1 });
-        restart.Accept(new TestStarted { SessionId = "s", Sequence = 2, TestId = "t" });
-        restart.Accept(Finished(3, "t", TestFinished.Passed));
-        Assert.Throws<ProtocolException>(() => restart.Accept(new TestStarted { SessionId = "s", Sequence = 4, TestId = "t" }));
+        var overlap = new SessionTracker("s");
+        overlap.Accept(new Welcome { SessionId = "s", Sequence = 1 });
+        overlap.Accept(new TestStarted { SessionId = "s", Sequence = 2, TestId = "t" });
+        Assert.Throws<ProtocolException>(() => overlap.Accept(new TestStarted { SessionId = "s", Sequence = 3, TestId = "t" }));
+    }
+
+    [Fact]
+    public void A_case_reports_once_per_row_after_each_finishes()
+    {
+        var tracker = new SessionTracker("s");
+        tracker.Accept(new Welcome { SessionId = "s", Sequence = 1 });
+        tracker.Accept(new TestStarted { SessionId = "s", Sequence = 2, TestId = "theory", DisplayName = "Theory(1)" });
+        tracker.Accept(Finished(3, "theory", TestFinished.Passed));
+        tracker.Accept(new TestStarted { SessionId = "s", Sequence = 4, TestId = "theory", DisplayName = "Theory(2)" });
+        tracker.Accept(Finished(5, "theory", TestFinished.Passed));
+        tracker.Accept(new SessionFinished { SessionId = "s", Sequence = 6, Passed = 2, Cleanup = SessionFinished.Clean });
+        Assert.Empty(tracker.Problems());
+        Assert.Equal(2, tracker.Results.Count);
     }
 
     [Fact]
@@ -294,12 +308,17 @@ public class SessionTrackerTests
 public class EventWriterTests
 {
     [Fact]
-    public async Task Concurrent_writers_produce_one_ordered_stream_over_a_pipe()
+    public async Task Concurrent_writers_produce_one_ordered_stream_over_a_socket()
     {
-        var name = "wotr-" + Guid.NewGuid().ToString("N").Substring(0, 8);
-        using var server = new NamedPipeServerStream(name, PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-        using var client = new NamedPipeClientStream(".", name, PipeDirection.In, PipeOptions.Asynchronous);
-        await Task.WhenAll(server.WaitForConnectionAsync(), client.ConnectAsync(5000));
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        using var connecting = new TcpClient();
+        var accept = listener.AcceptTcpClientAsync();
+        await connecting.ConnectAsync(IPAddress.Loopback, ((IPEndPoint)listener.LocalEndpoint).Port);
+        using var accepted = await accept;
+        listener.Stop();
+        var server = accepted.GetStream();
+        var client = connecting.GetStream();
         var writer = new EventWriter(server, "s");
         var tracker = new SessionTracker("s");
         var reader = Task.Run(async () => {
@@ -309,7 +328,7 @@ public class EventWriterTests
         await writer.WriteAsync(new Welcome());
         await Task.WhenAll(Enumerable.Range(0, 200).Select(index => Task.Run(() => writer.WriteAsync(new Log { Text = "line " + index }))));
         await writer.WriteAsync(new SessionFinished { Cleanup = SessionFinished.Clean });
-        server.Dispose();
+        accepted.Close();
         Assert.Same(reader, await Task.WhenAny(reader, Task.Delay(TimeSpan.FromSeconds(30))));
         await reader;
         Assert.Empty(tracker.Problems());

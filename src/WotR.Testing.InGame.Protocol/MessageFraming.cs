@@ -118,7 +118,32 @@ namespace WotR.Testing.InGame.Protocol
             if (end < 0) throw new SerializationException("The message object is incomplete.");
         }
 
-        private static DataContractJsonSerializer Serializer(Type type) => Serializers.GetOrAdd(type, t => new DataContractJsonSerializer(t));
+        internal static DataContractJsonSerializer Serializer(Type type) => Serializers.GetOrAdd(type, t => new DataContractJsonSerializer(t));
+
+        internal static T ReadDocument<T>(byte[] utf8) where T : class
+        {
+            try {
+                RequireOneObject(utf8);
+                return (T)Read(typeof(T), utf8);
+            }
+            catch (Exception error) when (error is SerializationException || error is XmlException || error is DecoderFallbackException)
+            { throw new ProtocolException(ProtocolException.Malformed, "Invalid " + typeof(T).Name + " document.", error); }
+        }
+    }
+
+    /// <summary>JSON documents (advertisements, reports) with the same serializer and strictness as messages.</summary>
+    public static class ProtocolJson
+    {
+        public static string Serialize<T>(T value) where T : class
+        {
+            using (var stream = new MemoryStream()) {
+                MessageFraming.Serializer(typeof(T)).WriteObject(stream, value);
+                return Encoding.UTF8.GetString(stream.ToArray());
+            }
+        }
+
+        public static T Deserialize<T>(string json) where T : class
+            => MessageFraming.ReadDocument<T>(Encoding.UTF8.GetBytes(json ?? throw new ArgumentNullException(nameof(json))));
     }
 
     /// <summary>The host's only event writer: stamps the session and the next sequence number in send order.</summary>
@@ -129,6 +154,7 @@ namespace WotR.Testing.InGame.Protocol
         private readonly SemaphoreSlim gate = new SemaphoreSlim(1, 1);
         private long sequence;
         private bool broken;
+        private bool ended;
 
         public EventWriter(Stream stream, string sessionId)
         {
@@ -143,6 +169,7 @@ namespace WotR.Testing.InGame.Protocol
             try {
                 // A failed or cancelled write may have sent part of a frame; nothing after it can be trusted.
                 if (broken) throw new ProtocolException(ProtocolException.Disconnected, "An earlier write failed; the session cannot continue.");
+                if (ended) throw new ObjectDisposedException(nameof(EventWriter), "The session already sent SessionFinished.");
                 message.SessionId = sessionId;
                 message.Sequence = sequence + 1;
                 var frame = MessageFraming.Encode(message);
@@ -151,6 +178,7 @@ namespace WotR.Testing.InGame.Protocol
                 await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
                 broken = false;
                 sequence++;
+                ended = message is SessionFinished;
             }
             finally { gate.Release(); }
         }

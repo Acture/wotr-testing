@@ -13,7 +13,6 @@ namespace WotR.Testing.InGame.Protocol
         private static readonly string[] Outcomes = { TestFinished.Passed, TestFinished.Failed, TestFinished.Skipped };
         private readonly string sessionId;
         private readonly HashSet<string> running = new HashSet<string>(StringComparer.Ordinal);
-        private readonly Dictionary<string, TestFinished> results = new Dictionary<string, TestFinished>(StringComparer.Ordinal);
         private readonly List<TestFinished> order = new List<TestFinished>();
         private long sequence;
 
@@ -40,12 +39,12 @@ namespace WotR.Testing.InGame.Protocol
                     break;
                 case TestStarted started:
                     if (string.IsNullOrEmpty(started.TestId)) throw Violation("TestStarted without a test id.");
-                    if (results.ContainsKey(started.TestId) || !running.Add(started.TestId)) throw Violation("Test started twice: " + started.TestId);
+                    // A case may start again after it finished (one result per Theory row), never while it runs.
+                    if (!running.Add(started.TestId)) throw Violation("Test started while running: " + started.TestId);
                     break;
                 case TestFinished finished:
                     if (finished.TestId == null || !running.Remove(finished.TestId)) throw Violation("TestFinished without TestStarted: " + finished.TestId);
                     if (!Outcomes.Contains(finished.Outcome)) throw Violation("Unknown outcome " + (finished.Outcome ?? "none") + " for " + finished.TestId);
-                    results.Add(finished.TestId, finished);
                     order.Add(finished);
                     break;
                 case Heartbeat heartbeat:

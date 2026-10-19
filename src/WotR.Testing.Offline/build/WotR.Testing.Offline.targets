@@ -117,7 +117,10 @@
     </ItemGroup>
     <PropertyGroup>
       <_WotrSettings>$(TargetDir)$(TargetName).wotr-settings.json</_WotrSettings>
-      <WotrReportDirectory Condition="'$(WotrReportDirectory)'==''">$(TargetDir)wotr-reports/</WotrReportDirectory>
+      <!-- The same precedence as the VSTest reports, without changing WotrReportDirectory for the targets after this one. -->
+      <_WotrRunReportDirectory>$(WotrReportDirectory)</_WotrRunReportDirectory>
+      <_WotrRunReportDirectory Condition="'$(_WotrRunReportDirectory)'=='' and '$(VSTestResultsDirectory)'!=''">$(VSTestResultsDirectory)/wotr/$(MSBuildProjectName)/</_WotrRunReportDirectory>
+      <_WotrRunReportDirectory Condition="'$(_WotrRunReportDirectory)'==''">$(TargetDir)wotr-reports/</_WotrRunReportDirectory>
       <_WotrModAssemblies>@(_WotrModUnderTest->'&quot;%(FullPath)&quot;', ', ')</_WotrModAssemblies>
       <_WotrFuzzSeed>null</_WotrFuzzSeed>
       <_WotrFuzzSeed Condition="'$(WotrFuzzSeed)'!=''">$(WotrFuzzSeed)</_WotrFuzzSeed>
@@ -129,7 +132,7 @@
   "installRoot": "$([System.IO.Path]::GetFullPath('$(WrathInstallDir)').Replace('\','/'))",
   "monoHost": "$(WotrMonoHost.Replace('\','/'))",
   "workDirectory": "$([System.IO.Path]::GetFullPath('$(WotrWorkDirectory)').Replace('\','/'))",
-  "reportDirectory": "$([System.IO.Path]::GetFullPath('$(WotrReportDirectory)').Replace('\','/'))",
+  "reportDirectory": "$([System.IO.Path]::GetFullPath('$(_WotrRunReportDirectory)').Replace('\','/'))",
   "runtime": "$(WotrRuntime)",
   "mode": "$(WotrTestMode)",
   "kind": "$(WotrTestKind)",

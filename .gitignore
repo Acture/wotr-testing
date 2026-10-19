@@ -24,3 +24,6 @@ __pycache__/
 *.py[cod]
 .ruff_cache/
 .ty_cache/
+
+# Test results written beside test projects
+TestResults/

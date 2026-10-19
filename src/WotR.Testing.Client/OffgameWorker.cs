@@ -25,8 +25,8 @@ namespace WotR.Testing.Client
         public int ProcessId => process.Id;
         public HostClient Client { get; private set; }
 
-        public static async Task<OffgameWorker> StartAsync(string runtime, string inputRoot, string monoHost, string workDirectory, string testAssembly,
-            string reportDirectory, string runId, Action<string> log, CancellationToken cancellationToken)
+        public static async Task<OffgameWorker> StartAsync(string runtime, string inputRoot, string monoHost, string workDirectory, string classLibrary,
+            string testAssembly, string reportDirectory, string runId, Action<string> log, CancellationToken cancellationToken)
         {
             if (runtime != "mono" && runtime != "netfx") throw new ArgumentException("WotrRuntime must be mono or netfx.");
             if (!File.Exists(monoHost)) throw new FileNotFoundException("wotr-mono-host was not found.", monoHost);
@@ -41,7 +41,7 @@ namespace WotR.Testing.Client
                 var embed = Path.Combine(inputRoot, "MonoBleedingEdge", "EmbedRuntime");
                 if (!File.Exists(Path.Combine(embed, "mono-2.0-bdwgc.dll")))
                     throw new FileNotFoundException("[ENV_MISSING] The game's Unity Mono runtime was not found in " + embed);
-                var classLibrary = WotR.Testing.VSTest.MonoClassLibrary.Prepare(Path.Combine(inputRoot, "Wrath_Data", "Managed"), workDirectory);
+                classLibrary = classLibrary ?? PrepareClassLibrary(inputRoot, workDirectory);
                 arguments.AddRange(new[] { "--runtime", embed, "--config", Path.Combine(inputRoot, "MonoBleedingEdge", "etc"), "--assemblies", classLibrary, "--", monoHost });
             }
             arguments.AddRange(worker);
@@ -80,6 +80,10 @@ namespace WotR.Testing.Client
         }
 
         public string Errors { get { lock (errors) return errors.ToString(); } }
+
+        /// <summary>Needs assembly metadata: call it in an SDK process, not in the .NET Framework test host.</summary>
+        public static string PrepareClassLibrary(string inputRoot, string workDirectory)
+            => WotR.Testing.VSTest.MonoClassLibrary.Prepare(Path.Combine(inputRoot, "Wrath_Data", "Managed"), workDirectory);
 
         /// <summary>The worker exits after its session; a worker that does not is terminated.</summary>
         public void Dispose()

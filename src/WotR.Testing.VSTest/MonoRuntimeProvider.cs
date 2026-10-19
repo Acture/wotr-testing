@@ -48,6 +48,19 @@ namespace WotR.Testing.VSTest
             IDictionary<string, string> environmentVariables, TestRunnerConnectionInfo connectionInfo)
         {
             var source = sources.Single();
+            // A .wotrtests manifest needs no game runtime: the WotR adapter runs in the ordinary .NET Framework host and
+            // starts offgame workers or reaches the game itself.
+            if (source.EndsWith(".wotrtests", StringComparison.OrdinalIgnoreCase)) {
+                var platformDirectory = Path.GetDirectoryName(typeof(ITestRuntimeProvider).Assembly.Location);
+                var frameworkHost = new[] {
+                    Path.Combine(platformDirectory, "TestHostNetFramework", "testhost.net48.exe"), Path.Combine(platformDirectory, "testhost.net48.exe"),
+                    Path.Combine(platformDirectory, "TestHostNetFramework", "testhost.exe"), Path.Combine(platformDirectory, "testhost.exe")
+                }.FirstOrDefault(File.Exists) ?? throw new FileNotFoundException("The VSTest .NET Framework testhost was not found beside " + platformDirectory);
+                return new TestProcessStartInfo {
+                    FileName = frameworkHost, Arguments = connectionInfo.ToCommandLineOptions(), WorkingDirectory = Path.GetDirectoryName(source),
+                    EnvironmentVariables = new Dictionary<string, string>(environmentVariables ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase)
+                };
+            }
             var configured = environmentVariables?.FirstOrDefault(p => string.Equals(p.Key, "WOTR_INPUT_ROOT", StringComparison.OrdinalIgnoreCase));
             var inputRoot = configured?.Key != null ? configured.Value.Value : Environment.GetEnvironmentVariable("WOTR_INPUT_ROOT");
             if (string.IsNullOrEmpty(inputRoot)) inputRoot = Value("InputRoot");

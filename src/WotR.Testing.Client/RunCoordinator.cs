@@ -103,7 +103,7 @@ namespace WotR.Testing.Client
         private static PartitionSettings Copy(PartitionSettings source, ExecutionPlan plan, string reportDirectory) => new PartitionSettings {
             TestAssembly = source.TestAssembly, ReportDirectory = reportDirectory, RunId = source.RunId, TestTimeoutSeconds = source.TestTimeoutSeconds,
             StartupTimeoutSeconds = source.StartupTimeoutSeconds, ListOnly = source.ListOnly, FuzzSeed = plan.FuzzSeed, Replay = plan.Replay,
-            InputRoot = source.InputRoot, Runtime = source.Runtime, MonoHost = source.MonoHost, WorkDirectory = source.WorkDirectory,
+            InputRoot = source.InputRoot, Runtime = source.Runtime, MonoHost = source.MonoHost, WorkDirectory = source.WorkDirectory, ClassLibrary = source.ClassLibrary,
             ExpectedModules = source.ExpectedModules.ToList(), SupportFiles = source.SupportFiles.ToList()
         };
     }

@@ -3,6 +3,7 @@
   <Project Path="src/WotR.Testing.InGame.Protocol/WotR.Testing.InGame.Protocol.csproj" />
   <Project Path="src/WotR.Testing.Client/WotR.Testing.Client.csproj" />
   <Project Path="src/WotR.Testing.Platform/WotR.Testing.Platform.csproj" />
+  <Project Path="src/WotR.Testing.TestAdapter/WotR.Testing.TestAdapter.csproj" />
   <Project Path="src/WotR.Testing.InGame/WotR.Testing.InGame.csproj" />
   <Project Path="src/WotR.Testing.InGame.Host/WotR.Testing.InGame.Host.csproj" />
   <Project Path="src/WotR.Testing.Runner/WotR.Testing.Runner.csproj" />

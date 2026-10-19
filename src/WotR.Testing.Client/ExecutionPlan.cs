@@ -44,6 +44,12 @@ namespace WotR.Testing.Client
         public int? FuzzSeed { get; private set; }
         public ReplaySelection Replay { get; private set; }
 
+        /// <summary>A plan resolved earlier, by the build task for the VSTest adapter.</summary>
+        public static ExecutionPlan FromPartitions(string mode, string kind, IReadOnlyList<Partition> partitions, int? fuzzSeed, ReplaySelection replay)
+            => new ExecutionPlan {
+                RequestedMode = mode, RequestedKind = kind, Partitions = partitions, Excluded = new List<Partition>(), FuzzSeed = fuzzSeed, Replay = replay
+            };
+
         public static ExecutionPlan Resolve(TestScope scope, string mode, string kind, int? fuzzSeed, string replayFile, string offgameRuntime, bool inGameOptionsGiven)
         {
             mode = string.IsNullOrEmpty(mode) ? Auto : mode;

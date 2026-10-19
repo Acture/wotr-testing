@@ -26,6 +26,8 @@ namespace WotR.Testing.Client
         public string Runtime { get; set; } = "mono";
         public string MonoHost { get; set; }
         public string WorkDirectory { get; set; }
+        /// <summary>Unity Mono class-library folder prepared earlier; prepared here when null.</summary>
+        public string ClassLibrary { get; set; }
 
         // In-game host.
         public List<ModuleIdentity> ExpectedModules { get; set; } = new List<ModuleIdentity>();
@@ -74,8 +76,8 @@ namespace WotR.Testing.Client
             HostClient client = null;
             try {
                 if (partition.Mode == Welcome.OffGame) {
-                    worker = await OffgameWorker.StartAsync(settings.Runtime, settings.InputRoot, settings.MonoHost, settings.WorkDirectory, settings.TestAssembly,
-                        settings.ReportDirectory, settings.RunId, observer.Log, cancellationToken).ConfigureAwait(false);
+                    worker = await OffgameWorker.StartAsync(settings.Runtime, settings.InputRoot, settings.MonoHost, settings.WorkDirectory, settings.ClassLibrary,
+                        settings.TestAssembly, settings.ReportDirectory, settings.RunId, observer.Log, cancellationToken).ConfigureAwait(false);
                     client = worker.Client;
                     result.Connection = "worker";
                 }

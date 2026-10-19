@@ -39,6 +39,9 @@ namespace WotR.Testing.Runner
 
         public event Action<string> Log;
 
+        /// <summary>Raised after a session's connection is closed, so its final events have been delivered.</summary>
+        public event Action SessionClosed;
+
         /// <summary>Starts listening and records the port in the advertisement.</summary>
         public void Start()
         {
@@ -136,6 +139,7 @@ namespace WotR.Testing.Runner
                     heartbeat?.Dispose();
                     Release();
                     connection.Dispose();
+                    server.SessionClosed?.Invoke();
                 }
             }
 

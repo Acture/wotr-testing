@@ -26,6 +26,7 @@ namespace WotR.Testing.MonoHost
                     ShadowCopyFiles = "false"
                 };
                 var domain = AppDomain.CreateDomain("WotRTestHostAppDomain", null, setup);
+                domain.SetData("WotR.Testing.Mode", "offgame");
                 var worker = (ManagedTestHostWorker)domain.CreateInstanceFromAndUnwrap(
                     typeof(ManagedTestHostWorker).Assembly.Location, typeof(ManagedTestHostWorker).FullName);
                 // Keep the domain until process exit, as the ordinary SDK testhost does.

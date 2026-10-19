@@ -83,6 +83,8 @@ namespace WotR.Testing.MonoHost
                     };
                     using (var server = new RunnerServer(environment, advertisement)) {
                         server.Log += message => Console.Error.WriteLine("wotr-worker: " + message);
+                        // Exit only once the adapter closed its side: exiting first can reset the connection before it read the end.
+                        server.SessionClosed += () => { if (environment.Started) environment.Ended.Set(); };
                         server.Start();
                         var temporary = endpointFile + ".tmp";
                         File.WriteAllText(temporary, advertisement.Port.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -131,7 +133,7 @@ namespace WotR.Testing.MonoHost
             }
 
             public override void SessionStarting(CancellationToken canceled) => Started = true;
-            public override void SessionEnded() => Ended.Set();
+            public override void SessionEnded() { }
 
             public override string EnvironmentReport(Lease request) => ProtocolJson.Serialize(new WorkerReport {
                 Mode = Mode, RuntimeKind = RuntimeKind, ProcessId = Process.GetCurrentProcess().Id, TestAssembly = source,

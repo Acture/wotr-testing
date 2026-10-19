@@ -4,6 +4,8 @@ using System.Linq;
 using System.Xml.Linq;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
+using WotR.Testing.Client;
+using WotR.Testing.InGame.Protocol;
 
 namespace WotR.Testing.Build
 {
@@ -21,11 +23,17 @@ namespace WotR.Testing.Build
         public string OriginalAdapterPath { get; set; }
         public string ReportDirectory { get; set; }
         public int TimeoutSeconds { get; set; } = 900;
+        /// <summary>The WotR run settings of this invocation; when set, the run is planned across environments and workloads.</summary>
+        public string RunSettingsFile { get; set; }
         [Output] public string PreparedSettings { get; set; }
         [Output] public string AdapterPath { get; set; }
         [Output] public string RunReport { get; set; }
         [Output] public string EnvironmentDirectory { get; set; }
         [Output] public string PreparedConsole { get; set; }
+        /// <summary>Whether the ordinary offgame tests run; false drops the test assembly from the VSTest sources.</summary>
+        [Output] public bool OffgameTests { get; set; } = true;
+        /// <summary>The .wotrtests source for the other partitions, if any.</summary>
+        [Output] public string Manifest { get; set; }
 
         public override bool Execute()
         {
@@ -56,13 +64,14 @@ namespace WotR.Testing.Build
                 root.Element("WotR")?.Remove();
                 root.Add(new XElement("WotR", new XElement("Runtime", Runtime), new XElement("InputRoot", Path.GetFullPath(InputRoot)),
                     new XElement("WorkDirectory", Path.GetFullPath(WorkDirectory)), new XElement("MonoHost", Path.GetFullPath(MonoHost))));
+                var sources = Plan(directory);
                 var provider = Path.Combine(Path.GetFullPath(RunnerDirectory), "WotR.Testing.MonoRuntimeProvider.dll");
                 PreparedConsole = Path.Combine(directory, "WotR.Testing.VSTestBootstrap.dll");
                 File.Copy(Path.Combine(BootstrapDirectory, "WotR.Testing.VSTestBootstrap.dll"), PreparedConsole);
                 File.Copy(Path.Combine(BootstrapDirectory, "WotR.Testing.VSTestBootstrap.runtimeconfig.json"), Path.ChangeExtension(PreparedConsole, ".runtimeconfig.json"));
                 new XDocument(new XElement("Bootstrap", new XElement("Console", Path.GetFullPath(OriginalConsole)),
                     new XElement("Provider", provider), new XElement("SourceDirectory", Path.GetFullPath(SourceDirectory)), new XElement("PreparedSettings", PreparedSettings),
-                    new XElement("SourceSettings", string.IsNullOrEmpty(OriginalSettings) ? PreparedSettings : Path.GetFullPath(OriginalSettings))))
+                    new XElement("SourceSettings", string.IsNullOrEmpty(OriginalSettings) ? PreparedSettings : Path.GetFullPath(OriginalSettings)), sources))
                     .Save(Path.Combine(directory, "bootstrap.xml"));
                 var loggers = Child(Child(root, "LoggerRunSettings"), "Loggers");
                 foreach (var previous in loggers.Elements("Logger").Where(e => (string)e.Attribute("friendlyName") == "wotr").ToArray()) previous.Remove();
@@ -74,6 +83,42 @@ namespace WotR.Testing.Build
                 return true;
             }
             catch (Exception error) { Log.LogErrorFromException(error, true); return false; }
+        }
+
+        /// <summary>
+        /// Plans the run from the test assembly's metadata. Ordinary offgame tests keep the existing VSTest path; every
+        /// other partition goes into a .wotrtests manifest for the WotR adapter. Returns the bootstrap's source changes.
+        /// </summary>
+        private XElement Plan(string directory)
+        {
+            var changes = new XElement("Sources");
+            if (string.IsNullOrEmpty(RunSettingsFile)) return changes;
+            var settings = RunSettings.Read(RunSettingsFile);
+            var scope = TestScope.Scan(settings.TestAssembly);
+            var plan = ExecutionPlan.Resolve(scope, settings.Mode, settings.Kind, settings.FuzzSeed, settings.FuzzReplay, Runtime, settings.InGameOptionsGiven);
+            bool IsOffgameTests(Partition partition) => partition.Mode == Welcome.OffGame && partition.Kind == TestDescriptor.TestKind;
+            OffgameTests = plan.Partitions.Any(IsOffgameTests);
+            changes.Add(new XElement("TestAssembly", Path.GetFullPath(settings.TestAssembly)), new XElement("Keep", OffgameTests));
+            // The ordinary xUnit adapter must leave cases declared only for the game alone.
+            if (OffgameTests && scope.Count(Welcome.InGame, TestDescriptor.TestKind) > 0) changes.Add(new XElement("Filter", TestDescriptor.ModeTrait + "!=" + Welcome.InGame));
+            var others = plan.Partitions.Where(partition => !IsOffgameTests(partition)).ToList();
+            foreach (var partition in plan.Partitions) Log.LogMessage(MessageImportance.High, "WotR partition: " + partition.Name + " (" + partition.Declared + " declared)");
+            if (others.Count == 0) return changes;
+            var inGame = others.Any(partition => partition.Mode == Welcome.InGame);
+            var manifest = new RunManifest {
+                Settings = settings, RequestedMode = plan.RequestedMode, RequestedKind = plan.RequestedKind, Replay = plan.Replay,
+                Partitions = others.Select(partition => new ManifestPartition { Mode = partition.Mode, Kind = partition.Kind, Declared = partition.Declared }).ToList(),
+                ReportDirectory = EnvironmentDirectory, RunId = Path.GetFileName(directory),
+                // Everything that needs assembly metadata is resolved here, outside the .NET Framework test host.
+                ClassLibrary = Runtime == "mono" && others.Any(partition => partition.Mode == Welcome.OffGame) ? OffgameWorker.PrepareClassLibrary(settings.InputRoot, settings.WorkDirectory) : null,
+                SupportFiles = inGame ? PlayerFacades.Find(settings.InstallRoot).ToList() : new System.Collections.Generic.List<string>(),
+                ExpectedModules = inGame ? ModuleIdentities.Read(settings.ModAssemblies) : new System.Collections.Generic.List<ModuleIdentity>()
+            };
+            manifest.Settings.Runtime = Runtime;
+            Manifest = Path.Combine(directory, Path.GetFileNameWithoutExtension(settings.TestAssembly) + RunManifest.Extension);
+            manifest.Write(Manifest);
+            changes.Add(new XElement("Add", Manifest));
+            return changes;
         }
 
         private static XElement Child(XElement parent, string name)

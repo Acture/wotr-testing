@@ -157,7 +157,8 @@
   </Target>
 
   <!-- Keep VSTest's own discovery, adapters, filters, loggers and exit handling. Only its runtime provider changes. -->
-  <Target Name="PrepareWotrDotnetTest" BeforeTargets="_VSTestConsole;_VSTestMSBuild" Condition="'$(WotrIsLibrary)'!='true' and '$(IsTestProject)'=='true' and '$(WotrLegacyRunner)'!='true'">
+  <Target Name="PrepareWotrDotnetTest" BeforeTargets="_VSTestConsole;_VSTestMSBuild" DependsOnTargets="WriteWotrRunSettings"
+      Condition="'$(WotrIsLibrary)'!='true' and '$(IsTestProject)'=='true' and '$(WotrLegacyRunner)'!='true'">
     <CallTarget Targets="BuildProject" Condition="'$(VSTestNoBuild)'!='true'" />
     <PropertyGroup>
       <_WotrOriginalSettings>$([MSBuild]::ValueOrDefault('$(VSTestSetting)', '$(RunSettingsFilePath)'))</_WotrOriginalSettings>
@@ -167,18 +168,20 @@
     <WotR.Testing.Build.PrepareTestRun WorkDirectory="$(WotrWorkDirectory)" InputRoot="$(WotrInputRoot)"
         MonoHost="$(WotrMonoHost)" RunnerDirectory="$(WotrRunnerDirectory)" Runtime="$(WotrRuntime)" OriginalConsole="$(VSTestConsolePath)" BootstrapDirectory="$(WotrBootstrapDirectory)" SourceDirectory="$(TargetDir)"
         OriginalSettings="$(_WotrOriginalSettings)" OriginalAdapterPath="$(VSTestTestAdapterPath)"
-        ReportDirectory="$(WotrReportDirectory)" TimeoutSeconds="$(WotrTestTimeoutSeconds)">
+        ReportDirectory="$(WotrReportDirectory)" TimeoutSeconds="$(WotrTestTimeoutSeconds)" RunSettingsFile="$(_WotrSettings)">
       <Output TaskParameter="PreparedSettings" PropertyName="VSTestSetting" />
       <Output TaskParameter="AdapterPath" PropertyName="VSTestTestAdapterPath" />
       <Output TaskParameter="RunReport" PropertyName="_WotrRunReport" />
       <Output TaskParameter="EnvironmentDirectory" PropertyName="_WotrEnvironmentDirectory" />
       <Output TaskParameter="PreparedConsole" PropertyName="VSTestConsolePath" />
+      <Output TaskParameter="OffgameTests" PropertyName="_WotrOffgameTests" />
     </WotR.Testing.Build.PrepareTestRun>
   </Target>
 
   <Target Name="ValidateWotrDotnetTest" AfterTargets="_VSTestConsole;_VSTestMSBuild"
       Condition="'$(WotrIsLibrary)'!='true' and '$(IsTestProject)'=='true' and '$(VSTestListTests)'!='true' and '$(WotrLegacyRunner)'!='true'">
-    <WotR.Testing.Build.ValidateTestRun RunReport="$(_WotrRunReport)" EnvironmentDirectory="$(_WotrEnvironmentDirectory)" MinimumPassed="$(WotrMinimumPassed)" Runtime="$(WotrRuntime)" />
+    <WotR.Testing.Build.ValidateTestRun RunReport="$(_WotrRunReport)" EnvironmentDirectory="$(_WotrEnvironmentDirectory)" MinimumPassed="$(WotrMinimumPassed)" Runtime="$(WotrRuntime)"
+        OffgameTests="$(_WotrOffgameTests)" />
   </Target>
 
   <!-- Runner for Invoke-WotrOfflineTests.ps1 -Runtime mono: downloaded into the NuGet cache, never referenced. -->

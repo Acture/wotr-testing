@@ -68,8 +68,10 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
 - The host never runs tests on its own, never installs or updates itself during a
   run, and refuses runs it cannot run faithfully (changed test assembly, different
   mod build, dirty session) with the cause. Never retry with substitutes.
-- A game the run starts loads in the background (focus handed back, never
-  minimized) and is closed afterwards; a game that was already running stays open.
+- By default a run starts its own game and fails with `[game-running]` when one is
+  open; only an explicit `attach` or `auto` runs in an open game. A game the run
+  starts loads in the background (focus handed back, never minimized) and is closed
+  afterwards; a game that was already running stays open.
 
 ## Verification
 

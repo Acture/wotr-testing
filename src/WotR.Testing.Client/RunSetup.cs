@@ -35,7 +35,7 @@ namespace WotR.Testing.Client
             };
             return (plan, new RunOptions {
                 Settings = partition, ReportDirectory = reportRoot,
-                Connection = string.IsNullOrEmpty(settings.Connection) ? ConnectionModes.Auto : settings.Connection,
+                Connection = ConnectionModes.Resolve(settings.Connection, settings.ProcessId),
                 ProcessId = settings.ProcessId, InstallRoot = settings.InstallRoot,
                 MinimumPassed = settings.MinimumPassed > 0 ? settings.MinimumPassed : 1,
                 LaunchInBackground = settings.LaunchInBackground ?? true

@@ -58,11 +58,12 @@ generators and limits. The meta-package also includes FsCheck.Xunit for
 author-written `[Property]` tests.
 
 Cases marked `[Trait("WotrMode", "ingame")]` run inside the game through a small
-development host mod; `dotnet test` attaches to a running game or starts one in the
-background, and by default runs every offgame and in-game case and fuzz target the
-assembly declares. `-p:WotrTestMode=offgame|ingame` and `-p:WotrTestKind=tests|fuzz`
-narrow the run. Unmarked cases stay offgame, so existing projects are unchanged.
-See [in-game testing](docs/ingame.md).
+development host mod; `dotnet test` starts its own game in the background (and
+refuses to use one that is already open unless asked to), and by default runs
+every offgame and in-game case and fuzz target the assembly declares.
+`-p:WotrTestMode=offgame|ingame` and `-p:WotrTestKind=tests|fuzz` narrow the run.
+Unmarked cases stay offgame, so existing projects are unchanged. See [in-game
+testing](docs/ingame.md).
 
 ## Building
 

@@ -63,9 +63,9 @@
     Unified scope (offgame and in-game tests and fuzz targets). Defaults run everything the test assembly declares.
       WotrTestMode            auto (default), offgame or ingame.
       WotrTestKind            all (default), tests or fuzz.
-      WotrInGameConnection    auto (default: attach to a running game with the host, launch only when no game runs),
-                              attach or launch.
-      WotrInGamePid           Process to attach to when several games run.
+      WotrInGameConnection    launch (default: start a game for the run and close it afterwards; fail when a game
+                              already runs), attach (run in a running game with the host) or auto (attach, else launch).
+      WotrInGamePid           Process to attach to when several games run (attach or auto).
       WotrInGameLaunchInBackground  true (default): a game this run starts gives the focus back to the window that
                               had it while it loads; false lets it take the focus.
       WotrInGameTestTimeoutSeconds     Per test or fuzz target, default 60.
@@ -80,7 +80,7 @@
     <WotrTestKind Condition="'$(WotrTestKind)'==''">all</WotrTestKind>
     <_WotrInGameOptionsGiven>false</_WotrInGameOptionsGiven>
     <_WotrInGameOptionsGiven Condition="'$(WotrInGameConnection)'!='' or '$(WotrInGamePid)'!=''">true</_WotrInGameOptionsGiven>
-    <WotrInGameConnection Condition="'$(WotrInGameConnection)'==''">auto</WotrInGameConnection>
+    <WotrInGameConnection Condition="'$(WotrInGameConnection)'==''">launch</WotrInGameConnection>
     <WotrInGamePid Condition="'$(WotrInGamePid)'==''">0</WotrInGamePid>
     <WotrInGameLaunchInBackground Condition="'$(WotrInGameLaunchInBackground)'==''">true</WotrInGameLaunchInBackground>
     <WotrInGameTestTimeoutSeconds Condition="'$(WotrInGameTestTimeoutSeconds)'==''">60</WotrInGameTestTimeoutSeconds>

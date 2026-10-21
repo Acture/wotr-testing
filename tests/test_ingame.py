@@ -35,6 +35,40 @@ def game_running() -> bool:
 	return "wrath.exe" in result.stdout.lower()
 
 
+def process_running(pid: int) -> bool:
+	result = subprocess.run(
+		["tasklist", "/FI", f"PID eq {pid}", "/FI", "IMAGENAME eq Wrath.exe", "/NH"],
+		capture_output=True,
+		text=True,
+		encoding="utf-8",
+		errors="replace",
+		check=False,
+	)
+	return "wrath.exe" in result.stdout.lower()
+
+
+def settled_host(run: subprocess.Popen[bytes], timeout: float) -> bool:
+	"""While `run` runs, a game advertised the host 30 seconds ago and still runs.
+
+	Steam replaces the process a run starts within about 20 seconds, after mods loaded in it.
+	"""
+	hosts = Path(os.environ["LOCALAPPDATA"]) / "WotR.Testing/hosts"
+	since = time.time()
+	deadline = time.monotonic() + timeout
+	while run.poll() is None and time.monotonic() < deadline:
+		for advertisement in hosts.glob("*.json"):
+			try:
+				written = advertisement.stat().st_mtime
+			except OSError:
+				continue
+			pid = advertisement.stem
+			fresh = since <= written <= time.time() - 30
+			if fresh and pid.isdigit() and process_running(int(pid)):
+				return True
+		time.sleep(2)
+	return False
+
+
 def game_gone(timeout: float = 30) -> bool:
 	"""An exited game stays listed for a few seconds while other processes (Steam) hold it."""
 	deadline = time.monotonic() + timeout
@@ -101,25 +135,27 @@ class PlannedRunHarness(DotnetTestHarness):
 			timeout=timeout,
 		)
 
+	def vstest_command(self, *arguments: str, results: Path | None = None) -> list[str]:
+		return [
+			"dotnet",
+			"test",
+			str(self.project),
+			"--no-build",
+			"--no-restore",
+			"-m:1",
+			"-nr:false",
+			"--logger",
+			"trx",
+			"--results-directory",
+			str((results or self.results) / "results"),
+			*arguments,
+		]
+
 	def run_vstest(
 		self, *arguments: str, results: Path | None = None, timeout: int = 120
 	) -> subprocess.CompletedProcess[str]:
-		results = results or self.results
 		return subprocess.run(
-			[
-				"dotnet",
-				"test",
-				str(self.project),
-				"--no-build",
-				"--no-restore",
-				"-m:1",
-				"-nr:false",
-				"--logger",
-				"trx",
-				"--results-directory",
-				str(results / "results"),
-				*arguments,
-			],
+			self.vstest_command(*arguments, results=results),
 			cwd=ROOT,
 			capture_output=True,
 			text=True,
@@ -185,6 +221,7 @@ class PlannedRunTests(PlannedRunHarness):
 			),
 			"a fuzz seed without fuzz targets": ("-p:WotrTestKind=tests", "-p:WotrFuzzSeed=5"),
 			"an offgame runtime in the game": ("-p:WotrTestMode=ingame", "-p:WotrRuntime=netfx"),
+			"an open game to use for a run that starts its own": ("-p:WotrInGamePid=1234",),
 		}
 		for name, arguments in cases.items():
 			with self.subTest(name):
@@ -231,9 +268,26 @@ class InGameRunTests(PlannedRunHarness):
 		if not game_gone():
 			self.skipTest("A game is already running; these tests start and close their own.")
 
-	def test_default_run_starts_the_game_runs_every_partition_and_closes_it(self) -> None:
-		result = self.run_vstest(timeout=900)
-		self.assert_passed(result, 10)
+	def test_default_run_starts_its_own_game_refuses_an_open_one_and_closes_it(self) -> None:
+		command = self.vstest_command()
+		output = self.results / "first.log"
+		second = None
+		with output.open("wb") as log:
+			first = subprocess.Popen(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
+			try:
+				# A second default run while the first one's game is open must not use that game.
+				if settled_host(first, 600):
+					second = self.run_vstest(
+						"-p:WotrTestMode=ingame", results=self.results / "second"
+					)
+			finally:
+				first.wait(timeout=900)
+		text = output.read_text(encoding="utf-8", errors="replace")
+		self.assertIsNotNone(second, "The run did not start a game with the host. " + text)
+		assert second is not None
+		self.assertNotEqual(second.returncode, 0, second.stdout)
+		self.assertIn("[game-running]", second.stdout + second.stderr)
+		self.assert_passed(subprocess.CompletedProcess(command, first.returncode, text, ""), 10)
 		report = self.run_report()
 		self.assertEqual(
 			self.names(report["partitions"]), ["offgame/fuzz", "ingame/tests", "ingame/fuzz"]

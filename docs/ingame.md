@@ -51,6 +51,8 @@ dotnet build MyMod.Tests.csproj -t:InstallWotrInGameHost
 This writes only `Mods/WotR.Testing.Host` in `WrathInstallDir`; it refuses while
 the game runs. A test run never installs or updates the host. The host is a
 development mod: it waits for runs and does nothing else; players do not need it.
+By default runs use it only in a game they start themselves; a game opened for play
+is used only with `attach` or `auto`.
 
 The mod under test must be installed in the game as usual. Before a run, the host
 compares the loaded modules with `WotrInGameMod` items (by default
@@ -128,7 +130,7 @@ In the game, factories, calls and disposal run on Unity's main thread, and
 dotnet test                                    # every environment and kind the assembly declares
 dotnet test -p:WotrTestMode=ingame             # in the game only
 dotnet test -p:WotrTestKind=fuzz               # registered fuzz targets only
-dotnet test -p:WotrInGameConnection=attach     # use a running game, never start one
+dotnet test -p:WotrInGameConnection=attach     # run in the open game, never start one
 dotnet test -p:WotrFuzzReplay=path/to/case.json
 ```
 
@@ -149,8 +151,8 @@ dotnet test --fuzz-replay path/to/case.json
 | `--tests` / `--fuzz` | `WotrTestKind=tests\|fuzz` | Only ordinary tests or only registered fuzz targets (default both) |
 | `--fuzz-seed <n>` | `WotrFuzzSeed` | Seed for every fuzz target |
 | `--fuzz-replay <file>` | `WotrFuzzReplay` | Replays one saved case exactly, in the environment it was recorded in |
-| | `WotrInGameConnection` | `auto` (default), `attach` or `launch` |
-| | `WotrInGamePid` | The game to attach to when several run |
+| | `WotrInGameConnection` | `launch` (default), `attach` or `auto` |
+| | `WotrInGamePid` | The game to attach to when several run (`attach` or `auto`) |
 | | `WotrInGameLaunchInBackground` | `true` (default): a started game gives the focus back while it loads |
 | | `WotrInGameTestTimeoutSeconds` | Per case or fuzz target (default 60) |
 | | `WotrInGameStartupTimeoutSeconds` | Game start and loading (default 300) |
@@ -171,11 +173,18 @@ environments with `WotrTestMode`, not with a `WotrMode` filter.
 
 ### Connection and focus
 
-`auto` attaches to a running game with the host and starts `Wrath.exe` only when
-no game runs. A running game without the host, a busy host, a dirty session or a
-different mod build fails with its cause; `auto` never starts a second game.
-`attach` fails with `[no-game]` when no game with the host runs. `launch` always
-starts a game.
+By default (`launch`) a run starts its own game and closes it afterwards. When a
+game from the installation is already open, with or without the host, the run
+fails with `[game-running]` and leaves it alone: in-game cases load saves and
+change the session, and the open game may be one someone is playing.
+
+`attach` runs in the open game with the host and fails with `[no-game]` when none
+runs; `auto` attaches when a game with the host runs and starts one otherwise. Both
+use the game as it is: `LoadSave` discards unsaved progress, and a failed cleanup
+leaves the session dirty until the game restarts. A running game without the host,
+a busy host, a dirty session or a different mod build fails with its cause; `auto`
+never starts a second game. `WotrInGamePid` picks the game for `attach` or `auto`;
+with `launch` it fails with `[PLAN]`.
 
 A game the run starts is closed afterwards (a close request, then termination
 after 15 seconds), and the run waits until the process has exited; a game that was
@@ -194,8 +203,9 @@ The host accepts a run only when the game is ready: at the main menu or in a
 loaded area. Until then it answers `not-ready`, and the client waits up to
 `WotrInGameStartupTimeoutSeconds`.
 
-Listing in-game cases (`--list-tests`) asks the host as well, so it attaches to or
-starts a game like a run; `--mode offgame` lists without one.
+Listing in-game cases (`--list-tests`) asks the host as well, so it starts a game
+(or attaches, with `attach` or `auto`) like a run; `--mode offgame` lists without
+one.
 
 ### Results and reports
 
@@ -226,6 +236,7 @@ Failures keep their cause:
 | `restart-required` | The test assembly changed since the game loaded it |
 | `mod-not-loaded` | A mod under test is missing or a different build |
 | `session-busy` / `dirty` | Another run holds the host, or an earlier run left the session dirty |
+| `[game-running]` | A game is open; the default run starts its own and never uses it |
 | `[no-game]` | `attach` found no game with the host |
 
 Zero selected cases, a missing final event, mismatched counts or a lost connection

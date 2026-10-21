@@ -17,10 +17,12 @@
   values and empty selections fail with `[PLAN]` before anything runs. Projects
   without in-game cases or registrations run exactly as before. Each run writes
   `wotr-run.json` with the partitions run, excluded and run by VSTest's own adapter.
-- `auto` connection attaches to a running game with the host or starts the game,
-  which loads in the background (focus handed back, never minimized) and is closed
-  afterwards. A changed test assembly, a different mod build, a busy host or a dirty
-  session fail with their cause instead of starting another game.
+- In-game partitions start their own game by default, which loads in the
+  background (focus handed back, never minimized) and is closed afterwards; when the
+  game is already open, the run fails with `[game-running]` instead of using it.
+  `WotrInGameConnection=attach` runs in the open game and `auto` attaches or starts.
+  A changed test assembly, a different mod build, a busy host or a dirty session
+  fail with their cause instead of starting another game.
 - `[WotrFuzz]` registrations run from `dotnet test` in the environments they name;
   findings save a replay file, and `WotrFuzzSeed`/`WotrFuzzReplay` set the seed or
   replay a case exactly. Async fuzzing (`Fuzz.RunAsync`, `FuzzTargets`) supports

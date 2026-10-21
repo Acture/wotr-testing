@@ -13,7 +13,7 @@ namespace WotR.Testing.Client
         public PartitionSettings Settings { get; set; }
         /// <summary>Fresh directory of this invocation; each partition reports in a subdirectory.</summary>
         public string ReportDirectory { get; set; }
-        public string Connection { get; set; } = ConnectionModes.Auto;
+        public string Connection { get; set; } = ConnectionModes.Default;
         public int ProcessId { get; set; }
         public string InstallRoot { get; set; }
         public int MinimumPassed { get; set; } = 1;

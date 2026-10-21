@@ -114,6 +114,23 @@ public class ExecutionPlanTests
     }
 }
 
+public class ConnectionModeTests
+{
+    [Theory]
+    [InlineData(null, 0, "launch")]
+    [InlineData("", 0, "launch")]
+    [InlineData("attach", 1234, "attach")]
+    [InlineData("auto", 0, "auto")]
+    public void A_run_starts_its_own_game_unless_attach_or_auto_is_chosen(string mode, int processId, string expected)
+        => Assert.Equal(expected, ConnectionModes.Resolve(mode, processId));
+
+    [Theory]
+    [InlineData("launch", 1234)]   // a running game to use, for a run that starts its own
+    [InlineData("sometimes", 0)]
+    public void Connection_choices_a_run_cannot_honor_fail_before_it_starts(string mode, int processId)
+        => Assert.Throws<PlanException>(() => ConnectionModes.Resolve(mode, processId));
+}
+
 public class ReportTests
 {
     [Fact]

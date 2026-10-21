@@ -161,7 +161,7 @@ when a path reaches Unity engine code; such results are reported as
 | `WotrTestMode` | `auto` (default: every environment the assembly declares), `offgame` or `ingame` ([in-game testing](https://github.com/Acture/wotr-testing/blob/main/docs/ingame.md#run)) |
 | `WotrTestKind` | `all` (default), `tests` or `fuzz` (registered `[WotrFuzz]` targets) |
 | `WotrFuzzSeed` / `WotrFuzzReplay` | One seed for every fuzz target / a saved case to replay exactly |
-| `WotrInGameConnection`, `WotrInGamePid` | `auto` (default), `attach` or `launch`; the game to attach to |
+| `WotrInGameConnection`, `WotrInGamePid` | `launch` (default: start and close a game for the run; fail when one is open), `attach` or `auto`; the game to attach to |
 | `WotrInGameLaunchInBackground` | `true` (default): a game the run starts gives the focus back while it loads |
 | `WotrInGameTestTimeoutSeconds`, `WotrInGameStartupTimeoutSeconds` | Per in-game case or target (default 60); game start and loading (default 300) |
 | `WotrInGameMod` (items) | Builds the in-game host requires loaded (default `WotrModAssembly` and `WotrDependencyMod`) |

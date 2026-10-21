@@ -64,8 +64,10 @@ dotnet test -p:WotrTestMode=ingame -p:WotrInGameConnection=attach
 With the .NET 10 SDK and `"test": { "runner": "Microsoft.Testing.Platform" }` in
 `global.json`, the short forms work: `dotnet test --mode ingame --fuzz`.
 
-`auto` (the default) attaches to a running game with the host and starts the game
-only when none runs; a game the run starts gives the focus back while it loads and
-is closed afterwards. A running game without the host, a different build of a mod
-under test, a busy or dirty host fail with their cause instead of starting another
-game. Changed test assemblies need a game restart; they are not reloaded in place.
+By default a run starts its own game, which gives the focus back while it loads
+and is closed afterwards. When the game is already open, the run fails with
+`[game-running]` instead of using it. `WotrInGameConnection=attach` runs in the
+open game (unsaved progress is lost when a case loads a save); `auto` attaches or
+starts. A running game without the host, a different build of a mod under test, a
+busy or dirty host fail with their cause instead of starting another game. Changed
+test assemblies need a game restart; they are not reloaded in place.

@@ -65,7 +65,8 @@ Microsoft.Testing.Platform: offgame-only runs and their run reports, listing,
 `attach` without a game. Restore that fixture too. With `WOTR_TEST_INGAME=1` it also
 starts the installed game with the test host (install it once with
 `-t:InstallWotrInGameHost`): a default run of every partition that closes the game
-afterwards, and a fuzz finding that is saved, fails on replay and passes once the
+afterwards, while a second default run refuses that open game with
+`[game-running]`, and a fuzz finding that is saved, fails on replay and passes once the
 defect is gone. These skip when a game is already running.
 
 ```powershell

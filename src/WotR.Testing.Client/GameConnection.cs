@@ -9,14 +9,28 @@ using WotR.Testing.InGame.Protocol;
 
 namespace WotR.Testing.Client
 {
-    /// <summary>How the in-game partition reaches a player: auto attaches to a running host, or launches when no game runs.</summary>
+    /// <summary>
+    /// How the in-game partition reaches a player. launch (the default) starts a game for the run and refuses one that
+    /// already runs, which may be a game someone is playing; attach uses a running host; auto attaches or launches.
+    /// </summary>
     public static class ConnectionModes
     {
         public const string Auto = "auto";
         public const string Attach = "attach";
         public const string Launch = "launch";
+        public const string Default = Launch;
 
         public static bool IsValid(string mode) => mode == Auto || mode == Attach || mode == Launch;
+
+        /// <summary>Rejects an unknown mode and a process choice that a launch cannot use.</summary>
+        public static string Resolve(string mode, int processId)
+        {
+            mode = string.IsNullOrEmpty(mode) ? Default : mode;
+            if (!IsValid(mode)) throw new PlanException("WotrInGameConnection must be launch, attach or auto, not " + mode + ".");
+            if (mode == Launch && processId != 0)
+                throw new PlanException("WotrInGamePid names a running game, but launch starts its own; add WotrInGameConnection=attach to run in process " + processId + ".");
+            return mode;
+        }
     }
 
     /// <summary>A connection failure the user can act on; <see cref="Code"/> names the condition.</summary>
@@ -28,6 +42,7 @@ namespace WotR.Testing.Client
         public const string LaunchFailed = "launch-failed";
         public const string ProtocolMismatch = "protocol-mismatch";
         public const string HostMismatch = "host-version-mismatch";
+        public const string GameRunning = "game-running";
         public string Code { get; }
         public ConnectionException(string code, string message, Exception inner = null) : base("[" + code + "] " + message, inner) => Code = code;
     }
@@ -58,31 +73,36 @@ namespace WotR.Testing.Client
 
         /// <summary>
         /// Finds a compatible host for <paramref name="installRoot"/>, launching the game only when the policy allows it
-        /// and no game from that installation runs. Never falls back from a running game without the host.
+        /// and no game from that installation runs. Never falls back from a running game without the host, and a launch
+        /// never uses a running game.
         /// </summary>
         public static async Task<GameConnection> ConnectAsync(string mode, string installRoot, int processId, TimeSpan startupTimeout,
             bool launchInBackground, Action<string> log, CancellationToken cancellationToken)
         {
-            if (!ConnectionModes.IsValid(mode)) throw new ArgumentException("WotrInGameConnection must be auto, attach or launch.");
+            mode = ConnectionModes.Resolve(mode, processId);
             installRoot = Normalize(installRoot);
+            var launch = mode == ConnectionModes.Launch;
             var hosts = Matching(installRoot, processId);
             List<Process> running;
             // A game without a window is starting (its host may still advertise) or exiting (for example the one the previous
-            // run closed). Neither is a running game without the host yet.
+            // run closed). Neither is a running game without the host yet; a launch waits for both to settle.
             var settle = DateTime.UtcNow + SettleTime;
-            while (hosts.Count == 0 && (running = GameProcesses(installRoot, processId)).Count > 0 &&
+            while ((launch || hosts.Count == 0) && (running = GameProcesses(installRoot, processId)).Count > 0 &&
                 running.Any(process => !HasWindow(process)) && DateTime.UtcNow < settle) {
                 log?.Invoke("Waiting for game process " + string.Join(", ", running.Select(p => p.Id)) + " to finish starting or exiting.");
                 await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
                 hosts = Matching(installRoot, processId);
             }
-            if (hosts.Count == 1) {
-                if (mode == ConnectionModes.Launch && processId == 0) {
-                    throw new ConnectionException(ConnectionException.Ambiguous, "launch was requested, but the game already runs with the host (process " +
-                        hosts[0].ProcessId + "). Use attach or auto, or close the game.");
-                }
-                return new GameConnection(hosts[0], ConnectionModes.Attach, false);
+            if (launch) {
+                // In-game cases load saves and change the session; a game that already runs may be one someone is playing.
+                running = GameProcesses(installRoot, 0);
+                if (running.Count > 0)
+                    throw new ConnectionException(ConnectionException.GameRunning, "The game already runs (process " + string.Join(", ", running.Select(p => p.Id)) +
+                        "). A run starts and closes its own game and never uses one that is open. Close the game, or set WotrInGameConnection=attach " +
+                        "to run in it; in-game cases may load saves, and unsaved progress is lost.");
+                return await LaunchAsync(installRoot, startupTimeout, launchInBackground, log, cancellationToken).ConfigureAwait(false);
             }
+            if (hosts.Count == 1) return new GameConnection(hosts[0], ConnectionModes.Attach, false);
             if (hosts.Count > 1)
                 throw new ConnectionException(ConnectionException.Ambiguous, "Several running games have the host (processes " +
                     string.Join(", ", hosts.Select(host => host.ProcessId)) + "). Choose one with WotrInGamePid.");
@@ -92,7 +112,7 @@ namespace WotR.Testing.Client
                     ") without the WotR.Testing host. Install it with the InstallWotrInGameHost target, enable it in UnityModManager and restart the game.");
             if (processId != 0) throw new ConnectionException(ConnectionException.NoGame, "Process " + processId + " is not a running game.");
             if (mode == ConnectionModes.Attach)
-                throw new ConnectionException(ConnectionException.NoGame, "No running game with the WotR.Testing host; start the game or use WotrInGameConnection=auto.");
+                throw new ConnectionException(ConnectionException.NoGame, "No running game with the WotR.Testing host; start the game, or leave WotrInGameConnection unset so the run starts its own.");
             return await LaunchAsync(installRoot, startupTimeout, launchInBackground, log, cancellationToken).ConfigureAwait(false);
         }
 

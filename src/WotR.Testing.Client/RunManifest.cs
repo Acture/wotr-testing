@@ -50,7 +50,7 @@ namespace WotR.Testing.Client
             };
             return (plan, new RunOptions {
                 Settings = partition, ReportDirectory = ReportDirectory,
-                Connection = string.IsNullOrEmpty(Settings.Connection) ? ConnectionModes.Auto : Settings.Connection,
+                Connection = string.IsNullOrEmpty(Settings.Connection) ? ConnectionModes.Default : Settings.Connection,
                 ProcessId = Settings.ProcessId, InstallRoot = Settings.InstallRoot,
                 // The aggregate minimum is checked over every source after the run.
                 MinimumPassed = 0, LaunchInBackground = Settings.LaunchInBackground ?? true

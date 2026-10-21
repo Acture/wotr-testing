@@ -96,6 +96,7 @@ namespace WotR.Testing.Build
             var settings = RunSettings.Read(RunSettingsFile);
             var scope = TestScope.Scan(settings.TestAssembly);
             var plan = ExecutionPlan.Resolve(scope, settings.Mode, settings.Kind, settings.FuzzSeed, settings.FuzzReplay, Runtime, settings.InGameOptionsGiven);
+            ConnectionModes.Resolve(settings.Connection, settings.ProcessId);
             bool IsOffgameTests(Partition partition) => partition.Mode == Welcome.OffGame && partition.Kind == TestDescriptor.TestKind;
             OffgameTests = plan.Partitions.Any(IsOffgameTests);
             changes.Add(new XElement("TestAssembly", Path.GetFullPath(settings.TestAssembly)), new XElement("Keep", OffgameTests));

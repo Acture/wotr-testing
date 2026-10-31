@@ -73,6 +73,19 @@ namespace WotR.Testing.Offline
             var configured = (options ?? new FuzzOptions()).Clone();
             var isUnavailable = configured.IsUnavailable;
             configured.IsUnavailable = error => UnityNative.IsUnavailable(error) || (isUnavailable?.Invoke(error) ?? false);
+            var before = configured.BeforeExecution;
+            var after = configured.AfterExecution;
+            GameRandomState saved = null;
+            configured.BeforeExecution = () =>
+            {
+                saved = GameRandom.Save();
+                before?.Invoke();
+            };
+            configured.AfterExecution = () =>
+            {
+                try { after?.Invoke(); }
+                finally { if (saved != null) GameRandom.Restore(saved); }
+            };
             var report = Fuzzing.Fuzz.Run(factory, configured);
             Observations["fuzz-" + typeof(TApi).FullName + "-" + Guid.NewGuid().ToString("N")] = report;
             if (!report.Succeeded) throw new FuzzFailureException(report);
@@ -152,6 +165,7 @@ namespace WotR.Testing.Offline
                 loadedAssemblies = LoadedGameAssemblies(),
                 stages = Session.Stages,
                 boundaries = Boundaries.Snapshot(),
+                gameRandom = GameRandom.Report(),
                 assetGaps = HarnessState.Assets?.Gaps,
                 mappedScriptableObjects = HarnessState.Assets?.MappedObjects,
                 logSummary = logs.GroupBy(l => $"{l.Source}:{l.Severity}").ToDictionary(g => g.Key, g => g.Count()),

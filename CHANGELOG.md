@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Offline `UnityEngine.Random` now uses one `System.Random` (startup seed 1) with
+  `GameRandom.Init`, `Save`, `Restore` and `Record`. Integer results are
+  `[min, max)`; float `Range` and `value` are `[min, max)`. This is not the Unity
+  player's sequence. `Random.state` values are valid only in the same process.
+- `ActionSampleRandom` is a separate stream and does not read or write the game
+  RNG. `game.Fuzz` saves and restores the game RNG around each execution.
+  `FuzzOptions.BeforeExecution` and `AfterExecution` run inside that pair.
+  Argument generation still uses the fuzzer's own stream.
+- `system-random-observe` counts `System.Random` constructors without replacing
+  the game's own instances. `RuleScope` fails an operation when that operation
+  logs an error the game caught. `environment.json` records `gameRandom`.
+
 ## 0.1.0-preview.3 - 2026-10-18
 
 - New `WotR.Testing.Fuzzing` component: mod authors register an interface and an

@@ -66,6 +66,10 @@ namespace WotR.Testing.Offline
                 "Images a mod builds at run time (for example icons from PNG files) have no native texture: constructors are skipped, LoadImage returns false and Sprite.Create returns null, as native assets from bundles are null.");
             Declare("referenced-assets", "assets", "BlueprintReferencedAssets.Get(int) during blueprint deserialization",
                 "Entries are read from the real blueprint.assets list; ScriptableObjects are mapped from their type tree as the field type the game expects, native assets stay null.");
+            Declare("unity-random", "environment", "UnityEngine.Random native entries",
+                "One System.Random, seed 1 at startup. Integer Range is [min, max). Float Range and value are [min, max). This is not the Unity player's sequence. Random.state values are valid only in this process. Negative seeds follow System.Random's absolute value.");
+            Declare("system-random-observe", "environment", "System.Random constructors",
+                "Counts constructions and leaves the game's own System.Random instances unchanged. Unseeded constructions are reported and are not given the game seed.");
         }
     }
 

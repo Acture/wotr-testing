@@ -116,6 +116,19 @@ namespace WotR.Testing.Fuzzing
 
         private Execution Execute(Func<object> factory, List<SavedCall> calls)
         {
+            try
+            {
+                options.BeforeExecution?.Invoke();
+                return ExecuteCore(factory, calls);
+            }
+            finally
+            {
+                options.AfterExecution?.Invoke();
+            }
+        }
+
+        private Execution ExecuteCore(Func<object> factory, List<SavedCall> calls)
+        {
             var result = new Execution();
             object target;
             try { target = factory() ?? throw new InvalidOperationException("The interface factory returned null."); }

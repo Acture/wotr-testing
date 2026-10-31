@@ -108,6 +108,7 @@ namespace WotR.Testing.Offline
         {
             Boundaries.DeclareHarmonyBoundaries();
             new Harmony(HarmonyId).PatchAll(typeof(GameSession).Assembly);
+            GameRandom.Init(GameRandom.DefaultSeed);
         }
 
         private static void InstallAssetList()

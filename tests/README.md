@@ -41,5 +41,16 @@ $env:WOTR_TEST_INTEGRATION = '1'
 python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-Real game behavior is verified through a consumer mod's offline tests (see
+`test_rules.py` uses `fixtures/RuleTests/` and `fixtures/RuleMod/` to boot a
+session and run real skill checks, saving throws, unarmed attacks and damage,
+plus the game random boundary. Restore that fixture, then use the same opt-in
+flag:
+
+```powershell
+dotnet restore tests/fixtures/RuleTests/WotR.Testing.RuleTests.csproj
+$env:WOTR_TEST_INTEGRATION = '1'
+python -m unittest discover -s tests -p 'test_rules.py' -v
+```
+
+Real game behavior is also verified through a consumer mod's offline tests (see
 [CLAUDE.md](../CLAUDE.md)).

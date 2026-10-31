@@ -1,0 +1,9 @@
+{
+  "Id": "WotR.Testing.RuleMod",
+  "DisplayName": "Rule fixture",
+  "Author": "WotR.Testing",
+  "Version": "1.0.0",
+  "ManagerVersion": "0.27.11",
+  "AssemblyName": "WotR.Testing.RuleMod.dll",
+  "EntryMethod": "WotR.Testing.RuleMod.Entry.Load"
+}

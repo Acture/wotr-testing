@@ -319,6 +319,8 @@ rulebook calculations.
 | `referenced-assets` | `BlueprintReferencedAssets.Get` during blueprint loading | Real entries; ScriptableObjects mapped from `blueprint.assets`, native assets (sprites, textures, prefabs, meshes) null |
 | `settings-asset` | `SettingsValues` | Mapped from the real asset, including difficulty presets |
 | `runtime-images` | `Texture2D` constructors, `ImageConversion.LoadImage`, `Sprite.Create` | Images a mod builds at run time (icons from PNG files) have no native texture: constructors are skipped, `LoadImage` returns false and `Sprite.Create` returns null, like native assets |
+| `unity-random` | `UnityEngine.Random` native entries (`InitState`, integer and float `Range`, `value`, `state`, legacy `seed`) | One `System.Random`, seed `1` at startup. Integer results are `[min, max)`. Float `Range` and `value` are `[min, max)`. This is not the Unity player's sequence. `Random.state` values work only in the same process. Negative seeds follow `System.Random`'s absolute value |
+| `system-random-observe` | `System.Random` constructors | Counted only. The game's own instances stay in place and do not take the game seed. An unseeded construction during `RuleScope` is reported on that result |
 
 The game language setting is set to English before the game's own
 `LocalizationManager.Init`, as a player choosing English would; without it the

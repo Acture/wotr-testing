@@ -166,6 +166,9 @@ when a path reaches Unity engine code; such results are reported as
 | `WotrGameFixture` | Boots the session once; `RequireGame()`, `Observations`, `Session`; writes `environment.json` on dispose |
 | `GameSession` | Startup stages, loaded `Mods` in load order, mod under test's log, entry path and assembly |
 | `OfflineGame` | `Blueprint<T>(guid)`, `CreateUnit(guid)`, `StatSnapshot(unit)` |
+| `GameRandom` | The game's `System.Random`: `Init`, `Save`, `Restore`, `Record`. Seed `1` at startup. Not Unity's player sequence |
+| `ActionSampleRandom` | A caller's own `System.Random`. Does not read or write `GameRandom` |
+| `RuleScope` | Fails a named operation when that operation logs an error the game caught. `RuleLogAllowance` needs a reason |
 | `UnityNative` | Recognize and report paths that need the Unity engine |
 | `IlComparison` | Prove that rewritten game and mod copies keep every method body |
 | `OfflineRuntime` | `IsUnityMono`/`RuntimeKind`, runtime folder, inputs and rewrite counts |

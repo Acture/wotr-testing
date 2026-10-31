@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Microsoft.Testing.Platform test application for the .NET 10 `dotnet test` runner. The consumer's net48 test project
+    routes to it; it plans the run and drives offgame workers and the in-game host. Runs outside the game only.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>LatestMajor</RollForward>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>wotr-testing-platform</AssemblyName>
+    <RootNamespace>WotR.Testing.Platform</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!-- Launched by the consumer's routing target, never as this project's own tests. -->
+    <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
+    <GenerateTestingPlatformEntryPoint>false</GenerateTestingPlatformEntryPoint>
+    <GenerateProgramFile>false</GenerateProgramFile>
+    <!-- Packed into tools/platform: no apphost and no translated platform messages. -->
+    <UseAppHost>false</UseAppHost>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Testing.Platform" Version="2.5.1" />
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" Version="2.5.1" />
+    <ProjectReference Include="../WotR.Testing.Client/WotR.Testing.Client.csproj" />
+  </ItemGroup>
+
+</Project>

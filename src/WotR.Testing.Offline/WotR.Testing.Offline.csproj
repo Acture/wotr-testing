@@ -54,6 +54,7 @@
     <ProjectReference Include="../WotR.Testing.MonoHost/WotR.Testing.MonoHost.csproj" ReferenceOutputAssembly="false" Private="false" PrivateAssets="all" />
     <ProjectReference Include="../WotR.Testing.VSTest/WotR.Testing.VSTest.csproj;../WotR.Testing.Build/WotR.Testing.Build.csproj" ReferenceOutputAssembly="false" Private="false" PrivateAssets="all" />
     <ProjectReference Include="../WotR.Testing.VSTestBootstrap/WotR.Testing.VSTestBootstrap.csproj" ReferenceOutputAssembly="false" Private="false" PrivateAssets="all" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="../WotR.Testing.Platform/WotR.Testing.Platform.csproj" ReferenceOutputAssembly="false" Private="false" PrivateAssets="all" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 
   <ItemGroup>
@@ -84,6 +85,25 @@
     <ItemGroup>
       <None Include="@(_WotrBootstrap);@(_WotrBootstrap->'%(RootDir)%(Directory)%(Filename).runtimeconfig.json')" Pack="true" PackagePath="tools/" />
     </ItemGroup>
+    <!-- The offgame worker's runner and bridges load beside wotr-mono-host; the WotR VSTest adapter beside the provider. -->
+    <PropertyGroup>
+      <_WotrHostDirectory>@(_WotrMonoHost->'%(RootDir)%(Directory)')</_WotrHostDirectory>
+      <_WotrRunnerOutput>@(_WotrTestTools->WithMetadataValue('Filename', 'WotR.Testing.MonoRuntimeProvider')->'%(RootDir)%(Directory)')</_WotrRunnerOutput>
+    </PropertyGroup>
+    <ItemGroup>
+      <None Include="$(_WotrHostDirectory)WotR.Testing.Runner.dll;$(_WotrHostDirectory)WotR.Testing.Runner.Xunit.dll;$(_WotrHostDirectory)WotR.Testing.Runner.Fuzzing.dll;$(_WotrHostDirectory)WotR.Testing.InGame.Protocol.dll" Pack="true" PackagePath="tools/" />
+      <None Include="$(_WotrRunnerOutput)WotR.Testing.TestAdapter.dll;$(_WotrRunnerOutput)WotR.Testing.Client.dll" Pack="true" PackagePath="tools/" />
+    </ItemGroup>
+    <!-- The Microsoft.Testing.Platform test application for the .NET 10 `dotnet test` runner. -->
+    <MSBuild Projects="../WotR.Testing.Platform/WotR.Testing.Platform.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_WotrPlatform" />
+    </MSBuild>
+    <PropertyGroup>
+      <_WotrPlatformDirectory>@(_WotrPlatform->'%(RootDir)%(Directory)')</_WotrPlatformDirectory>
+    </PropertyGroup>
+    <ItemGroup>
+      <None Include="$(_WotrPlatformDirectory)wotr-testing-platform.dll;$(_WotrPlatformDirectory)wotr-testing-platform.runtimeconfig.json;$(_WotrPlatformDirectory)wotr-testing-platform.deps.json;$(_WotrPlatformDirectory)Microsoft.Testing.Platform.dll;$(_WotrPlatformDirectory)Microsoft.Testing.Extensions.TrxReport.dll;$(_WotrPlatformDirectory)Microsoft.Testing.Extensions.TrxReport.Abstractions.dll;$(_WotrPlatformDirectory)WotR.Testing.Client.dll;$(_WotrPlatformDirectory)WotR.Testing.InGame.Protocol.dll;../WotR.Testing.Platform/THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="tools/platform/" />
+    </ItemGroup>
   </Target>
 
   <!-- The only entries a package may hold besides NuGet's own metadata. -->
@@ -94,6 +114,11 @@
     <WotrPackageEntry Include="tools\Invoke-WotrOfflineTests.ps1;tools\New-WotrSnapshot.ps1;tools\wotr-mono-host.exe;tools\wotr-mono-host.exe.config" />
     <WotrPackageEntry Include="tools\WotR.Testing.MonoRuntimeProvider.dll;tools\WotR.Testing.Build.dll" />
     <WotrPackageEntry Include="tools\WotR.Testing.VSTestBootstrap.dll;tools\WotR.Testing.VSTestBootstrap.runtimeconfig.json" />
+    <WotrPackageEntry Include="tools\WotR.Testing.Runner.dll;tools\WotR.Testing.Runner.Xunit.dll;tools\WotR.Testing.Runner.Fuzzing.dll;tools\WotR.Testing.InGame.Protocol.dll" />
+    <WotrPackageEntry Include="tools\WotR.Testing.TestAdapter.dll;tools\WotR.Testing.Client.dll" />
+    <WotrPackageEntry Include="tools\platform\wotr-testing-platform.dll;tools\platform\wotr-testing-platform.runtimeconfig.json;tools\platform\wotr-testing-platform.deps.json;tools\platform\THIRD-PARTY-NOTICES.md" />
+    <WotrPackageEntry Include="tools\platform\Microsoft.Testing.Platform.dll;tools\platform\Microsoft.Testing.Extensions.TrxReport.dll;tools\platform\Microsoft.Testing.Extensions.TrxReport.Abstractions.dll" />
+    <WotrPackageEntry Include="tools\platform\WotR.Testing.Client.dll;tools\platform\WotR.Testing.InGame.Protocol.dll" />
   </ItemGroup>
 
   <Import Project="build/WotR.Testing.Offline.targets" />

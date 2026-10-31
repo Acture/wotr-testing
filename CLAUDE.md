@@ -2,8 +2,8 @@
 
 Test tooling for Pathfinder: Wrath of the Righteous mods. Public repository,
 AGPL-3.0. Read [README.md](README.md),
-[docs/README.md](docs/README.md) and [docs/offline.md](docs/offline.md) before
-changing behavior. CLAUDE.md is the single real instruction file: `AGENTS.md` points
+[docs/README.md](docs/README.md), [docs/offline.md](docs/offline.md) and
+[docs/ingame.md](docs/ingame.md) before changing behavior. CLAUDE.md is the single real instruction file: `AGENTS.md` points
 to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
 
 ## Layout
@@ -18,13 +18,19 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   `src/WotR.Testing.VSTest/`, `src/WotR.Testing.VSTestBootstrap/` and
   `src/WotR.Testing.Build/` integrate it with `dotnet test`, isolate SDK host
   dependencies and validate reports. These tools contain no game files.
-  Planned: `src/WotR.Testing.InGame/` for in-game testing (added to the meta-package),
-  and a shared library both use once they need one.
+- In-game testing: `src/WotR.Testing.InGame/` (test API, host install target;
+  packed by `src/WotR.Testing.InGame.Package/`), `src/WotR.Testing.InGame.Host/`
+  (the UMM host mod), `src/WotR.Testing.InGame.Protocol/` (messages, framing,
+  sessions, TCP client), `src/WotR.Testing.Runner*/` (run server and xUnit/fuzz
+  bridges), `src/WotR.Testing.Client/` (planning, connection, partitions, reports),
+  `src/WotR.Testing.TestAdapter/` (VSTest `.wotrtests` source) and
+  `src/WotR.Testing.Platform/` (Microsoft.Testing.Platform application).
+  `tests/WotR.Testing.InGame.Tests/` covers what needs no game.
 - `scripts/`: `Invoke-WotrOfflineTests.ps1` (generic runner) and
   `New-WotrSnapshot.ps1` (game-file snapshot). Consumers call these paths through
   the submodule; moving them is a breaking change.
 - `tests/`: repository checks, CLI integration tests and small synthetic fixtures
-  (`tests/fixtures/`) for the native runtime and FsCheck.
+  (`tests/fixtures/`) for the native runtime, FsCheck and in-game runs.
 - `docs/`: public documentation. `data/`: no datasets; game files never go there.
 - `.github/`: CI, pull request template and CODEOWNERS.
 - `notes/`: optional private notes submodule; public builds and checks must not
@@ -54,6 +60,19 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
 - Keep the runtime differences (.NET Framework vs Unity Mono, rewritten Unity
   copies) visible in documentation and reports.
 
+## In-game testing rules
+
+- Defaults run every partition the test assembly declares; selections only narrow
+  it. Unmarked cases stay offgame. Contradictions and empty selections fail with
+  `[PLAN]` before anything runs.
+- The host never runs tests on its own, never installs or updates itself during a
+  run, and refuses runs it cannot run faithfully (changed test assembly, different
+  mod build, dirty session) with the cause. Never retry with substitutes.
+- By default a run starts its own game and fails with `[game-running]` when one is
+  open; only an explicit `attach` or `auto` runs in an open game. A game the run
+  starts loads in the background (focus handed back, never minimized) and is closed
+  afterwards; a game that was already running stays open.
+
 ## Verification
 
 - Toolchain: Windows, .NET SDK, PowerShell 7. `dotnet build WotR.Testing.slnx`
@@ -67,19 +86,26 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   uvx ty==0.0.82 check tests
   ```
 - Opt-in runner integration tests: restore `tests/fixtures/MonoTests/MonoTests.csproj`,
-  and `tests/fixtures/FuzzTests/FuzzTests.csproj` for FsCheck integration,
+  `tests/fixtures/FuzzTests/FuzzTests.csproj` for FsCheck integration and
+  `tests/fixtures/InGameTests/InGameTests.csproj` for planned runs,
   set `WOTR_TEST_INTEGRATION=1`, then run the Python suite above. They need local
-  game inputs and skip in public CI. Verify real game behavior through a consumer: the
+  game inputs and skip in public CI. `WOTR_TEST_INGAME=1` also starts and closes the
+  installed game with the host (install it once with `-t:InstallWotrInGameHost`).
+  Verify real game behavior through a consumer: the
   AttributeFeats repository (`external/wotr-testing` submodule) runs
-  `pwsh -NoProfile -File scripts/Invoke-OfflineMechanicsTests.ps1`, currently 10/10
+  `pwsh -NoProfile -File scripts/Invoke-OfflineMechanicsTests.ps1`, currently 52/52
   on the default Unity Mono runtime. Changes to mod loading should also be checked
   with a mod that has a dependency mod (TabletopTweaks-Base with -Core).
   Point its submodule at a local branch to test before publishing. Do not claim
   untested behavior has passed.
 - Run `dotnet test tests/WotR.Testing.Fuzzing.Tests/WotR.Testing.Fuzzing.Tests.csproj`
-  for game-independent fuzzing tests. Public CI runs these; building the offline
-  library still needs game files.
-- Use CLI and code; do not use computer use or launch the game for offline work.
+  for game-independent fuzzing tests and
+  `dotnet test tests/WotR.Testing.InGame.Tests/WotR.Testing.InGame.Tests.csproj` for
+  the in-game protocol, dispatcher, planning and client (also net48 on Windows).
+  Public CI runs these; building the offline and in-game libraries still needs game
+  files. They do not show that anything works inside the player.
+- Use CLI and code; do not use computer use. Do not launch the game for offline
+  work; in-game work launches it only through the test runner.
 
 ## Changes
 

@@ -180,6 +180,44 @@ with unchanged code and generators; a saved case is the precise regression input
 Reports and cases may contain mod data supplied by the author. Keep game data
 local; do not upload game files or snapshots in reports or release artifacts.
 
+## Run registered targets from dotnet test
+
+Instead of a `[Fact]` per interface, register factories with `[WotrFuzz]`. A
+registration is a public static parameterless method returning the interface (or
+`Task<interface>`); `Modes` selects where it runs (`OffGame` by default, `InGame`
+or `Both`) and `OptionsProvider` names a static method of the same type returning
+`FuzzOptions`:
+
+```csharp
+public static class FuzzRegistrations
+{
+    [WotrFuzz(Modes = WotrTestModes.Both, OptionsProvider = nameof(Options))]
+    public static IMyModApi CreateApi() => new MyModApi();
+
+    public static FuzzOptions Options() => new FuzzOptions { Cases = 200 };
+}
+```
+
+`dotnet test` runs every registered target with the tests by default: offgame
+targets on the selected offgame runtime, in-game targets inside the running game
+on Unity's main thread (see [in-game testing](ingame.md)). Each target is one test
+result named after its factory and interface.
+
+```powershell
+dotnet test -p:WotrTestKind=fuzz                 # only fuzz targets
+dotnet test -p:WotrFuzzSeed=1234                 # one seed for every target
+dotnet test -p:WotrFuzzReplay=path/to/case.json  # replay one saved case
+dotnet test --fuzz --fuzz-seed 1234              # Microsoft.Testing.Platform
+```
+
+A finding fails its target with the shrunk calls and saves a replay file
+(`FormatVersion`, `Target`, `Mode`, `Case`) below the run report; the message names
+the file and the command. A replay runs only that target, in the environment it was
+recorded in, and fails until the defect is fixed. Combining a seed or replay with
+`WotrTestKind=tests`, or a replay with another mode, fails before anything runs.
+Registrations the runner cannot use (wrong signature, unknown options provider) fail
+as results instead of being skipped.
+
 ## Limits
 
 The default finding criterion is an unexpected exception. The fuzzer cannot

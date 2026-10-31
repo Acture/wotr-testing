@@ -32,8 +32,10 @@ namespace WotR.Testing.VSTest
                     : message.Contains("[ENV_MISSING]") ? "environment-missing"
                     : message.Contains("[INIT_FAILED]") ? "initialization-failed"
                     : message.Contains("Xunit.Sdk.") || message.StartsWith("Assert.", StringComparison.Ordinal) ? "assertion-failed" : "error";
-                lock (sync) root.Add(new XElement("Test", new XAttribute("name", result.TestCase.DisplayName),
-                    new XAttribute("outcome", result.Outcome), new XAttribute("classification", classification), message));
+                // Results of the WotR adapter (in-game cases and fuzz targets) come from a .wotrtests manifest.
+                var manifest = result.TestCase.Source?.EndsWith(".wotrtests", StringComparison.OrdinalIgnoreCase) == true;
+                lock (sync) root.Add(new XElement("Test", new XAttribute("name", result.DisplayName ?? result.TestCase.DisplayName),
+                    new XAttribute("outcome", result.Outcome), new XAttribute("classification", classification), new XAttribute("manifest", manifest), message));
             };
             events.TestRunMessage += (_, e) => {
                 if (e.Level == TestMessageLevel.Error) lock (sync) root.Add(new XElement("Error", e.Message));

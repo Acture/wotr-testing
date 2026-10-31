@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+- New `WotR.Testing.InGame` package (included by `WotR.Testing`): xUnit v2 tests
+  marked `[Trait("WotrMode", "ingame")]` (or `both`) run inside the running game on
+  Unity's main thread through `InGameFixture.OnMainThread`, with frame waits,
+  reverse-order cleanup (`Own`, `Defer`), `LoadSave`, `SpawnUnit`, `Blueprint<T>`
+  and distinct `[ASSET_MISSING]`, `[SCENARIO_REQUIRED]` and `[CLEANUP_FAILED]`
+  failures. Install the development host once with
+  `dotnet build -t:InstallWotrInGameHost`; runs never install it. See
+  [in-game testing](docs/ingame.md).
+- One `dotnet test` plans offgame tests, offgame fuzz targets, in-game tests and
+  in-game fuzz targets from the test assembly's metadata and by default runs every
+  declared partition. `WotrTestMode` (`auto`, `offgame`, `ingame`) and
+  `WotrTestKind` (`all`, `tests`, `fuzz`) only narrow it; contradictions, unknown
+  values and empty selections fail with `[PLAN]` before anything runs. Projects
+  without in-game cases or registrations run exactly as before. Each run writes
+  `wotr-run.json` with the partitions run, excluded and run by VSTest's own adapter.
+- In-game partitions start their own game by default, which loads in the
+  background (focus handed back, never minimized) and is closed afterwards; when the
+  game is already open, the run fails with `[game-running]` instead of using it.
+  `WotrInGameConnection=attach` runs in the open game and `auto` attaches or starts.
+  A changed test assembly, a different mod build, a busy host or a dirty session
+  fail with their cause instead of starting another game.
+- `[WotrFuzz]` registrations run from `dotnet test` in the environments they name;
+  findings save a replay file, and `WotrFuzzSeed`/`WotrFuzzReplay` set the seed or
+  replay a case exactly. Async fuzzing (`Fuzz.RunAsync`, `FuzzTargets`) supports
+  targets whose calls wait for game frames.
+- With .NET 10 and `"test": { "runner": "Microsoft.Testing.Platform" }` in
+  `global.json`, `dotnet test` starts a WotR test application with `--mode`,
+  `--tests`, `--fuzz`, `--fuzz-seed`, `--fuzz-replay`, `--list-tests`,
+  `--treenode-filter` and `--report-trx`. Option mistakes appear as failed nodes
+  with their message.
+- The VSTest bootstrap works from folders whose path the SDK reports with the
+  `\\?\` prefix.
+
 ## 0.1.0-preview.3 - 2026-10-18
 
 - New `WotR.Testing.Fuzzing` component: mod authors register an interface and an

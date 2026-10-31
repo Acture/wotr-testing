@@ -6,5 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Build.Utilities.Core" Version="15.9.20" PrivateAssets="all" />
+    <!-- Loaded beside the task assembly; MSBuild supplies System.Reflection.Metadata. -->
+    <ProjectReference Include="../WotR.Testing.Client/WotR.Testing.Client.csproj" />
   </ItemGroup>
 </Project>

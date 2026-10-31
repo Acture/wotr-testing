@@ -1,0 +1,26 @@
+<Project>
+
+  <!--
+    WotR in-game testing. Running tests uses the WotR.Testing.Offline targets (dotnet test across environments); this file
+    adds the explicit host installation:
+
+      dotnet build <test project> -t:InstallWotrInGameHost
+
+    It writes only Mods/WotR.Testing.Host in WrathInstallDir and refuses while the game runs. Restart the game afterwards.
+    A test run never installs or updates the host by itself.
+  -->
+  <PropertyGroup>
+    <WotrInGameHostPayload Condition="'$(WotrInGameHostPayload)'=='' and Exists('$(MSBuildThisFileDirectory)../tools/host/Info.json')">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../tools/host/'))</WotrInGameHostPayload>
+    <WotrInGameHostPayload Condition="'$(WotrInGameHostPayload)'==''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../artifacts/bin/WotR.Testing.InGame.Host/$(Configuration)/'))</WotrInGameHostPayload>
+  </PropertyGroup>
+
+  <!-- The task lives in the WotR.Testing.Offline package's tools, whose targets define WotrBuildTasksAssembly. -->
+  <UsingTask TaskName="WotR.Testing.Build.InstallInGameHost" AssemblyFile="$(WotrBuildTasksAssembly)" />
+
+  <Target Name="InstallWotrInGameHost">
+    <Error Condition="'$(WotrBuildTasksAssembly)'=='' or !Exists('$(WotrBuildTasksAssembly)')" Text="[ENV_MISSING] WotR.Testing build tasks not found; reference WotR.Testing or WotR.Testing.Offline as well." />
+    <Error Condition="!Exists('$(WotrInGameHostPayload)Info.json')" Text="[ENV_MISSING] The in-game host payload was not found: $(WotrInGameHostPayload)" />
+    <WotR.Testing.Build.InstallInGameHost Payload="$(WotrInGameHostPayload)" GameRoot="$(WrathInstallDir)" />
+  </Target>
+
+</Project>

@@ -1,0 +1,10 @@
+{
+  "Id": "WotR.Testing.SyntheticMod",
+  "DisplayName": "WotR.Testing synthetic mod",
+  "Author": "Acture",
+  "Version": "1.0.0",
+  "ManagerVersion": "0.27.0",
+  "Requirements": [],
+  "AssemblyName": "SyntheticMod.dll",
+  "EntryMethod": "SyntheticMod.Main.Load"
+}

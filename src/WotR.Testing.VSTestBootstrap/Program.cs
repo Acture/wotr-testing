@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Xml;
@@ -12,7 +13,11 @@ namespace WotR.Testing.VSTestBootstrap
         private static int Main(string[] args)
         {
             try {
-                var settings = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "bootstrap.xml")).Root;
+                // Beyond MAX_PATH the host reports a \\?\ path, which XML loading by name misreads as a network host.
+                var baseDirectory = AppContext.BaseDirectory.StartsWith(@"\\?\", StringComparison.Ordinal) ? AppContext.BaseDirectory.Substring(4) : AppContext.BaseDirectory;
+                XElement settings;
+                using (var stream = File.OpenRead(Path.Combine(baseDirectory, "bootstrap.xml"))) settings = XDocument.Load(stream).Root;
+                if (Environment.GetEnvironmentVariable("WOTR_VSTEST_ARGUMENTS_LOG") is string trace && trace.Length > 0) File.WriteAllLines(trace, args);
                 var consolePath = settings.Element("Console").Value;
                 var resolver = new AssemblyDependencyResolver(consolePath);
                 AssemblyLoadContext.Default.Resolving += (_, name) => {
@@ -42,6 +47,7 @@ namespace WotR.Testing.VSTestBootstrap
                 var cacheType = common.GetType("Microsoft.VisualStudio.TestPlatform.Common.ExtensionFramework.TestPluginCache", true);
                 var cache = cacheType.GetProperty("Instance").GetValue(null);
                 cacheType.GetMethod("UpdateExtensions").Invoke(cache, new object[] { new[] { settings.Element("Provider").Value }, false });
+                args = Sources(settings.Element("Sources"), args);
                 var console = AssemblyLoadContext.Default.LoadFromAssemblyPath(consolePath);
                 return (int)console.EntryPoint.Invoke(null, new object[] { args });
             }
@@ -49,6 +55,31 @@ namespace WotR.Testing.VSTestBootstrap
                 Console.Error.WriteLine("WotR VSTest startup failed: " + (error is TargetInvocationException ? error.InnerException : error));
                 return 1;
             }
+        }
+
+        /// <summary>
+        /// Applies the planned sources: the test assembly stays only for ordinary offgame tests, a .wotrtests manifest
+        /// carries the other partitions, and a mode clause keeps in-game cases away from the ordinary xUnit adapter.
+        /// </summary>
+        private static string[] Sources(XElement sources, string[] args)
+        {
+            if (sources == null || sources.Element("TestAssembly") == null) return args;
+            var assembly = Path.GetFullPath(sources.Element("TestAssembly").Value);
+            var result = args.Where(arg => (bool)sources.Element("Keep") || !SamePath(arg, assembly)).ToList();
+            result.AddRange(sources.Elements("Add").Select(source => source.Value));
+            var clause = (string)sources.Element("Filter");
+            if (clause != null) {
+                var filter = result.FindIndex(arg => arg.StartsWith("--testCaseFilter:", StringComparison.OrdinalIgnoreCase));
+                if (filter < 0) result.Add("--testCaseFilter:" + clause);
+                else result[filter] = "--testCaseFilter:(" + result[filter].Substring("--testCaseFilter:".Length) + ")&(" + clause + ")";
+            }
+            return result.ToArray();
+        }
+
+        private static bool SamePath(string argument, string path)
+        {
+            try { return !argument.StartsWith("-", StringComparison.Ordinal) && string.Equals(Path.GetFullPath(argument), path, StringComparison.OrdinalIgnoreCase); }
+            catch (Exception) { return false; }
         }
     }
 }

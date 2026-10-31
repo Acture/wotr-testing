@@ -14,6 +14,8 @@ namespace WotR.Testing.Build
         [Required] public string EnvironmentDirectory { get; set; }
         public int MinimumPassed { get; set; } = 1;
         [Required] public string Runtime { get; set; }
+        /// <summary>Whether ordinary offgame tests ran; only they write the offline environment report.</summary>
+        public bool OffgameTests { get; set; } = true;
 
         public override bool Execute()
         {
@@ -25,12 +27,17 @@ namespace WotR.Testing.Build
                 if (tests.Length == 0) Log.LogError("Zero tests: no test results were reported.");
                 if ((string)run.Attribute("aborted") == "true" || (string)run.Attribute("canceled") == "true") Log.LogError("The test run was aborted or canceled.");
                 foreach (var error in run.Elements("Error")) Log.LogError(error.Value);
-                foreach (var test in tests.Where(t => (string)t.Attribute("classification") != "passed" && (string)t.Attribute("classification") != "unity-runtime-required"))
+                bool Manifest(XElement test) => (string)test.Attribute("manifest") == "true";
+                foreach (var test in tests.Where(t => !Manifest(t) && (string)t.Attribute("classification") != "passed" && (string)t.Attribute("classification") != "unity-runtime-required"))
                     Log.LogError("{0}: {1}", (string)test.Attribute("name"), (string)test.Attribute("classification"));
+                // In-game cases and fuzz targets: failures fail the run; explicit skips are shown but never count as passed.
+                foreach (var test in tests.Where(t => Manifest(t) && (string)t.Attribute("outcome") == "Failed"))
+                    Log.LogError("{0}: failed", (string)test.Attribute("name"));
                 var passed = tests.Count(t => (string)t.Attribute("classification") == "passed");
                 if (passed < MinimumPassed) Log.LogError("Too few passed tests: {0} passed, at least {1} required (skipped tests do not count).", passed, MinimumPassed);
                 var environmentPath = Path.Combine(EnvironmentDirectory, "environment.json");
-                if (!File.Exists(environmentPath)) Log.LogError("Missing report: environment.json was not written by the test fixture.");
+                if (!OffgameTests) { }
+                else if (!File.Exists(environmentPath)) Log.LogError("Missing report: environment.json was not written by the test fixture.");
                 else {
                     XElement environment;
                     using (var stream = File.OpenRead(environmentPath))

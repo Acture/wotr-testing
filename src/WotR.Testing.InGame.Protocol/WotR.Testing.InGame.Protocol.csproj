@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Versioned messages and framing between the external test adapter and the in-game host. No Unity, xUnit or VSTest
+    types: both the SDK side and the game's Unity Mono load this assembly. Shipped inside the in-game component.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>

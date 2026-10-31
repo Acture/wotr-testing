@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Runs registered [WotrFuzz] targets for the runner. Loaded at run time from the directory of the test project's
+    WotR.Testing.Fuzzing, so that library is the test project's own copy.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>WotR.Testing.Runner.Fuzzing</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <ProjectReference Include="../WotR.Testing.Runner/WotR.Testing.Runner.csproj" />
+    <!-- Compile-time only: at run time the test project's copy. -->
+    <ProjectReference Include="../WotR.Testing.Fuzzing/WotR.Testing.Fuzzing.csproj" Private="false" ExcludeAssets="runtime" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

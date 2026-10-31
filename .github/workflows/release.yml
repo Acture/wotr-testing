@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Draft release tag containing the three locally built packages
+        description: Draft release tag containing the four locally built packages
         required: true
         type: string
       publish:
@@ -56,11 +56,12 @@ jobs:
           if ($release.targetCommitish -cne $env:GITHUB_SHA) { throw 'Draft release must target the exact workflow commit SHA.' }
           $packageDirectory = Join-Path $env:RUNNER_TEMP 'wotr-release-packages'
           New-Item -ItemType Directory -Path $packageDirectory | Out-Null
-          $packageIds = @('WotR.Testing.Fuzzing', 'WotR.Testing.Offline', 'WotR.Testing')
+          $packageIds = @('WotR.Testing.Fuzzing', 'WotR.Testing.Offline', 'WotR.Testing.InGame', 'WotR.Testing')
           $expectedAssets = @($packageIds | ForEach-Object { "$($_).$version.nupkg" })
           $assetDifference = Compare-Object -ReferenceObject $expectedAssets -DifferenceObject @($release.assets.name)
-          if ($assetDifference) { throw 'Draft release must contain exactly the three expected NuGet packages.' }
-          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir $packageDirectory --pattern $expectedAssets[0] --pattern $expectedAssets[1] --pattern $expectedAssets[2]
+          if ($assetDifference) { throw 'Draft release must contain exactly the four expected NuGet packages.' }
+          $patterns = @($expectedAssets | ForEach-Object { '--pattern'; $_ })
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir $packageDirectory @patterns
           if ($LASTEXITCODE -ne 0) { throw 'Could not download the NuGet packages.' }
           foreach ($packageId in $packageIds) {
             $package = Join-Path $packageDirectory "$packageId.$version.nupkg"
@@ -77,15 +78,23 @@ jobs:
                 $dependency = @($metadata.dependencies.group.dependency)
                 $offline = @($dependency | Where-Object { $_.id -ceq 'WotR.Testing.Offline' })
                 $fuzzing = @($dependency | Where-Object { $_.id -ceq 'WotR.Testing.Fuzzing' })
+                $inGame = @($dependency | Where-Object { $_.id -ceq 'WotR.Testing.InGame' })
                 $fsCheck = @($dependency | Where-Object { $_.id -ceq 'FsCheck.Xunit' })
-                if ($dependency.Count -ne 3 -or $offline.Count -ne 1 -or $fuzzing.Count -ne 1 -or $fsCheck.Count -ne 1 -or $offline[0].version -cne $version -or $fuzzing[0].version -cne $version -or $fsCheck[0].version -cne $fsCheckVersion -or !$fsCheckVersion) { throw 'Meta-package must reference both matching components and the pinned FsCheck.Xunit version.' }
+                if ($dependency.Count -ne 4 -or $offline.Count -ne 1 -or $fuzzing.Count -ne 1 -or $inGame.Count -ne 1 -or $fsCheck.Count -ne 1 -or $offline[0].version -cne $version -or $fuzzing[0].version -cne $version -or $inGame[0].version -cne $version -or $fsCheck[0].version -cne $fsCheckVersion -or !$fsCheckVersion) { throw 'Meta-package must reference the three matching components and the pinned FsCheck.Xunit version.' }
               }
               if ($packageId -eq 'WotR.Testing.Offline') {
                 $fuzzing = @($metadata.dependencies.group.dependency | Where-Object { $_.id -ceq 'WotR.Testing.Fuzzing' })
                 if ($fuzzing.Count -ne 1 -or $fuzzing[0].version -cne $version) { throw 'Offline component must reference the matching fuzzing component.' }
               }
+              if ($packageId -eq 'WotR.Testing.InGame') {
+                $dependency = @($metadata.dependencies.group.dependency)
+                $offline = @($dependency | Where-Object { $_.id -ceq 'WotR.Testing.Offline' })
+                if ($dependency.Count -ne 1 -or $offline.Count -ne 1 -or $offline[0].version -cne $version) { throw 'In-game component must reference only the matching offline component.' }
+              }
             } finally { $archive.Dispose() }
-            dotnet msbuild "src/$packageId/$packageId.csproj" -target:VerifyWotrPackage "-property:PackageVersion=$version" "-property:PackageOutputAbsolutePath=$packageDirectory" -property:Configuration=Release
+            # The in-game package is built by its own project, because the host references the library.
+            $project = if ($packageId -eq 'WotR.Testing.InGame') { 'src/WotR.Testing.InGame.Package/WotR.Testing.InGame.Package.csproj' } else { "src/$packageId/$packageId.csproj" }
+            dotnet msbuild $project -target:VerifyWotrPackage "-property:PackageVersion=$version" "-property:PackageOutputAbsolutePath=$packageDirectory" -property:Configuration=Release
             if ($LASTEXITCODE -ne 0) { throw "Package content check failed: $packageId" }
           }
           "WOTR_RELEASE_VERSION=$version" >> $env:GITHUB_ENV
@@ -96,13 +105,13 @@ jobs:
         uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
         with:
           user: acture
-      - name: Publish fuzzing, offline, then meta-package
+      - name: Publish fuzzing, offline, in-game, then meta-package
         if: inputs.publish
         env:
           NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
         run: |
           $ErrorActionPreference = 'Stop'
-          foreach ($packageId in @('WotR.Testing.Fuzzing', 'WotR.Testing.Offline', 'WotR.Testing')) {
+          foreach ($packageId in @('WotR.Testing.Fuzzing', 'WotR.Testing.Offline', 'WotR.Testing.InGame', 'WotR.Testing')) {
             $package = Join-Path $env:WOTR_RELEASE_PACKAGES "$packageId.$env:WOTR_RELEASE_VERSION.nupkg"
             dotnet nuget push $package --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json
             if ($LASTEXITCODE -ne 0) { throw "NuGet publication failed: $packageId" }

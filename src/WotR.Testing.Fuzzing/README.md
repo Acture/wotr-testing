@@ -102,10 +102,50 @@ This is bounded randomized exception testing. It does not infer gameplay rules o
 assert on return values. Put invariants in an adapter that calls the real API, or
 use explicit FsCheck properties. Methods can have side effects: select a surface
 that is safe and resettable. The library has no unsafe in-process timeout; use
-your test runner's process timeout (the offline runner supplies one). The
-synchronous entry points should run without a synchronization context needed by
-the target's asynchronous continuations. No background worker is used, preserving
-the caller's thread for game APIs.
+your test runner's process timeout (the offline runner supplies one). No
+background worker is used, preserving the caller's thread for game APIs.
+
+`Fuzz.RunAsync`, `Fuzz.CheckAsync` and `Fuzz.ReplayAsync` take a factory returning
+`Task<TApi>` and await it and every Task-returning call in order, without
+`ConfigureAwait(false)`, so continuations return to the caller's
+`SynchronizationContext`. Started on a thread whose context posts continuations
+back to it, as Unity's main thread does, the factory, calls and cleanup stay on that
+thread and a call may await later frames. The synchronous entry points block on each
+Task on the caller's thread, so they deadlock when the target's continuations need
+that thread (such as a wait for the next frame on Unity's main thread); use them only
+where no such context is needed. Both share generation, shrinking and replay: the
+same seed produces the same calls, counts and replay case.
+
+```csharp
+var report = await Fuzz.RunAsync<IMyModApi>(async () => await MyModApi.CreateAsync(), options);
+```
+
+Register a factory once so a runner can find it. It must be a public static
+parameterless non-generic method returning an interface or `Task<interface>`;
+`OptionsProvider` optionally names a public static parameterless method of the same
+type returning `FuzzOptions`, called before every run.
+
+```csharp
+public static class FuzzRegistrations
+{
+    [WotrFuzz(Modes = WotrTestModes.Both, OptionsProvider = nameof(Options))]
+    public static IMyModApi CreateApi() => new MyModApi();
+
+    public static FuzzOptions Options() => new FuzzOptions { Cases = 200 };
+}
+```
+
+`FuzzTargets.Discover(assembly)` finds registrations by reflection without calling
+factories or providers, ordered by `Id` (`Assembly:Namespace.Type.Method:Interface`).
+Invalid registrations are returned with `Error` set, never dropped; running one throws.
+`FuzzTarget.RunAsync(seed)` copies the provider's options and applies an optional
+seed; `FuzzTarget.ReplayAsync(case)` replays a saved case exactly. A provider that
+throws or returns null fails the call with `InvalidOperationException` before any
+target is constructed. `FuzzReplayFile` reads and writes `{ FormatVersion, Target,
+Mode, Case }` JSON for command-line replay, with `Mode` `offgame` or `ingame`.
+Through `WotR.Testing`, `dotnet test` runs registered targets in their environments
+and replays saved cases; see
+[interface fuzzing](https://github.com/Acture/wotr-testing/blob/main/docs/fuzzing.md#run-registered-targets-from-dotnet-test).
 
 Reports and cases can contain author-supplied mod data. Keep game files and data
 snapshots local; never publish them in reports, packages or test artifacts.

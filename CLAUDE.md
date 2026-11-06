@@ -69,13 +69,12 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
 - Opt-in runner integration tests: restore `tests/fixtures/MonoTests/MonoTests.csproj`,
   and `tests/fixtures/FuzzTests/FuzzTests.csproj` for FsCheck integration,
   set `WOTR_TEST_INTEGRATION=1`, then run the Python suite above. They need local
-  game inputs and skip in public CI. Verify real game behavior through a consumer: the
-  AttributeFeats repository (`external/wotr-testing` submodule) runs
-  `pwsh -NoProfile -File scripts/Invoke-OfflineMechanicsTests.ps1`, currently 10/10
-  on the default Unity Mono runtime. Changes to mod loading should also be checked
-  with a mod that has a dependency mod (TabletopTweaks-Base with -Core).
-  Point its submodule at a local branch to test before publishing. Do not claim
-  untested behavior has passed.
+  game inputs and skip in public CI.
+- Verify real game behavior by running a consumer mod's offline tests, such as
+  AttributeFeats, against this branch packed under a local-only version. Only run its
+  tests: point a temporary copy at the local package and leave the consumer's
+  repository unchanged. Check changes to mod loading with a mod that has a dependency
+  mod (TabletopTweaks-Base with -Core). Do not claim untested behavior has passed.
 - Run `dotnet test tests/WotR.Testing.Fuzzing.Tests/WotR.Testing.Fuzzing.Tests.csproj`
   for game-independent fuzzing tests. Public CI runs these; building the offline
   library still needs game files.

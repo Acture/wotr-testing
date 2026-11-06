@@ -38,6 +38,64 @@ namespace WotR.Testing.Offline
             return new UnityAssetMapper(manager, manager.LoadAssetsFileFromBundle(bundle, 0, false));
         }
 
+        /// <summary>
+        /// A mapper for type trees already read from a bundle that is no longer open. References to other assets
+        /// cannot be followed and stay null; each one is recorded as a gap.
+        /// </summary>
+        internal static UnityAssetMapper Detached() => new(null, null);
+
+        /// <summary>
+        /// The MonoBehaviours on the GameObject the bundle's container lists under <paramref name="assetId"/>, as
+        /// (script class, type tree) in component order, with the GameObject's name: what the game's bundle loader returns
+        /// as the prefab. Null when the container has no GameObject under that id.
+        /// </summary>
+        internal static (string Name, List<(string ClassName, AssetTypeValueField Field)> Components)? ReadPrefabComponents(string bundlePath, string assetId)
+        {
+            var manager = new AssetsManager();
+            try
+            {
+                var file = manager.LoadAssetsFileFromBundle(manager.LoadBundleFile(bundlePath, true), 0, false);
+                foreach (var info in file.file.GetAssetsOfType(AssetClassID.AssetBundle))
+                {
+                    foreach (var entry in manager.GetBaseField(file, info)["m_Container"]["Array"].Children)
+                    {
+                        if (!string.Equals(entry["first"].AsString, assetId, StringComparison.OrdinalIgnoreCase)) continue;
+                        var asset = entry["second"]["asset"];
+                        if (asset["m_FileID"].AsInt != 0) continue;
+                        var gameObject = file.file.GetAssetInfo(asset["m_PathID"].AsLong);
+                        if (gameObject == null || gameObject.TypeId != (int)AssetClassID.GameObject) continue;
+                        var components = new List<(string, AssetTypeValueField)>();
+                        var gameObjectField = manager.GetBaseField(file, gameObject);
+                        foreach (var component in gameObjectField["m_Component"]["Array"].Children)
+                        {
+                            var pointer = component["component"];
+                            if (pointer["m_FileID"].AsInt != 0) continue;
+                            var componentInfo = file.file.GetAssetInfo(pointer["m_PathID"].AsLong);
+                            if (componentInfo == null || componentInfo.TypeId != (int)AssetClassID.MonoBehaviour) continue;
+                            var field = manager.GetBaseField(file, componentInfo);
+                            var className = manager.GetExtAsset(file, field["m_Script"]).baseField?["m_ClassName"].AsString;
+                            components.Add((className, field));
+                        }
+                        return (gameObjectField["m_Name"].AsString, components);
+                    }
+                }
+                return null;
+            }
+            finally
+            {
+                manager.UnloadAll(true);
+            }
+        }
+
+        /// <summary>
+        /// Copies the serialized fields of <paramref name="field"/> onto an existing object, as Unity's Instantiate copies
+        /// a prefab's serialized fields onto the new component.
+        /// </summary>
+        internal void MapInto(AssetTypeValueField field, object instance)
+        {
+            lock (gate) MapFields(field, instance.GetType(), instance);
+        }
+
         /// <summary>Maps the single MonoBehaviour whose script class is <paramref name="className"/>.</summary>
         public object MapByScriptClass(string className, Type type)
         {
@@ -142,6 +200,12 @@ namespace WotR.Testing.Offline
             if (pathId != 0 && byPathId.TryGetValue(pathId, out var cached)) return cached;
             var instance = Create(type);
             if (pathId != 0) byPathId[pathId] = instance;
+            MapFields(field, type, instance);
+            return instance;
+        }
+
+        private void MapFields(AssetTypeValueField field, Type type, object instance)
+        {
             foreach (var child in field.Children)
             {
                 if (child.FieldName is "m_GameObject" or "m_Enabled" or "m_Script" or "m_Name" or "m_EditorHideFlags" or "m_EditorClassIdentifier") continue;
@@ -160,7 +224,6 @@ namespace WotR.Testing.Offline
                     Gap($"{type.Name}.{target.Name}: {error.GetType().Name}");
                 }
             }
-            return instance;
         }
 
         private object MapValue(AssetTypeValueField field, Type type, string path)
@@ -172,8 +235,18 @@ namespace WotR.Testing.Offline
             if (field.TypeName.StartsWith("PPtr<"))
             {
                 if (field["m_PathID"].AsLong == 0) return null;
+                if (!typeof(UnityEngine.ScriptableObject).IsAssignableFrom(type))
+                {
+                    Gap($"{path}: {field.TypeName} native Unity asset left null");
+                    return null;
+                }
+                if (manager == null)
+                {
+                    Gap($"{path}: {field.TypeName} outside the mapped object, left null");
+                    return null;
+                }
                 var external = manager.GetExtAsset(file, field);
-                if (external.baseField == null || external.info.TypeId != (int)AssetClassID.MonoBehaviour || !typeof(UnityEngine.ScriptableObject).IsAssignableFrom(type))
+                if (external.baseField == null || external.info.TypeId != (int)AssetClassID.MonoBehaviour)
                 {
                     Gap($"{path}: {field.TypeName} native Unity asset left null");
                     return null;

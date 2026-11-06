@@ -49,7 +49,13 @@ foreach ($directory in 'MonoBleedingEdge/EmbedRuntime', 'MonoBleedingEdge/etc') 
     Get-ChildItem -LiteralPath (Join-Path $source $directory) -Recurse -File |
         ForEach-Object { $files.Add([System.IO.Path]::GetRelativePath($source, $_.FullName).Replace('\', '/')) }
 }
+# Navigation graphs for battles with an area: the asset-to-bundle list and every .nav bundle. Unit view prefabs (.unit,
+# about 7.5 GB) are not copied: battles read them on demand from the installation, or use a corpulence override or
+# fallback (BattleScenario.CorpulenceOverrideBySize, CorpulenceFallbackBySize).
+Get-ChildItem -LiteralPath (Join-Path $source 'Bundles') -File -Filter '*.nav' |
+    ForEach-Object { $files.Add([System.IO.Path]::GetRelativePath($source, $_.FullName).Replace('\', '/')) }
 foreach ($relative in @(
+        'Bundles/locationlist.json',
         'Bundles/blueprints-pack.bbp',
         'Bundles/blueprint.assets',
         'Wrath_Data/StreamingAssets/Version.info',

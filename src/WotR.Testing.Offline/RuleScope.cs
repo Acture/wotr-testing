@@ -37,7 +37,7 @@ namespace WotR.Testing.Offline
             return new RuleScopeResult(allowed, GameRandom.UnseededConstructions - unseededBefore);
         }
 
-        private static bool IsError(CapturedLog log) => log.Severity is "Error" or "Exception" || log.Exception != null;
+        internal static bool IsError(CapturedLog log) => log.Severity is "Error" or "Exception" || log.Exception != null;
     }
 
     public sealed class RuleLogAllowance
@@ -95,14 +95,22 @@ namespace WotR.Testing.Offline
             foreach (var error in errors)
             {
                 text.AppendLine();
-                text.Append(error.Source).Append(' ').Append(error.Severity);
-                if (!string.IsNullOrEmpty(error.Channel)) text.Append(' ').Append(error.Channel);
-                if (!string.IsNullOrEmpty(error.Message)) text.Append(": ").Append(error.Message);
-                if (!string.IsNullOrEmpty(error.Exception))
-                {
-                    text.AppendLine();
-                    text.Append(error.Exception);
-                }
+                text.Append(Describe(error));
+            }
+            return text.ToString();
+        }
+
+        /// <summary>One logged error: its source, severity, channel, message and exception.</summary>
+        internal static string Describe(CapturedLog error)
+        {
+            var text = new StringBuilder();
+            text.Append(error.Source).Append(' ').Append(error.Severity);
+            if (!string.IsNullOrEmpty(error.Channel)) text.Append(' ').Append(error.Channel);
+            if (!string.IsNullOrEmpty(error.Message)) text.Append(": ").Append(error.Message);
+            if (!string.IsNullOrEmpty(error.Exception))
+            {
+                text.AppendLine();
+                text.Append(error.Exception);
             }
             return text.ToString();
         }

@@ -64,9 +64,13 @@ namespace WotR.Testing.Offline
         private static readonly Dictionary<object, UnitEntityData> BoundsColliders = new(ReferenceComparer.Instance);
         private static readonly Dictionary<object, float> Radii = new(ReferenceComparer.Instance);
 
-        // Unity reads an object as live when its native pointer is not zero, and GetInstanceID reads an int behind it.
-        // This zeroed block is never written, so such a read returns instance id 0 instead of touching foreign memory.
+        // The game's Unity reads an object as live when its native pointer is not zero; == and Equals then compare
+        // references, so every stand-in stays a distinct object. GetInstanceID would read behind the pointer at an offset
+        // only native code knows; asking for it fails offline as unity-runtime-required, and the game's battle code never
+        // asks (only its sound, effect and debug code do). The block is zeroed and never written.
         private static readonly IntPtr NativeStandIn = AllocateZeroed(4096);
+        private static readonly MethodInfo AgentOnEnable = AccessTools.Method(typeof(UnitMovementAgent), "OnEnable");
+        private static readonly MethodInfo AgentOnDisable = AccessTools.Method(typeof(UnitMovementAgent), "OnDisable");
 
         internal static int Count => StandIns.Count;
 
@@ -120,7 +124,7 @@ namespace WotR.Testing.Offline
             var standIn = new StandIn { Prefab = prefab, Mapper = UnityAssetMapper.Detached() };
             standIn.GameObject = CreateGameObject(standIn);
             var view = (UnitEntityView)Create(UnitViewPrefab.ViewType(prefab.ViewClass), standIn, standIn.GameObject, null);
-            if (prefab.View is { } viewField) standIn.Mapper.MapInto(viewField, view);
+            if (prefab.View is { } viewField) CopySerialized(standIn, viewField, view);
             if (prefab.ReplacesCorpulence) CorpulenceField.SetValue(view, prefab.SerializedCorpulence);
             standIn.Transform = (Transform)Create(typeof(Transform), standIn, standIn.GameObject, null);
             ComponentTransforms[view] = standIn.Transform;
@@ -128,21 +132,24 @@ namespace WotR.Testing.Offline
             if (prefab.SizeOverride is { } sizeOverride)
             {
                 var component = Create(typeof(OverrideSizeScale), standIn, standIn.GameObject, standIn.Transform);
-                standIn.Mapper.MapInto(sizeOverride, component);
+                CopySerialized(standIn, sizeOverride, component);
                 OverrideSizeScaleField.SetValue(view, component);
             }
             if (prefab.MovementAgent != null || prefab.View == null)
             {
                 var agent = (UnitMovementAgent)Create(typeof(UnitMovementAgent), standIn, standIn.GameObject, standIn.Transform);
-                if (prefab.MovementAgent is { } field)
-                {
-                    standIn.Mapper.MapInto(field, agent);
-                    if (field["m_Enabled"] is { IsDummy: false } enabled) Enabled[agent] = enabled.AsBool;
-                }
+                if (prefab.MovementAgent is { } field) CopySerialized(standIn, field, agent);
                 SetAgent.Invoke(view, new object[] { agent });
             }
             StandIns[view] = standIn;
             return view;
+        }
+
+        /// <summary>A prefab component's serialized fields, including its enabled flag, copied onto the stand-in's component.</summary>
+        private static void CopySerialized(StandIn standIn, AssetsTools.NET.AssetTypeValueField field, UnityEngine.Object component)
+        {
+            standIn.Mapper.MapInto(field, component);
+            if (field["m_Enabled"] is { IsDummy: false } enabled) Enabled[component] = enabled.AsBool;
         }
 
         /// <summary>
@@ -352,10 +359,17 @@ namespace WotR.Testing.Offline
             return count;
         }
 
+        /// <summary>
+        /// A stand-in component's enabled flag. Unity runs OnEnable or OnDisable when the flag of an active component
+        /// changes; for the movement agent, once it is set up, the game's own run, which add it to or remove it from the
+        /// agents list and its obstacle group. The other stand-in components only hold the flag.
+        /// </summary>
         internal static bool TrySetEnabled(Behaviour behaviour, bool enabled)
         {
-            if (!Enabled.ContainsKey(behaviour)) return false;
+            if (!Enabled.TryGetValue(behaviour, out var current)) return false;
             Enabled[behaviour] = enabled;
+            if (current != enabled && behaviour is UnitMovementAgent { Unit: not null } agent)
+                (enabled ? AgentOnEnable : AgentOnDisable).Invoke(agent, null);
             return true;
         }
 
@@ -552,9 +566,10 @@ namespace WotR.Testing.Offline
     }
 
     /// <summary>
-    /// A stand-in view's Transform: its position is the unit's own position, and rotation changes are not stored, because
-    /// only the model would show them; the game keeps the unit's orientation in UnitEntityData. The entity-bounds sphere's
-    /// transform keeps the position the game's EntityBoundsController gives it, with scale one.
+    /// A stand-in view's Transform reads as the unit: its position is the unit's position and its rotation the unit's
+    /// orientation, which the game keeps in UnitEntityData. Writes to either are dropped, because only the model would
+    /// show them; game code that moves a unit sets the data as well (UnitPlaceOnGroundController sets both, for example).
+    /// The entity-bounds sphere's transform keeps the position the game's EntityBoundsController gives it, with scale one.
     /// </summary>
     [HarmonyPatch(typeof(Transform))]
     internal static class StandInTransformPatches
@@ -593,9 +608,10 @@ namespace WotR.Testing.Offline
     }
 
     /// <summary>
-    /// The frame clock that the game's <c>TimeController.Tick</c> advances in the default game mode. Offline no game mode
-    /// runs and Unity has no frame clock, so a battle frame sets the frame duration and advances game time by it in the
-    /// same way: <c>DeltaTime = min(PlayerTimeScale * DebugTimeScale / 12, frame)</c>, and game time grows by it.
+    /// Unity's frame clock and the part of it the game's <c>TimeController.Tick</c> advances in the default game mode.
+    /// Offline no game mode runs and Unity has no frame clock, so a battle frame of 1/30 s first advances Unity's frame
+    /// count and real time (<see cref="BeginFrame"/>), and then, in TimeController's place, sets the frame duration and
+    /// advances game time as Tick does (<see cref="Tick"/>).
     /// </summary>
     internal static class BattleClock
     {
@@ -603,6 +619,7 @@ namespace WotR.Testing.Offline
 
         private static int frameNumber;
         private static double realTime;
+        private static bool justActivated;
 
         /// <summary>Unity's real time since startup: the sum of the battle frames' durations, so it is repeatable.</summary>
         internal static float RealTime => (float)realTime;
@@ -628,13 +645,30 @@ namespace WotR.Testing.Offline
             SetGameDelta.Invoke(time, new object[] { gameDelta });
         }
 
-        internal static float Frame()
+        /// <summary>TimeController.Activate: the first tick afterwards takes Unity's unscaled frame time.</summary>
+        internal static void Activate() => justActivated = true;
+
+        /// <summary>The start of a Unity frame: the frame count and real time advance before any Update runs.</summary>
+        internal static void BeginFrame()
         {
-            var time = Kingmaker.Game.Instance.TimeController;
-            var delta = Math.Min(time.PlayerTimeScale * time.DebugTimeScale / 12f, FrameSeconds);
-            Set(delta, delta);
             frameNumber++;
             realTime += FrameSeconds;
+            Boundaries.Hit("frame-clock");
+        }
+
+        /// <summary>
+        /// TimeController.Tick outside turn-based combat: <c>DeltaTime = min(PlayerTimeScale * DebugTimeScale / 12,
+        /// Time.deltaTime)</c>, and game time grows by it. Unity's <c>Time.deltaTime</c> is the frame time scaled by
+        /// <c>Time.timeScale</c>, which Tick sets to <c>PlayerTimeScale * DebugTimeScale * UiTimeScale</c>; the first
+        /// tick after activation takes the unscaled frame time.
+        /// </summary>
+        internal static float Tick()
+        {
+            var time = Kingmaker.Game.Instance.TimeController;
+            var frame = justActivated ? FrameSeconds : FrameSeconds * time.PlayerTimeScale * time.DebugTimeScale * time.UiTimeScale;
+            justActivated = false;
+            var delta = Math.Min(time.PlayerTimeScale * time.DebugTimeScale / 12f, frame);
+            Set(delta, delta);
             Kingmaker.Game.Instance.Player.GameTime += TimeSpan.FromSeconds(delta);
             Boundaries.Hit("frame-clock");
             return delta;

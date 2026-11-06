@@ -275,7 +275,7 @@ $harmonyUsed = $null
 if (Test-Path -LiteralPath $environmentPath) {
     $environment = Get-Content -LiteralPath $environmentPath -Raw | ConvertFrom-Json
     $harmonyUsed = $environment.harmony?.used
-    if ($environment.battles?.dirty) { $problems.Add("Battle worker dirty: a battle cleanup left game state behind ($($environment.battles.dirtyReason)).") }
+    if ($environment.battles?.dirty) { $problems.Add("Battle worker dirty: $($environment.battles.dirtyReason).") }
     foreach ($warning in @($environment.warnings)) { if ($warning) { $warnings.Add($warning) } }
     $blueprintCore = @($environment.libraries | Where-Object { $_.name -eq 'BlueprintCore.dll' -and $_.version }) | Select-Object -First 1
     if ($blueprintCore -and -not $NoUpdateCheck -and -not $env:WOTR_NO_UPDATE_CHECK) {

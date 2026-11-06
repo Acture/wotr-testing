@@ -138,12 +138,16 @@ namespace WotR.Testing.Offline
         }
 
         /// <summary>
-        /// Runs game frames until no battle unit has a command left, and returns the game time that took. Each frame
-        /// advances the frame clock (1/30 s) and ticks the game's own <c>UnitCombatCooldownsController</c>,
-        /// <c>UnitCommandController</c> and <c>UnitHandEquipmentController</c> for the battle units, so commands approach,
-        /// start, act and end as the game runs them. Other controllers do not run: buff durations, AI, vision,
-        /// engagement and attacks of opportunity, turn-based combat. Throws <see cref="TimeoutException"/> when commands are still running after <paramref name="limit"/>,
-        /// and fails like <see cref="RuleScope"/> when the game logs an error, for example an exception it caught.
+        /// Runs game frames until no battle unit has a command left, and returns the game time that took. Needs
+        /// <see cref="BattleScenario.Area"/>. Each frame (1/30 s) runs the game's A* path processing and its own
+        /// default-mode controllers in the game's order: unit groups, the frame clock in TimeController's place, line of
+        /// sight, movement, entity bounds, vision, sleeping units, memory, combat join, cooldowns, engagement, commands,
+        /// hand equipment, combat leave and garbage entities. So while commands approach, start, act and end, units also
+        /// see each other, join combat, and provoke attacks of opportunity when they leave an enemy's reach. AI, buff
+        /// durations, fog of war, animations and turn-based combat do not run. Throws <see cref="TimeoutException"/> when
+        /// commands are still running after <paramref name="limit"/>, <see cref="InvalidOperationException"/> when a frame
+        /// does not advance game time (the time scales pause the game), and fails like <see cref="RuleScope"/> when the
+        /// game logs an error, for example an exception it caught.
         /// </summary>
         public TimeSpan RunUntilIdle(TimeSpan limit)
         {
@@ -170,7 +174,16 @@ namespace WotR.Testing.Offline
                 RuleScope.Run("battle frames " + Scenario.Name, () =>
                 {
                     while (Game.Instance.Player.GameTime - start < limit && (!untilIdle || units.Any(u => !u.Unit.Commands.Empty)))
+                    {
+                        var before = Game.Instance.Player.GameTime;
                         loop.Frame();
+                        if (Game.Instance.Player.GameTime <= before)
+                        {
+                            var time = Game.Instance.TimeController;
+                            throw new InvalidOperationException(FormattableString.Invariant(
+                                $"Battle {Scenario.Name}: a frame did not advance game time (PlayerTimeScale {time.PlayerTimeScale}, DebugTimeScale {time.DebugTimeScale}, UiTimeScale {time.UiTimeScale}). The game is paused at these time scales, so frames would never reach {limit}."));
+                        }
+                    }
                 });
             }
             finally
@@ -423,6 +436,7 @@ namespace WotR.Testing.Offline
         private BattleCleanup Cleanup()
         {
             var failures = new List<string>();
+            var logStart = HarnessState.Logs.Count;
             void Step(string name, Action action)
             {
                 try { action(); }
@@ -493,6 +507,10 @@ namespace WotR.Testing.Offline
             if (outerRandom != null) Step("restore game RNG", () => GameRandom.Restore(outerRandom));
             outerRandom = null;
             UnitViewPrefab.ClearConfigured();
+            // An error the game catches and logs during cleanup, for example in a destruction handler, is a failed step:
+            // the step returned, but the game did not finish what it was doing.
+            foreach (var log in HarnessState.Logs.ToArray().Skip(logStart))
+                if (RuleScope.IsError(log)) failures.Add("the game logged an error during cleanup: " + RuleSettlementException.Describe(log));
 
             var residue = new List<string>();
             if (baseline != null)

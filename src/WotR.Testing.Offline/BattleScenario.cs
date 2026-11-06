@@ -99,8 +99,10 @@ namespace WotR.Testing.Offline
     }
 
     /// <summary>
-    /// One unit built from a vanilla or mod <c>BlueprintUnit</c>. The blueprint decides everything not listed here; listed
-    /// changes are applied in declaration order through the game's APIs and each one is checked afterwards.
+    /// One unit built from a vanilla or mod <c>BlueprintUnit</c>. The blueprint decides everything not listed here. Listed
+    /// changes are applied through the game's APIs by kind, in this order: faction, class levels, base stats, equipment,
+    /// facts, abilities, buffs, resources, position; changes of one kind in the order they were added. Each one is
+    /// checked afterwards.
     /// </summary>
     public sealed class BattleUnitSpec
     {

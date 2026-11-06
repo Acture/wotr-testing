@@ -188,6 +188,8 @@ namespace WotR.Testing.Offline
             float angle;
             if (dot < -1f + Epsilon)
             {
+                // Opposite directions: Unity's native code turns by the whole maxRadians about an axis orthogonal to
+                // from, without stopping at the target, and so does this.
                 axis = Math.Abs(from.z) > 0.7071f ? new Vector3(0f, -from.z, from.y).normalized : new Vector3(-from.y, from.x, 0f).normalized;
                 angle = maxRadians;
             }
@@ -576,12 +578,13 @@ namespace WotR.Testing.Offline
             return false;
         }
 
+        // Unity: true and the inverse, or false and a copy of the input when the matrix cannot be inverted.
         [HarmonyPatch("Inverse3DAffine_Injected"), HarmonyPrefix]
         private static bool InverseAffine(ref Matrix4x4 input, ref Matrix4x4 result, ref bool __result)
         {
             Boundaries.Hit("unity-math");
-            result = UnityMath.Inverse(input);
             __result = Math.Abs(UnityMath.Determinant(input)) > 1e-12f;
+            result = __result ? UnityMath.Inverse(input) : input;
             return false;
         }
     }

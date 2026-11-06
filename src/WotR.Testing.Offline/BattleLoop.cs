@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using Kingmaker;
@@ -11,9 +13,10 @@ namespace WotR.Testing.Offline
     /// <summary>
     /// The part of the game's default mode a battle runs. The controllers are the game's own, in the order
     /// GameModesFactory registers them, and are activated, started, ticked, deactivated and stopped as GameMode does.
-    /// The frame clock (<see cref="BattleClock"/>) takes TimeController's place; the AstarPath component's Unity Update
-    /// runs first in every frame. Controllers for rendering, sound, UI, camera, fog of war, AI, buffs and the rest of
-    /// the default mode are not part of it.
+    /// The frame clock (<see cref="BattleClock"/>) takes TimeController's place. Every frame starts as a Unity frame does:
+    /// the frame count and real time advance, then the AstarPath component's Unity Update runs, then the controllers.
+    /// Controllers for rendering, sound, UI, camera, fog of war, AI, buffs and the rest of the default mode are not part
+    /// of it.
     /// </summary>
     internal sealed class BattleLoop
     {
@@ -27,6 +30,10 @@ namespace WotR.Testing.Offline
         private UnitHandEquipmentController previousHands;
         private UnityEngine.SceneManagement.Scene previousBoundsScene;
         private UnityEngine.PhysicsScene previousBoundsPhysicsScene;
+        private bool replaced;
+        private int subscribed;
+        private int activated;
+        private int started;
 
         /// <summary>
         /// True from <see cref="Activate"/> to <see cref="Deactivate"/>. Only then do the physics-scene and frame-clock
@@ -56,56 +63,80 @@ namespace WotR.Testing.Offline
             };
         }
 
-        /// <summary>GameMode.OnActivate and OnStart: subscribe and activate every controller, then start them.</summary>
+        /// <summary>
+        /// GameMode.OnActivate and OnStart: subscribe and activate every controller, then start them. If one throws, the
+        /// loop counts how far it got, so <see cref="Deactivate"/> undoes exactly that.
+        /// </summary>
         internal void Activate()
         {
             previousHands = Game.Instance.HandsEquipmentController;
             previousBoundsScene = Game.Instance.EntityBoundsController.Scene;
             previousBoundsPhysicsScene = Game.Instance.EntityBoundsController.PhysicsScene;
             SetHandsEquipmentController.Invoke(Game.Instance, new object[] { hands });
+            replaced = true;
             Boundaries.Hit("hand-equipment-controller");
             Running = true;
+            BattleClock.Activate();
             foreach (var controller in controllers)
             {
                 EventBus.Subscribe(controller);
+                subscribed++;
                 controller.Activate();
+                activated++;
             }
-            foreach (var controller in controllers) (controller as IControllerStart)?.Start();
+            foreach (var controller in controllers)
+            {
+                (controller as IControllerStart)?.Start();
+                started++;
+            }
         }
 
-        /// <summary>One frame: A*'s Update, then the controllers in order, with the frame clock in TimeController's place.</summary>
+        /// <summary>One frame: Unity's frame clock, A*'s Update, then the controllers in order, with TimeController's tick in its place.</summary>
         internal void Frame()
         {
+            BattleClock.BeginFrame();
             navigation.Update();
             controllers[0].Tick();
-            BattleClock.Frame();
+            BattleClock.Tick();
             for (var i = 1; i < controllers.Length; i++) controllers[i].Tick();
         }
 
         /// <summary>
-        /// GameMode.OnDeactivate and OnStop. Like GameMode, one controller's exception does not keep the others active;
-        /// the exceptions are thrown together afterwards.
+        /// GameMode.OnDeactivate and OnStop for the controllers <see cref="Activate"/> reached. Like GameMode, one
+        /// controller's exception does not keep the others active, and the game state the loop replaced is restored in
+        /// any case; the exceptions are thrown together afterwards.
         /// </summary>
         internal void Deactivate()
         {
-            var errors = new System.Collections.Generic.List<System.Exception>();
-            foreach (var controller in controllers)
+            var errors = new List<Exception>();
+            void Step(Action action)
             {
-                EventBus.Unsubscribe(controller);
-                try { controller.Deactivate(); }
-                catch (System.Exception error) { errors.Add(error); }
+                try { action(); }
+                catch (Exception error) { errors.Add(error); }
             }
-            foreach (var controller in controllers)
+
+            for (var i = 0; i < subscribed; i++)
             {
-                try { (controller as IControllerStop)?.Stop(); }
-                catch (System.Exception error) { errors.Add(error); }
+                var controller = controllers[i];
+                Step(() => EventBus.Unsubscribe(controller));
+                if (i < activated) Step(controller.Deactivate);
             }
-            SetHandsEquipmentController.Invoke(Game.Instance, new object[] { previousHands });
-            // The entity-bounds scene exists only while the battle runs; the game keeps it for the session.
-            SetBoundsScene.Invoke(Game.Instance.EntityBoundsController, new object[] { previousBoundsScene });
-            SetBoundsPhysicsScene.Invoke(Game.Instance.EntityBoundsController, new object[] { previousBoundsPhysicsScene });
+            for (var i = 0; i < started; i++)
+            {
+                var controller = controllers[i];
+                Step(() => (controller as IControllerStop)?.Stop());
+            }
+            subscribed = activated = started = 0;
+            if (replaced)
+            {
+                Step(() => SetHandsEquipmentController.Invoke(Game.Instance, new object[] { previousHands }));
+                // The entity-bounds scene exists only while the battle runs; the game keeps it for the session.
+                Step(() => SetBoundsScene.Invoke(Game.Instance.EntityBoundsController, new object[] { previousBoundsScene }));
+                Step(() => SetBoundsPhysicsScene.Invoke(Game.Instance.EntityBoundsController, new object[] { previousBoundsPhysicsScene }));
+                replaced = false;
+            }
             Running = false;
-            if (errors.Count > 0) throw new System.AggregateException("Stopping the battle's game controllers failed.", errors);
+            if (errors.Count > 0) throw new AggregateException("Stopping the battle's game controllers failed.", errors);
         }
     }
 }

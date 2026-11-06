@@ -185,7 +185,8 @@ is retried with substitutes.
 `OfflineBattle` builds a battle from a `BattleScenario` and can rebuild the same
 initial state. The scenario lists units on each side by `BlueprintUnit` guid and
 what to change on them; the battle applies every change through the game's own
-API and checks it afterwards:
+API and checks it afterwards. A unit's changes are applied by kind, in the order
+of this table; changes of one kind in the order they were added:
 
 | Scenario entry | Game API | Checked |
 |---|---|---|
@@ -203,9 +204,10 @@ API and checks it afterwards:
 | `CorpulenceFallbackBySize` | Corpulence in meters by original size, used only when the inputs lack the unit's view prefab (see below) | Positive values |
 
 ```csharp
-var scenario = new BattleScenario("duel") { MainCharacter = "fighter" };
-scenario.Unit("fighter", "party", "<player-faction unit guid>").Equip(BattleSlot.PrimaryHand, "<weapon guid>");
-scenario.Unit("cultist", "enemies", "<enemy unit guid>").WithResource("<resource guid>", 1).At(2, 0, 0);
+// Commands need an area: frames run on its navigation graph. KenabresBurning, with positions on its graph.
+var scenario = new BattleScenario("duel") { MainCharacter = "fighter", Area = "92180b58582ec5f43a756071cd339f52" };
+scenario.Unit("fighter", "party", "<player-faction unit guid>").Equip(BattleSlot.PrimaryHand, "<weapon guid>").At(50, 40, -70);
+scenario.Unit("cultist", "enemies", "<enemy unit guid>").WithResource("<resource guid>", 1).At(52, 40, -70);
 
 using var battle = OfflineBattle.Start(scenario, seed: 3);
 var fighter = battle.Unit("fighter");
@@ -284,7 +286,8 @@ without an area. Give units commands with the game's API, for example
 | `battle.RunUntilIdle(limit)` | Runs frames until no battle unit has a command left and returns the game time that took; throws `TimeoutException` when commands still run after `limit` |
 | `battle.Run(duration)` | Runs frames for a fixed span of game time |
 
-A frame first runs Unity's `Update` of the A* component (path requests), then these
+A frame starts as a Unity frame does: Unity's frame count and real time advance,
+then Unity's `Update` of the A* component runs (path requests), then these
 controllers of the game's default mode, in its order:
 `UnitGroupsController`, the frame clock in `TimeController`'s place (1/30 s),
 `UnitLineOfSightCacheController`, `UnitMoveController`, `EntityBoundsController`,
@@ -300,8 +303,10 @@ other within vision range, remember enemies, and join combat on their own. Leavi
 an enemy's reach disengages and provokes an attack of opportunity, and commands
 approach, start, act and end in the game's code. Frames run inside `RuleScope`: an
 error the game logs and catches, for example an exception in an event handler,
-fails the call. Without an area, battles build as before and frames refuse to run.
-See the [known limits](#known-limits).
+fails the call. A frame that does not advance game time, because the time scales
+pause the game (`PlayerTimeScale` 0, for example), fails the call with
+`InvalidOperationException` instead of running forever. Without an area, battles
+build as before and frames refuse to run. See the [known limits](#known-limits).
 
 **Reset.** `Reset()` and `Dispose()` run in the test process. Cleanup unsubscribes
 handlers added with `battle.Subscribe`, then removes each unit as the game's
@@ -312,12 +317,14 @@ game loop, updates the player's combat state, unloads the navigation graph and t
 area, removes and disposes items the build put into the party inventory, and removes
 blueprints added with `battle.AddBlueprint`. Finally it restores game time (changed
 by frames and `battle.AdvanceGameTime`), the frame clock, and the game RNG from
-before the build.
+before the build. An error the game logs and catches during cleanup, for example in
+a destruction handler, counts as a failed cleanup step.
 
 It then compares the game-wide state with the state before the build: EventBus
-global and unit subscriptions, Rulebook subscriptions, `EntityService` entities, the
-game's unit and awake-unit lists, `Player.CrossSceneState`, view stand-ins, party
-inventory items and identity, game time and frame clock, the player's combat state,
+global subscribers and every subscriber under each unit, the same for Rulebook
+subscriptions, `EntityService` entities, the game's unit and awake-unit lists,
+`Player.CrossSceneState`, view stand-ins, party inventory items, their counts and
+the inventory's identity, game time and frame clock, the player's combat state,
 party and main character, unit groups, the loaded area, `AstarPath.active`,
 `Game.Instance.LevelUpController`, the turn-based controller's current turn, the
 rulebook event stack, the game RNG seed and call count, and the temporary
@@ -332,7 +339,9 @@ A cleanup that leaves anything marks the process dirty
 give a clean environment; run further battles in a new process. `Dispose()` never
 throws, so an exception from the test body is never hidden; `Reset()` throws
 `BattleCleanupException`. Only one battle is active per process, because the state
-it changes is process-wide. A new worker process is not started automatically.
+it changes is process-wide. A battle still active when the run ends was never
+disposed, so its state was never cleaned up: the worker counts as dirty and the run
+fails validation as well. A new worker process is not started automatically.
 
 `battle.InitialState` and `battle.Observe()` give the key state as sorted text
 lines: per unit its blueprint, side, faction, levels, hit points, every stat, each
@@ -503,13 +512,13 @@ rulebook calculations.
 | `unity-math` | `Quaternion`, `Matrix4x4` and `Vector3` native math | Managed versions with Unity's conventions (left-handed basis, Euler order Z, X, Y), used for example when a unit turns or the game's A* code builds a graph transform. Results can differ from Unity's native code in the last bits of a float |
 | `navigation-graph` | `AstarPath.active` and the area's navigation graph | Read as `NavMeshManager` does, from the `.nav` bundle `Bundles/locationlist.json` names, and deserialized by the game's A* code into an `AstarPath` component without a GameObject; path requests run on A*'s non-threaded path processor, updated once per battle frame |
 | `physics-scene` | `PhysicsScene` native queries and the entity-bounds scene while a battle runs its game loop | Only during a battle with an area; outside battles they fail as `unity-runtime-required`, as before. No level colliders exist offline: casts hit nothing and overlaps find nothing. The game's `EntityBoundsController` creates its entity-bounds scene (a scene with no level, valid only during the battle) and keeps each unit's bound sphere at the unit's position with its corpulence as radius; on the unit bounds layer those spheres answer, as the game's entity-bounds physics scene does. Vision range uses them. Heights follow the navigation mesh, not ground colliders |
-| `unit-view-stand-in` | `UnitEntityView` of battle units and the components on its GameObject; the view side of `AttachView`/`DetachView`; `Polymorph.TryReplaceView`/`RestoreView` for stand-ins | A view with no GameObject, model or animator that Unity's checks read as live, with the serialized fields of the unit's real view prefab, read on demand from its `.unit` bundle (`CorpulenceOverrideBySize` replaces only the corpulence; without the bundle, an override or `CorpulenceFallbackBySize` gives the corpulence and the rest keeps class defaults), carrying the game's own `UnitMovementAgent`, seeker and path modifiers. The game's `AttachView` and `DetachView` attach it; `EntityViewBase.AttachToData` and `DetachFromData` set up and release only what the mechanics read. Their transform is the unit's position; the bound sphere's transform is moved by the game's `EntityBoundsController`. A polymorph swaps stand-ins (its prefab with size scaling off, then the unit's own); the view replacement record, the command interruption and waking the unit run as in the game, models and the visual fade are skipped. Removed with `DetachView` before the unit is destroyed |
+| `unit-view-stand-in` | `UnitEntityView` of battle units and the components on its GameObject; the view side of `AttachView`/`DetachView`; `Polymorph.TryReplaceView`/`RestoreView` for stand-ins | A view with no GameObject, model or animator that Unity's checks read as live, with the serialized fields of the unit's real view prefab, read on demand from its `.unit` bundle (`CorpulenceOverrideBySize` replaces only the corpulence; without the bundle, an override or `CorpulenceFallbackBySize` gives the corpulence and the rest keeps class defaults), carrying the game's own `UnitMovementAgent`, seeker and path modifiers. The game's `AttachView` and `DetachView` attach it; `EntityViewBase.AttachToData` and `DetachFromData` set up and release only what the mechanics read. Their transform reads as the unit (its position and orientation); writes to its position or rotation are dropped, because only a model would show them. The bound sphere's transform is moved by the game's `EntityBoundsController`. Enabled flags come from the prefab; enabling or disabling the movement agent runs its own `OnEnable` or `OnDisable`. The stand-ins are distinct objects under Unity's `==`; `GetInstanceID()` needs native code and fails as `unity-runtime-required`. A polymorph swaps stand-ins (its prefab with size scaling off, then the unit's own); the view replacement record, the command interruption and waking the unit run as in the game, models and the visual fade are skipped. Removed with `DetachView` before the unit is destroyed |
 | `unit-weapon-visuals` | `UnitEntityView.HandleAttackCommandRun`, `UnitHandEquipmentController.DidUpdate` for stand-ins | Skipped: weapon models in the hands, occlusion clipping, and waiting for the hand models to match the combat state |
 | `unit-hit-effects` | `HitPlayer.PlayDamageHit` when a stand-in is involved | Skipped: blood, hit effects and sounds. The game takes the same early return for units without a live view; `RuleDealDamage` deals the damage as shipped |
 | `debug-draw` | `Debug.DrawLine` | Skipped: editor scene-view lines, which a player build does not draw either |
 | `move-target-marker` | `UnitEntityView.OnMovementStarted` for battle units | Skipped: when a directly controllable unit starts a path, it only places the UI's destination marker (`ClickPointerManager`), which does not exist offline. The movement runs as shipped |
 | `hand-equipment-controller` | `Game.HandsEquipmentController` during a battle with an area | The default game mode provides `UnitHandEquipmentController`; no mode runs offline, so the battle's game loop sets a new instance of the game's controller and cleanup restores the previous value |
-| `frame-clock` | `TimeController` frame duration and game time, `Time.frameCount`, `Time.realtimeSinceStartup` | Each battle frame is 1/30 s: `DeltaTime` and `GameDeltaTime` are `min(PlayerTimeScale * DebugTimeScale / 12, 1/30 s)` and game time grows by it, as `TimeController.Tick` does in the default game mode; Unity's frame count and real time advance with it. Between battle frames each frame-count read is a new frame, so per-frame caches are never stale; outside battles `Time.frameCount` and `Time.realtimeSinceStartup` fail as `unity-runtime-required`, as before |
+| `frame-clock` | `TimeController` frame duration and game time, `Time.frameCount`, `Time.realtimeSinceStartup` | Each battle frame is 1/30 s. It starts as a Unity frame does: the frame count and real time advance before A* and the controllers run. In `TimeController`'s place, `DeltaTime` and `GameDeltaTime` are `min(PlayerTimeScale * DebugTimeScale / 12, Time.deltaTime)` and game time grows by it, as `TimeController.Tick` does in the default game mode outside turn-based combat; `Time.deltaTime` is the 1/30 s frame scaled by `PlayerTimeScale * DebugTimeScale * UiTimeScale`, unscaled in the first frame after the battle's loop starts. Between battle frames each frame-count read is a new frame, so per-frame caches are never stale; outside battles `Time.frameCount` and `Time.realtimeSinceStartup` fail as `unity-runtime-required`, as before |
 
 The game language setting is set to English before the game's own
 `LocalizationManager.Init`, as a player choosing English would; without it the

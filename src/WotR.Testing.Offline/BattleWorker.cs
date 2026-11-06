@@ -129,16 +129,23 @@ namespace WotR.Testing.Offline
             }
         }
 
+        /// <summary>
+        /// The worker's state for environment.json, written when the run ends. A battle still active then was never
+        /// disposed: its units, controllers and area were never cleaned up, so the worker counts as dirty.
+        /// </summary>
         internal static object Report()
         {
             lock (Gate)
             {
                 if (started == 0) return null;
+                var dirtyReason = DirtyReason
+                    ?? (active == null ? null : $"battle {active} was still active when the run ended; it was never disposed, so its game state was never cleaned up");
                 return new
                 {
                     resetMethod = ResetMethod,
-                    dirty = DirtyReason != null,
-                    dirtyReason = DirtyReason,
+                    dirty = dirtyReason != null,
+                    dirtyReason,
+                    undisposedBattle = active,
                     battlesStarted = started,
                     builds,
                     cleanups,
@@ -149,7 +156,7 @@ namespace WotR.Testing.Offline
                     checkedState = new[]
                     {
                         "EventBus global and unit subscriptions", "Rulebook global, initiator and target subscriptions",
-                        "EntityService entities", "game state and awake units", "Player.CrossSceneState entities", "player party inventory items and Player.Inventory identity", "game time",
+                        "EntityService entities", "game state and awake units", "Player.CrossSceneState entities", "player party inventory items, their counts and Player.Inventory identity", "game time",
                         "frame clock (DeltaTime, GameDeltaTime)", "unit view stand-ins",
                         "player combat state, party and main character", "game unit groups", "loaded area", "entity-bounds scene",
                         "Game.Instance.LevelUpController", "turn-based combat controller current turn", "rulebook event stack",

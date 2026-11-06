@@ -202,6 +202,7 @@ namespace WotR.Testing.BattleTests
             using var battle = OfflineBattle.Start(Duel(), seed: 1);
             var first = battle.InitialState;
             battle.Reset(seed: 2);
+            Assert.Contains(battle.InitialState.Lines, line => line.StartsWith("game-random seed 2 calls ", StringComparison.Ordinal));
             Assert.All(first.Difference(battle.InitialState), line => Assert.Contains("game-random seed", line));
             battle.Reset(seed: 1);
             Assert.Equal(first, battle.InitialState);
@@ -292,9 +293,10 @@ namespace WotR.Testing.BattleTests
             battle.RunUntilIdle(TimeSpan.FromSeconds(12));
             Assert.True(attack.IsActed);
             Assert.NotNull(attack.LastAttackRule);
-            // The unit-movement boundary places the unit just inside the approach radius in a straight line.
+            // The game's movement agent stops the fighter just inside the approach radius.
             Assert.InRange(Distance(fighter.Position, guard.Position), reach - 0.1f, reach);
-            Assert.DoesNotContain("unit fighter position 50,40,-70", battle.Observe().Lines);
+            Assert.Contains("unit fighter position (50, 40, -70)", initial.Lines);
+            Assert.DoesNotContain("unit fighter position (50, 40, -70)", battle.Observe().Lines);
 
             battle.Reset();
             Assert.True(battle.LastCleanup.Clean, battle.LastCleanup.ToString());
@@ -320,6 +322,93 @@ namespace WotR.Testing.BattleTests
             Assert.Equal(UnitCommand.ResultType.Success, move.Result);
             Assert.True(Distance(cultist.Position, target) <= 0.5f);
             Assert.True(elapsed.TotalSeconds >= distance / speed, $"walked {distance} m at {speed} m/s in {elapsed.TotalSeconds} s");
+        }
+
+        [Fact]
+        public void AMoveWhoseStraightLineIsBlockedWalksAroundTheObstacle()
+        {
+            game.RequireGame();
+            var scenario = new BattleScenario("detour") { Area = Guids.KenabresBurning };
+            scenario.Unit("walker", "enemies", Guids.Cultist).At(52, 40, -70);
+            using var battle = OfflineBattle.Start(scenario, seed: 9);
+            var walker = battle.Unit("walker");
+            var start = walker.Position;
+
+            // Outside turn-based combat the game's movement agent searches the first graph, the area's navigation mesh
+            // (UnitMovementAgent.PathTo, graph mask 1). The target is the nearest point of the mesh, reachable from the
+            // start, that the mesh's own linecast says cannot be reached in a straight line.
+            var graph = AstarPath.active.data.recastGraph;
+            Assert.Same(AstarPath.active.data.graphs[0], graph);
+            var startNode = graph.GetNearest(start, Pathfinding.NNConstraint.Default).node;
+            var nodes = new System.Collections.Generic.List<Pathfinding.GraphNode>();
+            graph.GetNodes(node => { if (node.Walkable && node.Area == startNode.Area) nodes.Add(node); });
+            var target = nodes
+                .Select(node => (UnityEngine.Vector3)node.position)
+                .Where(point => Math.Abs(point.y - start.y) < 1f && Distance(start, point) is >= 5f and <= 15f)
+                .OrderBy(point => Distance(start, point)).ThenBy(point => point.x).ThenBy(point => point.z)
+                .FirstOrDefault(point => graph.Linecast(start, point));
+            Assert.NotEqual(default(UnityEngine.Vector3), target);
+            var straight = Distance(start, target);
+
+            var move = new UnitMoveTo(target, 0.3f);
+            walker.Commands.Run(move);
+            var walked = 0f;
+            var previous = walker.Position;
+            for (var step = 0; step < 300 && !walker.Commands.Empty; step++)
+            {
+                battle.Run(TimeSpan.FromSeconds(0.1));
+                walked += Distance(previous, walker.Position);
+                previous = walker.Position;
+            }
+            Assert.True(walker.Commands.Empty);
+            Assert.Equal(UnitCommand.ResultType.Success, move.Result);
+            Assert.True(Distance(walker.Position, target) <= 0.3f + 0.05f, $"stopped {Distance(walker.Position, target)} m from {target}");
+            // In 2.7.0 the target lies 5.0 m away and the unit walks about 10.8 m around the obstacle.
+            Assert.True(walked > straight * 1.5f, $"walked {walked} m to a point {straight} m away in a straight line");
+        }
+
+        [Fact]
+        public void FramesFollowTheGameTimeScalesAndRefuseAPausedGame()
+        {
+            game.RequireGame();
+            using var battle = OfflineBattle.Start(Duel());
+            var time = Kingmaker.Game.Instance.TimeController;
+            var scale = time.PlayerTimeScale;
+            try
+            {
+                // TimeController.Tick: min(PlayerTimeScale * DebugTimeScale / 12, Time.deltaTime), where Unity scales the
+                // 1/30 s frame by the time scale after the first frame.
+                time.PlayerTimeScale = 2f;
+                battle.Run(TimeSpan.FromSeconds(1));
+                Assert.Equal(2f / 30f, time.DeltaTime, 5);
+
+                time.PlayerTimeScale = 0f;
+                var paused = Assert.Throws<InvalidOperationException>(() => battle.Run(TimeSpan.FromSeconds(1)));
+                Assert.Contains("did not advance game time", paused.Message);
+            }
+            finally
+            {
+                time.PlayerTimeScale = scale;
+            }
+        }
+
+        [Fact]
+        public void StandInViewsAreDistinctLiveUnityObjects()
+        {
+            game.RequireGame();
+            using var battle = OfflineBattle.Start(Duel());
+            var fighter = battle.Unit("fighter").View;
+            var cultist = battle.Unit("cultist").View;
+
+            // The game's Unity compares live objects by reference, so stand-ins are told apart as the game's own views are.
+            Assert.True(fighter);
+            Assert.False(fighter == cultist);
+            Assert.False(fighter.Equals(cultist));
+            Assert.False(fighter.transform == cultist.transform);
+            Assert.False(fighter.SphereBoundsCollider == cultist.SphereBoundsCollider);
+            Assert.Equal(2, new System.Collections.Generic.HashSet<UnityEngine.Object> { fighter, cultist }.Count);
+            // An instance id needs Unity's native code, which the game's battle code never asks for.
+            Assert.True(UnityNative.IsUnavailable(Record.Exception(() => fighter.GetInstanceID())));
         }
 
         [Fact]
@@ -717,13 +806,25 @@ namespace WotR.Testing.BattleTests
             Assert.NotNull(next.Unit("fighter"));
         }
 
+        /// <summary>
+        /// With WOTR_TEST_SCENARIO=undisposed-battle the test returns without disposing its battle; the worker report then
+        /// counts the process as dirty and the run fails validation.
+        /// </summary>
         [Fact]
         public void OnlyOneBattleRunsAtATime()
         {
             game.RequireGame();
-            using var battle = OfflineBattle.Start(Duel());
-            var error = Assert.Throws<InvalidOperationException>(() => OfflineBattle.Start(Duel()));
-            Assert.Contains("still active", error.Message);
+            var keep = Environment.GetEnvironmentVariable("WOTR_TEST_SCENARIO") == "undisposed-battle";
+            var battle = OfflineBattle.Start(Duel());
+            try
+            {
+                var error = Assert.Throws<InvalidOperationException>(() => OfflineBattle.Start(Duel()));
+                Assert.Contains("still active", error.Message);
+            }
+            finally
+            {
+                if (!keep) battle.Dispose();
+            }
         }
 
         /// <summary>

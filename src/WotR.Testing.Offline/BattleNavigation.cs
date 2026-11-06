@@ -61,15 +61,22 @@ namespace WotR.Testing.Offline
             OfflineUnitView.MarkLive(astar);
             var previous = AstarPath.active;
             AstarPath.active = astar;
-            astar.data = new Pathfinding.AstarData();
-            astar.data.DeserializeGraphs(bytes);
-            Boundaries.Hit("navigation-graph");
-            if (astar.data.graphs == null || astar.data.graphs.All(g => g == null))
+            try
             {
-                AstarPath.active = previous;
-                throw new InvalidOperationException($"The game's A* code read no graph from {bundle} ({assetId}); see the game log in the report.");
+                astar.data = new Pathfinding.AstarData();
+                astar.data.DeserializeGraphs(bytes);
+                Boundaries.Hit("navigation-graph");
+                if (astar.data.graphs == null || astar.data.graphs.All(g => g == null))
+                    throw new InvalidOperationException($"The game's A* code read no graph from {bundle} ({assetId}); see the game log in the report.");
+                return new BattleNavigation(part.name, assetId, bundle, GameBundles.Sha256(bundle), astar, previous);
             }
-            return new BattleNavigation(part.name, assetId, bundle, GameBundles.Sha256(bundle), astar, previous);
+            catch
+            {
+                // A failed load leaves A* as it was: the previous object active, this one dead.
+                if (ReferenceEquals(AstarPath.active, astar)) AstarPath.active = previous;
+                OfflineUnitView.MarkDead(astar);
+                throw;
+            }
         }
 
         /// <summary>One Unity Update of the AstarPath component: graph updates, queued path requests and their callbacks.</summary>

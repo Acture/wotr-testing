@@ -55,14 +55,16 @@ python -m unittest discover -s tests -p 'test_rules.py' -v
 `test_battles.py` uses `fixtures/BattleTests/` (with game-derived handlers in
 `fixtures/BattleSupport/`) to build battles from vanilla blueprints on both
 runtimes: verified equipment, class levels, factions, buffs and resources, real
-attacks and damage, attack and move commands on a real navigation mesh, automatic
-combat join, action cooldowns, attacks of opportunity, corpulence from view
-prefabs (with overrides, fallbacks, size changes and polymorph view swaps),
-repeated resets with one seed, failures in the middle of an effect or a command,
-stat recalculation, paths and the missing-main-character error. With
-`WOTR_TEST_SCENARIO=dirty-battle` it checks that a leaked subscription makes the
-worker dirty and fails the run. Restore that fixture, then use the same opt-in
-flag:
+attacks and damage, attack and move commands on a real navigation mesh (including
+a detour around an obstacle), automatic combat join, action cooldowns, attacks of
+opportunity, corpulence from view prefabs (with overrides, fallbacks, size changes
+and polymorph view swaps), the game's time scales, repeated resets with one seed,
+failures in the middle of an effect or a command, stat recalculation, paths and
+the missing-main-character error. It checks that every fixture test ran and
+passed. With `WOTR_TEST_SCENARIO=dirty-battle` it checks that a leaked
+subscription makes the worker dirty and fails the run, and with
+`WOTR_TEST_SCENARIO=undisposed-battle` that a battle never disposed does too.
+Restore that fixture, then use the same opt-in flag:
 
 ```powershell
 dotnet restore tests/fixtures/BattleTests/WotR.Testing.BattleTests.csproj

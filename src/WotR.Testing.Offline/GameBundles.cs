@@ -28,7 +28,7 @@ namespace WotR.Testing.Offline
         {
             var path = Path.Combine(HarnessState.Inputs.Bundles, bundle);
             if (!File.Exists(path))
-                throw new OfflineEnvironmentMissingException($"Bundle not found: {path} ({purpose}). Snapshots made before battles read it lack it; make a new snapshot.");
+                throw new OfflineEnvironmentMissingException($"Bundle not found: {path} ({purpose}). Snapshots made before battles read it lack it; make a new snapshot. If the installation lacks it too, New-WotrSnapshot.ps1 lists it as missing.");
             return path;
         }
 
@@ -53,8 +53,11 @@ namespace WotR.Testing.Offline
                 using var document = JsonDocument.Parse(File.ReadAllText(path));
                 var guids = document.RootElement.GetProperty("m_Guids").EnumerateArray().Select(e => e.GetString()).ToList();
                 var bundles = document.RootElement.GetProperty("m_Bundles").EnumerateArray().Select(e => e.GetString()).ToList();
+                // The game's LocationList pairs them by position and fails when an asset id has no bundle.
+                if (guids.Count > bundles.Count)
+                    throw new InvalidOperationException($"{path} lists {guids.Count} asset ids but only {bundles.Count} bundles; the game's LocationList cannot read it. Copy the file from the installation again.");
                 var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                for (var i = 0; i < Math.Min(guids.Count, bundles.Count); i++) map[guids[i]] = bundles[i];
+                for (var i = 0; i < guids.Count; i++) map[guids[i]] = bundles[i];
                 return locations = map;
             }
         }

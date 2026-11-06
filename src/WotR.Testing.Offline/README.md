@@ -178,7 +178,7 @@ when a path reaches Unity engine code; such results are reported as
 | `OfflineGame` | `Blueprint<T>(guid)`, `CreateUnit(guid)`, `StatSnapshot(unit)` |
 | `BattleScenario` | Units per side from blueprints, with faction, class levels, base stats, equipment, facts, abilities, buffs, resources, positions and main character; the area; corpulence overrides and fallbacks by size; paths that already exist |
 | `OfflineBattle` | `Start(scenario, seed)`, `Unit(id)`, `Paths`, `InitialState`, `Observe()`, `Subscribe`, `AddBlueprint`, `AdvanceGameTime`, `RunUntilIdle(limit)` and `Run(duration)` (game frames that run unit commands), `Reset()`; cleanup is checked for leftover game state |
-| `BattleWorker` | Whether this process is dirty after a cleanup left state behind; a dirty process refuses battles and fails the run |
+| `BattleWorker` | Whether this process is dirty after a cleanup left state behind; a dirty process refuses battles and fails the run, as does a battle never disposed |
 | `GameRandom` | The game's `System.Random`: `Init`, `Save`, `Restore`, `Record`. Seed `1` at startup. Not Unity's player sequence |
 | `ActionSampleRandom` | A caller's own `System.Random`. Does not read or write `GameRandom` |
 | `RuleScope` | Fails a named operation when that operation logs an error the game caught. `RuleLogAllowance` needs a reason |

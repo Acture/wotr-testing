@@ -21,8 +21,9 @@
   the build. `Reset()` rebuilds the same initial state in the same process and
   compares game-wide state (EventBus and Rulebook subscriptions, entities, party
   inventory, main character, game time, game RNG and more) with the state before
-  the build. A cleanup that leaves anything marks the process dirty: it refuses
-  further battles and the run fails. `environment.json` records `battles`.
+  the build. A cleanup that leaves anything, or logs an error the game caught,
+  marks the process dirty: it refuses further battles and the run fails. A battle
+  never disposed fails the run as well. `environment.json` records `battles`.
 - Battle game loop: with `BattleScenario.Area` set, a battle loads the area and its
   real navigation graph (read from the game's `.nav` bundle as `NavMeshManager`
   does) and runs part of the game's default mode on its units:
@@ -31,7 +32,8 @@
   memory, combat-join, cooldown, engagement, command, hand-equipment, combat-leave
   and garbage-entity controllers in the game's order. Units walk A* paths with the
   game's own `UnitMovementAgent`, see and remember each other, join combat, and
-  provoke attacks of opportunity when they leave an enemy's reach. Units have a
+  provoke attacks of opportunity when they leave an enemy's reach. Frames follow
+  the game's time scales and fail when those pause the game. Units have a
   view stand-in without a model; AI, buff durations, fog of war, animations, level
   colliders, sight blockers and turn-based combat do not run (see the known
   limits).

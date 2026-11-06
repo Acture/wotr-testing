@@ -21,15 +21,16 @@ namespace WotR.Testing.Offline
         private const BindingFlags Instance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
         private List<object> globalSubscribers;
-        private List<object> unitSubscriberKeys;
+        private List<object> unitSubscriptions;
         private List<object> rulebookGlobalSubscribers;
-        private List<object> rulebookInitiatorKeys;
-        private List<object> rulebookTargetKeys;
+        private List<object> rulebookInitiatorSubscriptions;
+        private List<object> rulebookTargetSubscriptions;
         private List<object> entities;
         private List<object> stateUnits;
         private List<object> awakeUnits;
         private List<object> crossSceneEntities;
         private List<object> playerItems;
+        private Dictionary<object, int> playerItemCounts;
         private TimeSpan gameTime;
         private float frameDelta;
         private float gameFrameDelta;
@@ -74,7 +75,8 @@ namespace WotR.Testing.Offline
         /// </summary>
         private static bool IsSessionObject(object value, Kingmaker.EntitySystem.Entities.UnitEntityData defaultUnit)
             => defaultUnit != null && (ReferenceEquals(value, defaultUnit)
-                || value is Kingmaker.Items.ItemEntity item && (ReferenceEquals(item.Owner?.Unit, defaultUnit) || ReferenceEquals(item.Wielder?.Unit, defaultUnit)));
+                || value is Kingmaker.Items.ItemEntity item && (ReferenceEquals(item.Owner?.Unit, defaultUnit) || ReferenceEquals(item.Wielder?.Unit, defaultUnit))
+                || value is UnitSubscription subscription && (IsSessionObject(subscription.Unit, defaultUnit) || IsSessionObject(subscription.Subscriber, defaultUnit)));
 
         private static List<object> WithoutSessionObjects(List<object> values)
         {
@@ -89,15 +91,17 @@ namespace WotR.Testing.Offline
             return new BattleBaseline
             {
                 globalSubscribers = WithoutSessionObjects(Subscribers(EventBus.GlobalSubscribers)),
-                unitSubscriberKeys = WithoutSessionObjects(Keys(EventBus.UnitSubscribers)),
+                unitSubscriptions = WithoutSessionObjects(UnitSubscriptions(EventBus.UnitSubscribers)),
                 rulebookGlobalSubscribers = WithoutSessionObjects(Subscribers(RulebookEventBus.GlobalRulebookSubscribers)),
-                rulebookInitiatorKeys = WithoutSessionObjects(Keys(RulebookEventBus.InitiatorRulebookSubscribers)),
-                rulebookTargetKeys = WithoutSessionObjects(Keys(RulebookEventBus.TargetRulebookSubscribers)),
+                rulebookInitiatorSubscriptions = WithoutSessionObjects(UnitSubscriptions(RulebookEventBus.InitiatorRulebookSubscribers)),
+                rulebookTargetSubscriptions = WithoutSessionObjects(UnitSubscriptions(RulebookEventBus.TargetRulebookSubscribers)),
                 entities = WithoutSessionObjects(EntityService.Instance?.GetListUnsafe().Cast<object>().ToList() ?? new List<object>()),
                 stateUnits = Game.Instance.State.Units.All.Cast<object>().ToList(),
                 awakeUnits = Game.Instance.State.AwakeUnits.Cast<object>().ToList(),
                 crossSceneEntities = player.CrossSceneState.AllEntityData.Cast<object>().ToList(),
                 playerItems = player.Inventory?.Items.Cast<object>().ToList() ?? new List<object>(),
+                playerItemCounts = (player.Inventory?.Items ?? Enumerable.Empty<Kingmaker.Items.ItemEntity>())
+                    .ToDictionary(item => (object)item, item => item.Count, ReferenceComparer.Instance),
                 gameTime = player.GameTime,
                 frameDelta = Game.Instance.TimeController.DeltaTime,
                 gameFrameDelta = Game.Instance.TimeController.GameDeltaTime,
@@ -143,15 +147,19 @@ namespace WotR.Testing.Offline
         {
             var residue = new List<string>();
             Difference(residue, "EventBus global subscribers", globalSubscribers, after.globalSubscribers);
-            Difference(residue, "EventBus unit subscriptions", unitSubscriberKeys, after.unitSubscriberKeys);
+            Difference(residue, "EventBus unit subscriptions", unitSubscriptions, after.unitSubscriptions);
             Difference(residue, "Rulebook global subscribers", rulebookGlobalSubscribers, after.rulebookGlobalSubscribers);
-            Difference(residue, "Rulebook initiator subscriptions", rulebookInitiatorKeys, after.rulebookInitiatorKeys);
-            Difference(residue, "Rulebook target subscriptions", rulebookTargetKeys, after.rulebookTargetKeys);
+            Difference(residue, "Rulebook initiator subscriptions", rulebookInitiatorSubscriptions, after.rulebookInitiatorSubscriptions);
+            Difference(residue, "Rulebook target subscriptions", rulebookTargetSubscriptions, after.rulebookTargetSubscriptions);
             Difference(residue, "EntityService entities", entities, after.entities);
             Difference(residue, "game state units", stateUnits, after.stateUnits);
             Difference(residue, "game awake units", awakeUnits, after.awakeUnits);
             Difference(residue, "Player.CrossSceneState entities", crossSceneEntities, after.crossSceneEntities);
             Difference(residue, "player party inventory items", playerItems, after.playerItems);
+            // A stack the build added to keeps its identity; only its count shows the change.
+            foreach (var pair in playerItemCounts)
+                if (after.playerItemCounts.TryGetValue(pair.Key, out var count) && count != pair.Value)
+                    residue.Add($"player party inventory item {Name(pair.Key)}: count {pair.Value} before, {count} after");
             Value(residue, "game time", gameTime.ToString("c", CultureInfo.InvariantCulture), after.gameTime.ToString("c", CultureInfo.InvariantCulture));
             Value(residue, "frame delta time", frameDelta, after.frameDelta);
             Value(residue, "game frame delta time", gameFrameDelta, after.gameFrameDelta);
@@ -179,7 +187,7 @@ namespace WotR.Testing.Offline
 
         private static void Difference(List<string> residue, string name, List<object> before, List<object> after)
         {
-            var counts = new Dictionary<object, int>(ReferenceComparer.Instance);
+            var counts = new Dictionary<object, int>(EntryComparer.Instance);
             foreach (var item in after) counts[item] = counts.TryGetValue(item, out var count) ? count + 1 : 1;
             foreach (var item in before) counts[item] = counts.TryGetValue(item, out var count) ? count - 1 : -1;
             var added = counts.Where(pair => pair.Value > 0).SelectMany(pair => Enumerable.Repeat(pair.Key, pair.Value)).ToList();
@@ -194,6 +202,7 @@ namespace WotR.Testing.Offline
 
         private static string Name(object item)
         {
+            if (item is UnitSubscription subscription) return Name(subscription.Subscriber) + " for unit " + Name(subscription.Unit);
             string text;
             try { text = item.ToString(); }
             catch (Exception) { text = null; }
@@ -219,15 +228,47 @@ namespace WotR.Testing.Offline
             return result;
         }
 
-        private static List<object> Keys(IEnumerable dictionary)
+        /// <summary>
+        /// Every subscriber under every unit in one of the game's per-unit subscription dictionaries, so a subscription
+        /// left under a unit that existed before the build is found as well as a new unit's.
+        /// </summary>
+        private static List<object> UnitSubscriptions(IEnumerable dictionary)
         {
             var result = new List<object>();
             foreach (var pair in dictionary)
             {
-                var key = pair.GetType().GetProperty("Key")?.GetValue(pair, null);
-                if (key != null) result.Add(key);
+                var unit = pair.GetType().GetProperty("Key")?.GetValue(pair, null);
+                var manager = pair.GetType().GetProperty("Value")?.GetValue(pair, null);
+                if (unit == null || manager == null) continue;
+                foreach (var subscriber in Subscribers(manager)) result.Add(new UnitSubscription(unit, subscriber));
             }
             return result;
+        }
+
+        /// <summary>One subscriber under one unit's key; equal to another for the same two objects.</summary>
+        private sealed class UnitSubscription
+        {
+            internal UnitSubscription(object unit, object subscriber)
+            {
+                Unit = unit;
+                Subscriber = subscriber;
+            }
+
+            internal object Unit { get; }
+            internal object Subscriber { get; }
+
+            public override bool Equals(object obj)
+                => obj is UnitSubscription other && ReferenceEquals(Unit, other.Unit) && ReferenceEquals(Subscriber, other.Subscriber);
+
+            public override int GetHashCode() => RuntimeHelpers.GetHashCode(Unit) * 31 + RuntimeHelpers.GetHashCode(Subscriber);
+        }
+
+        /// <summary>Compares game objects by reference and unit subscriptions by their unit and subscriber.</summary>
+        private sealed class EntryComparer : IEqualityComparer<object>
+        {
+            public static readonly EntryComparer Instance = new();
+            public new bool Equals(object x, object y) => x is UnitSubscription subscription ? subscription.Equals(y) : ReferenceEquals(x, y);
+            public int GetHashCode(object obj) => obj is UnitSubscription subscription ? subscription.GetHashCode() : RuntimeHelpers.GetHashCode(obj);
         }
 
         private static object Field(object target, string name)

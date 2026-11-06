@@ -43,7 +43,7 @@ namespace WotR.Testing.Build
                     if (!string.IsNullOrEmpty(startupError)) Log.LogError("Initialization failed: {0}", startupError);
                     var battles = environment.Element("battles");
                     if ((string)battles?.Element("dirty") == "true")
-                        Log.LogError("Battle worker dirty: a battle cleanup left game state behind ({0}).", (string)battles.Element("dirtyReason"));
+                        Log.LogError("Battle worker dirty: {0}.", (string)battles.Element("dirtyReason"));
                     foreach (var warning in environment.Element("warnings")?.Elements() ?? Enumerable.Empty<XElement>())
                         Log.LogWarning(warning.Value);
                 }

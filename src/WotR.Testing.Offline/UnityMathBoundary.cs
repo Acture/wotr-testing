@@ -479,6 +479,7 @@ namespace WotR.Testing.Offline
         private static bool Prefix(ref PhysicsScene ret)
         {
             if (!BattleLoop.Running) return true;
+            Boundaries.Hit("physics-scene");
             ret = default;
             return false;
         }

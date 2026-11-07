@@ -275,7 +275,8 @@ $harmonyUsed = $null
 if (Test-Path -LiteralPath $environmentPath) {
     $environment = Get-Content -LiteralPath $environmentPath -Raw | ConvertFrom-Json
     $harmonyUsed = $environment.harmony?.used
-    if ($environment.battles?.dirty) { $problems.Add("Battle worker dirty: $($environment.battles.dirtyReason).") }
+    # Reports from packages without battles have no battles property; strict mode would stop on reading it.
+    if ($environment.PSObject.Properties['battles'] -and $environment.battles.dirty) { $problems.Add("Battle worker dirty: $($environment.battles.dirtyReason).") }
     foreach ($warning in @($environment.warnings)) { if ($warning) { $warnings.Add($warning) } }
     $blueprintCore = @($environment.libraries | Where-Object { $_.name -eq 'BlueprintCore.dll' -and $_.version }) | Select-Object -First 1
     if ($blueprintCore -and -not $NoUpdateCheck -and -not $env:WOTR_NO_UPDATE_CHECK) {

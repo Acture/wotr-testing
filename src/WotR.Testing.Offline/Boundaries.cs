@@ -70,6 +70,28 @@ namespace WotR.Testing.Offline
                 "One System.Random, seed 1 at startup. Integer Range is [min, max). Float Range and value are [min, max). This is not the Unity player's sequence. Random.state values are valid only in this process. Negative seeds follow System.Random's absolute value.");
             Declare("system-random-observe", "environment", "System.Random constructors",
                 "Counts constructions and leaves the game's own System.Random instances unchanged. Unseeded constructions are reported and are not given the game seed.");
+            Declare("profiling-counters", "telemetry", "Owlcat.Runtime.Core.ProfilingCounters.Counter.AddMeasurement",
+                "Skipped: it files a timing under the current Unity frame (Time.frameCount), and no frame exists offline. Only profiler statistics are affected; the measured game code runs as shipped.");
+            Declare("unit-view-stand-in", "scene", "UnitEntityView of battle units and the components on its GameObject",
+                "Battle units get a view with no GameObject, model or animator, which Unity's checks read as live, so the game's controllers run the unit. The prefab is the one UnitEntityData.CreateView picks (an active polymorph's first), read on demand from its .unit bundle (BattleScenario.CorpulenceOverrideBySize replaces only its corpulence; without the bundle an override or CorpulenceFallbackBySize gives the corpulence and everything else keeps class defaults): like Instantiate, the stand-in copies the serialized fields of the prefab's UnitEntityView (corpulence, rotation lock), OverrideSizeScale and UnitMovementAgent (acceleration, speeds, avoidance); references to models and colliders stay null and are listed in the report. The game's AttachView and DetachView attach and detach it, with the view's side (EntityViewBase.AttachToData, DetachFromData) replaced by what the mechanics read: the game's own UnitMovementAgent with the SeekerWithClearance, RaycastModifier and FunnelModifiers its Init creates, the size scale, and the entity-bounds sphere on its own transform, which the game's EntityBoundsController moves. The components' transform reads as the unit (its position and orientation); writes to its position or rotation are dropped, because only a model would show them. Enabled flags come from the prefab and are kept without a native object; enabling or disabling the movement agent runs its own OnEnable or OnDisable. The stand-ins are distinct objects under Unity's ==; GetInstanceID needs native code and fails as unity-runtime-required. Polymorph.TryReplaceView and RestoreView swap stand-ins: the polymorph's prefab with size scaling off, then the unit's own; the view replacement record, interrupting all commands but movement and waking the unit run as in the game, models and the visual fade are skipped. Removed with DetachView before the unit is destroyed.");
+            Declare("unit-weapon-visuals", "graphics", "UnitEntityView.HandleAttackCommandRun and UnitHandEquipmentController.DidUpdate for battle units",
+                "Skipped: drawing weapon models in the unit's hands, toggling occlusion clipping, and waiting for the hand models to match the combat state. The stand-in has no models, so the wait ends at once.");
+            Declare("unit-hit-effects", "graphics", "HitPlayer.PlayDamageHit when the target or attacker has a battle view stand-in",
+                "Skipped: blood, hit effects and sounds of dealt damage. The game takes the same early return when either unit has no live view; damage itself is dealt by RuleDealDamage as shipped.");
+            Declare("unity-math", "environment", "UnityEngine Quaternion, Matrix4x4 and Vector3 native math",
+                "Managed versions with Unity's conventions (left-handed basis, Euler order Z, X, Y): look rotation, Euler conversion, inverse, angle-axis, from-to, lerp and slerp, matrix inverse, determinant, transpose, identity check and TRS, vector rotate-towards and slerp. Used for example when a unit turns or the game's A* code builds a graph transform. Results can differ from Unity's native code in the last bits of a float.");
+            Declare("hand-equipment-controller", "environment", "Game.HandsEquipmentController during a battle with an area",
+                "The default game mode provides UnitHandEquipmentController; offline no mode runs, so a battle with an area sets a new instance of the game's controller for its game loop and restores the previous value at cleanup.");
+            Declare("navigation-graph", "assets", "AstarPath.active and the area's navigation graph",
+                "Read as the game's NavMeshManager does: the area part's GraphCache asset, located through Bundles/locationlist.json in its .nav bundle, deserialized by the game's A* code into an AstarPath component without a GameObject. Path requests run on A*'s own non-threaded path processor; Unity's Update of the component runs once per battle frame.");
+            Declare("physics-scene", "scene", "UnityEngine.PhysicsScene native queries and the Physics.defaultPhysicsScene getter while a battle runs its game loop",
+                "Only during a battle with an area; outside battles these native calls fail as unity-runtime-required, as before. The default physics scene is a PhysicsScene with no handle. No level is loaded, so no level colliders exist: casts hit nothing and overlaps find nothing. The game's EntityBoundsController creates its entity-bounds scene (a scene handle with no level, valid only during the battle) and keeps each unit's bound sphere at the unit's position with the unit's corpulence as radius; overlaps on the unit bounds layer are answered from those spheres, the colliders the game's entity-bounds physics scene holds. Vision range and area queries use them. Heights follow the navigation mesh instead of ground colliders.");
+            Declare("debug-draw", "graphics", "UnityEngine.Debug.DrawLine",
+                "Skipped: editor scene-view lines, which a player build does not draw either.");
+            Declare("move-target-marker", "ui", "UnitEntityView.OnMovementStarted for battle units",
+                "Skipped: when a directly controllable unit starts a path, the method only places the destination marker of the UI's ClickPointerManager, which does not exist offline. The movement itself is UnitMovementAgent's and runs as shipped.");
+            Declare("frame-clock", "environment", "TimeController frame duration and game time during battle frames; Time.frameCount and Time.realtimeSinceStartup while a battle runs its game loop",
+                "Each battle frame is 1/30 s. It starts as a Unity frame does: the frame count and real time advance before A* and the controllers run. In TimeController's place, DeltaTime and GameDeltaTime are min(PlayerTimeScale * DebugTimeScale / 12, Time.deltaTime) and game time grows by it, as TimeController.Tick does in the default game mode outside turn-based combat; Time.deltaTime is the 1/30 s frame scaled by PlayerTimeScale * DebugTimeScale * UiTimeScale, unscaled in the first frame after the battle's loop starts. Between battle frames every read of the frame count is a new frame, so per-frame caches never return a value from before a change; outside battles Time.frameCount and Time.realtimeSinceStartup fail as unity-runtime-required, as before.");
         }
     }
 
@@ -211,6 +233,17 @@ namespace WotR.Testing.Offline
                 text = message?.ToString();
             }
             HarnessState.Logs.Enqueue(new CapturedLog { Source = "owlcat", Severity = severity.ToString(), Channel = channel?.Name, Message = text, Exception = ex?.ToString() });
+            return false;
+        }
+    }
+
+    /// <summary>Owlcat's profiler measures code such as the entity position-changed event; it keys timings by Unity frame.</summary>
+    [HarmonyPatch(typeof(Owlcat.Runtime.Core.ProfilingCounters.Counter), nameof(Owlcat.Runtime.Core.ProfilingCounters.Counter.AddMeasurement))]
+    internal static class ProfilingCounterPatch
+    {
+        private static bool Prefix()
+        {
+            Boundaries.Hit("profiling-counters");
             return false;
         }
     }

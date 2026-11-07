@@ -55,6 +55,12 @@ arguments and call sequences, shrinks failures and saves replayable cases. Use
 report. See [interface fuzzing](docs/fuzzing.md) for custom generators and limits.
 The meta-package also includes FsCheck.Xunit for author-written `[Property]` tests.
 
+`OfflineBattle` builds both sides of a fight from real unit blueprints through the
+game's API, runs them in an area with the game's own movement, vision, combat and
+command controllers on the area's real navigation mesh, and resets it to the same
+initial state, checking that the previous build left no game state behind.
+See [battles](docs/offline.md#battles).
+
 ## Building
 
 Requires Windows, .NET SDK 8 or later and a WotR installation. Set `WrathInstallDir` with

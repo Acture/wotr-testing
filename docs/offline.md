@@ -99,11 +99,16 @@ To pin a copy for a workspace or a controlled CI runner:
 pwsh -NoProfile -File scripts/New-WotrSnapshot.ps1 -WrathInstallDir "<game directory>" -Destination vendor/wotr
 ```
 
-This copies the managed assemblies, the two bundles, `Version.info` and the
-English and sound localization files (about 330 MB) and writes `manifest.json`
-with the game version and SHA-256 hashes. A run refuses a snapshot whose version
-or key hashes do not match its manifest. These are licensed game files: keep them
-out of Git, packages and public artifacts.
+This copies the managed assemblies, the two blueprint bundles, `Version.info`, the
+English and sound localization files, and the navigation graphs that battles with an
+area use (`Bundles/locationlist.json` and `Bundles/*.nav`, about 95 MB), about
+425 MB in all. It does not copy the unit view prefabs (`Bundles/*.unit`, about
+7.5 GB): battles read a unit's prefab on demand when the inputs have it, as with the
+installation, and otherwise need a corpulence override or fallback for the unit's
+size (see [Battles](#battles)). It writes `manifest.json` with the game version and
+SHA-256 hashes; a battle records the hash of each bundle it reads. A run refuses a
+snapshot whose version or key hashes do not match its manifest. These are licensed
+game files: keep them out of Git, packages and public artifacts.
 
 ## Running
 
@@ -174,6 +179,188 @@ a timeout, or an environment report naming a different runtime. An initializatio
 error in `environment.json` fails even if a test forgot to call `RequireGame()`.
 A failed startup is reported by every test with its stage name; nothing
 is retried with substitutes.
+
+## Battles
+
+`OfflineBattle` builds a battle from a `BattleScenario` and can rebuild the same
+initial state. The scenario lists units on each side by `BlueprintUnit` guid and
+what to change on them; the battle applies every change through the game's own
+API and checks it afterwards. A unit's changes are applied by kind, in the order
+of this table; changes of one kind in the order they were added:
+
+| Scenario entry | Game API | Checked |
+|---|---|---|
+| Unit | `UnitEntityData` constructor from the blueprint (body, starting items, `AddClassLevels`) | Errors the game logs while building fail the build |
+| `WithFaction` | `UnitDescriptor.SwitchFactions` after the unit is built | Faction |
+| `WithClassLevels` | `AddClassLevels.LevelUp` with the game's default selections | Class level; a blueprint's `ClassLevelLimit` turns levels into a level-up plan and fails the build |
+| `WithBaseStat` | `ModifiableValue.BaseValue` | Base value |
+| `Equip` | `ItemSlot.InsertItem` | The slot holds the item; a refused item fails the build with the game's reason |
+| `WithFact`, `WithAbility`, `WithBuff` | `AddFact`, `AddBuff` (the unit as caster, duration in rounds) | The fact, ability or buff is active |
+| `WithResource` | `Restore` and `Spend` on a resource the unit has | Current amount |
+| `At` | `UnitEntityData.Position` | Nothing else |
+| `MainCharacter` | `Player.SetMainCharacter` for a player-faction unit | `GameHelper.GetPlayerCharacter()` |
+| `Area` | `AreaPersistentState` as the loaded area, its navigation graph, the game loop (see below) | The area has a navigation graph |
+| `CorpulenceOverrideBySize` | Corpulence in meters by original size that replaces the view prefab's (see below) | Positive values |
+| `CorpulenceFallbackBySize` | Corpulence in meters by original size, used only when the inputs lack the unit's view prefab (see below) | Positive values |
+
+```csharp
+// Commands need an area: frames run on its navigation graph. KenabresBurning, with positions on its graph.
+var scenario = new BattleScenario("duel") { MainCharacter = "fighter", Area = "92180b58582ec5f43a756071cd339f52" };
+scenario.Unit("fighter", "party", "<player-faction unit guid>").Equip(BattleSlot.PrimaryHand, "<weapon guid>").At(50, 40, -70);
+scenario.Unit("cultist", "enemies", "<enemy unit guid>").WithResource("<resource guid>", 1).At(52, 40, -70);
+
+using var battle = OfflineBattle.Start(scenario, seed: 3);
+var fighter = battle.Unit("fighter");
+// A rule directly...
+var attack = Rulebook.Trigger(new RuleAttackWithWeapon(fighter, battle.Unit("cultist"), fighter.Body.PrimaryHand.Weapon, 0));
+// ...or a command through the game's command loop.
+fighter.Commands.Run(new UnitAttack(battle.Unit("cultist")));
+battle.RunUntilIdle(TimeSpan.FromSeconds(12));
+battle.Reset();   // same scenario and seed: battle.InitialState equals the first build's
+```
+
+Battle setup runs inside `RuleScope`: an error the game logs and catches while the
+units are built fails the build, unless `SetupLogAllowances` explains it with a
+reason. Nothing is retried or replaced. A failed build cleans up what it created
+before `BattleSetupException` is thrown.
+
+**Player context.** The battle prepares the party inventory with
+`Player.EnsureInventory()` once per process: player-faction units without their
+own inventory keep their starting items there. Rules that consult the player
+character need `MainCharacter`; for example `RuleDealDamage` from a party unit to a
+non-party unit calls `GameHelper.IsAttackingGreenNPC`, which reads the player
+character's group. Without one, that rule logs the game's NullReferenceException
+and `RuleScope` fails the operation. The main character must be a player-faction
+unit that uses the party inventory.
+
+**Area and game loop.** Set `BattleScenario.Area` to a `BlueprintArea` guid to run
+the game's own loop. The battle then loads the area as the game's current area
+(`AreaPersistentState`, no scene). It also loads the area's navigation graph as the
+game's `NavMeshManager` does: the graph asset named by the area's `GraphCache`,
+found through `Bundles/locationlist.json` in its `.nav` bundle and deserialized by
+the game's A* code. Units that use the party inventory go into
+`Player.CrossSceneState`, the others into the area's main state, and all are in the
+game (`IsInGame`). Each unit gets a view stand-in (boundary `unit-view-stand-in`): a
+`UnitEntityView` with no GameObject, model or animator that Unity's checks read as
+live. It is made from the view prefab `UnitEntityData.CreateView` would instantiate
+(an active polymorph's, else the custom prefab or the blueprint's `Prefab`, else the
+game's legacy-unit override), read on demand from its `.unit` bundle: as Unity's
+`Instantiate` does, it copies the serialized fields of the prefab's
+`UnitEntityView` (corpulence, rotation lock), `OverrideSizeScale` and
+`UnitMovementAgent` (acceleration, speeds, avoidance). So a unit's corpulence,
+which reach, engagement, attacks of opportunity, spacing and vision use, is its
+model's, scaled by size as the game scales it. References to models and colliders
+stay null; `environment.json` lists each prefab under `battles.unitViews` with its
+bundle hash, serialized corpulence and the fields left unset.
+
+A scenario can configure corpulence by a unit's original size (for a polymorph's
+view, the unit's size at that moment) in two separate ways:
+
+| Setting | With the unit's bundle in the inputs | Without it (for example a snapshot) |
+|---|---|---|
+| `CorpulenceOverrideBySize[Size.Huge] = 2f` | The prefab is read; only its corpulence is replaced, its movement agent and size override apply | The override is the corpulence; the view and movement agent keep their class defaults |
+| `CorpulenceFallbackBySize[Size.Huge] = 2f` | Not used: the prefab's own corpulence applies | The fallback is the corpulence; the view and movement agent keep their class defaults |
+| Neither | The prefab's corpulence | The build fails as environment-missing |
+
+The game still scales a configured value when the unit's size changes, as it scales
+the prefab's (a polymorph's view uses it unscaled, as the game does for polymorph
+views). The class defaults differ from many prefabs, for example an acceleration of
+20 where the Glabrezu's prefab has 8, so movement timing differs without the
+bundle. Overrides give the same corpulence with and without the bundles; fallbacks
+let a battle run without them but can give other results than the installation.
+`battles.unitViews` records each view's source: `prefab`,
+`prefab, corpulence override`, `corpulence override (...)` or
+`corpulence fallback (...)`.
+
+The game's `AttachView` attaches the view, so fact, part and view-attached hooks
+run; only the view's own side of attaching, which sets up models, is replaced. The
+view carries the game's own `UnitMovementAgent` with the seeker and path modifiers
+its `Init` creates. A polymorph swaps the view for one of its own prefab, with size
+scaling off and every command but movement interrupted, and swaps it back when it
+ends, as the game's `Polymorph` does. Units get these views in battles with and
+without an area. Give units commands with the game's API, for example
+`unit.Commands.Run(new UnitAttack(target))`, then run frames:
+
+| Call | Does |
+|---|---|
+| `battle.RunUntilIdle(limit)` | Runs frames until no battle unit has a command left and returns the game time that took; throws `TimeoutException` when commands still run after `limit` |
+| `battle.Run(duration)` | Runs frames for a fixed span of game time |
+
+A frame starts as a Unity frame does: Unity's frame count and real time advance,
+then Unity's `Update` of the A* component runs (path requests), then these
+controllers of the game's default mode, in its order:
+`UnitGroupsController`, the frame clock in `TimeController`'s place (1/30 s),
+`UnitLineOfSightCacheController`, `UnitMoveController`, `EntityBoundsController`,
+`UnitVisionRangeController`, `SleepingUnitsController`, `UnitMemoryController`,
+`UnitCombatJoinController`, `UnitCombatCooldownsController`,
+`UnitCombatEngagementController`, `UnitCommandController`,
+`UnitHandEquipmentController`, `UnitCombatLeaveController` and
+`GarbageEntityController` (which disposes items left without an owner, such as a
+polymorph's natural weapons after it ends). They are subscribed, activated and
+started when the battle is built, and stopped at cleanup, as `GameMode` does. So units walk paths the game's A* finds on the area's navigation
+mesh, avoid each other and accelerate as the game's agent makes them. Units see each
+other within vision range, remember enemies, and join combat on their own. Leaving
+an enemy's reach disengages and provokes an attack of opportunity, and commands
+approach, start, act and end in the game's code. Frames run inside `RuleScope`: an
+error the game logs and catches, for example an exception in an event handler,
+fails the call. A frame that does not advance game time, because the time scales
+pause the game (`PlayerTimeScale` 0, for example), fails the call with
+`InvalidOperationException` instead of running forever. Without an area, battles
+build as before and frames refuse to run. See the [known limits](#known-limits).
+
+**Reset.** `Reset()` and `Dispose()` run in the test process. Cleanup unsubscribes
+handlers added with `battle.Subscribe`, then removes each unit as the game's
+`EntityDestructionController` does: it removes the view stand-in, destroys and
+disposes the unit, removes it from its scene state and the awake units, and raises
+the destruction event. It then puts back the previous main character, stops the
+game loop, updates the player's combat state, unloads the navigation graph and the
+area, removes and disposes items the build put into the party inventory, and removes
+blueprints added with `battle.AddBlueprint`. Finally it restores game time (changed
+by frames and `battle.AdvanceGameTime`), the frame clock, and the game RNG from
+before the build. An error the game logs and catches during cleanup, for example in
+a destruction handler, counts as a failed cleanup step.
+
+It then compares the game-wide state with the state before the build: EventBus
+global subscribers and every subscriber under each unit, the same for Rulebook
+subscriptions, `EntityService` entities, the game's unit and awake-unit lists,
+`Player.CrossSceneState`, view stand-ins, party inventory items, their counts and
+the inventory's identity, game time and frame clock, the player's combat state,
+party and main character, unit groups, the loaded area, `AstarPath.active`,
+`Game.Instance.LevelUpController`, the turn-based controller's current turn, the
+rulebook event stack, the game RNG seed and call count, and the temporary
+blueprints. `battle.LastCleanup` lists failed
+steps and anything left behind. The game's `Game.Instance.DefaultUnit` and the items
+it holds are not counted: the game creates it the first time a calculation needs a
+unit and has none, and keeps it for the session.
+
+A cleanup that leaves anything marks the process dirty
+(`BattleWorker.IsDirty`). The process then refuses new battles with
+`[BATTLE_WORKER_DIRTY]` and the run fails validation, because it can no longer
+give a clean environment; run further battles in a new process. `Dispose()` never
+throws, so an exception from the test body is never hidden; `Reset()` throws
+`BattleCleanupException`. Only one battle is active per process, because the state
+it changes is process-wide. A battle still active when the run ends was never
+disposed, so its state was never cleaned up: the worker counts as dirty and the run
+fails validation as well. A new worker process is not started automatically.
+
+`battle.InitialState` and `battle.Observe()` give the key state as sorted text
+lines: per unit its blueprint, side, faction, levels, hit points, every stat, each
+equipment slot, own inventory, buffs, facts, abilities, resources, position,
+whether a command is running and whether the unit is in combat, plus the party
+inventory, main character, party size, game time and game RNG. Unique ids are left out. Building a unit makes no
+game RNG calls, so another seed changes only the RNG line of `InitialState`.
+
+**Paths.** `BattlePathSpec` keeps a path that already exists, with its id,
+waypoints including both endpoints, the distance or cost the source supplied, their
+units and the source (`FromGamePoints` copies `Pathfinding.Path.vectorPath` from a
+path the game computed). `battle.Paths` maps its `From` and `To` unit ids to the
+units of the current build, also after `Reset()`. The battle never computes,
+repairs or measures these paths. Units that move during frames follow paths the
+game's own A* finds on the area's navigation mesh, not the scenario's paths.
+
+`environment.json` records `battles`: the reset method, whether the worker is dirty
+and why, battles started, builds, cleanups, the player context prepared, the state
+compared and the last cleanups with their residue.
 
 ## Runtimes
 
@@ -321,6 +508,17 @@ rulebook calculations.
 | `runtime-images` | `Texture2D` constructors, `ImageConversion.LoadImage`, `Sprite.Create` | Images a mod builds at run time (icons from PNG files) have no native texture: constructors are skipped, `LoadImage` returns false and `Sprite.Create` returns null, like native assets |
 | `unity-random` | `UnityEngine.Random` native entries (`InitState`, integer and float `Range`, `value`, `state`, legacy `seed`) | One `System.Random`, seed `1` at startup. Integer results are `[min, max)`. Float `Range` and `value` are `[min, max)`. This is not the Unity player's sequence. `Random.state` values work only in the same process. Negative seeds follow `System.Random`'s absolute value |
 | `system-random-observe` | `System.Random` constructors | Counted only. The game's own instances stay in place and do not take the game seed. An unseeded construction during `RuleScope` is reported on that result |
+| `profiling-counters` | `Owlcat.Runtime.Core.ProfilingCounters.Counter.AddMeasurement` | Skipped. It files a timing under the current Unity frame (`Time.frameCount`), which does not exist offline; it wraps, for example, the event raised when a unit's position changes. Only profiler statistics are affected |
+| `unity-math` | `Quaternion`, `Matrix4x4` and `Vector3` native math | Managed versions with Unity's conventions (left-handed basis, Euler order Z, X, Y), used for example when a unit turns or the game's A* code builds a graph transform. Results can differ from Unity's native code in the last bits of a float |
+| `navigation-graph` | `AstarPath.active` and the area's navigation graph | Read as `NavMeshManager` does, from the `.nav` bundle `Bundles/locationlist.json` names, and deserialized by the game's A* code into an `AstarPath` component without a GameObject; path requests run on A*'s non-threaded path processor, updated once per battle frame |
+| `physics-scene` | `PhysicsScene` native queries, the `Physics.defaultPhysicsScene` getter and the entity-bounds scene while a battle runs its game loop | Only during a battle with an area; outside battles they fail as `unity-runtime-required`, as before. The default physics scene is a `PhysicsScene` with no handle. No level colliders exist offline: casts hit nothing and overlaps find nothing. The game's `EntityBoundsController` creates its entity-bounds scene (a scene with no level, valid only during the battle) and keeps each unit's bound sphere at the unit's position with its corpulence as radius; on the unit bounds layer those spheres answer, as the game's entity-bounds physics scene does. Vision range uses them. Heights follow the navigation mesh, not ground colliders |
+| `unit-view-stand-in` | `UnitEntityView` of battle units and the components on its GameObject; the view side of `AttachView`/`DetachView`; `Polymorph.TryReplaceView`/`RestoreView` for stand-ins | A view with no GameObject, model or animator that Unity's checks read as live, with the serialized fields of the unit's real view prefab, read on demand from its `.unit` bundle (`CorpulenceOverrideBySize` replaces only the corpulence; without the bundle, an override or `CorpulenceFallbackBySize` gives the corpulence and the rest keeps class defaults), carrying the game's own `UnitMovementAgent`, seeker and path modifiers. The game's `AttachView` and `DetachView` attach it; `EntityViewBase.AttachToData` and `DetachFromData` set up and release only what the mechanics read. Their transform reads as the unit (its position and orientation); writes to its position or rotation are dropped, because only a model would show them. The bound sphere's transform is moved by the game's `EntityBoundsController`. Enabled flags come from the prefab; enabling or disabling the movement agent runs its own `OnEnable` or `OnDisable`. The stand-ins are distinct objects under Unity's `==`; `GetInstanceID()` needs native code and fails as `unity-runtime-required`. A polymorph swaps stand-ins (its prefab with size scaling off, then the unit's own); the view replacement record, the command interruption and waking the unit run as in the game, models and the visual fade are skipped. Removed with `DetachView` before the unit is destroyed |
+| `unit-weapon-visuals` | `UnitEntityView.HandleAttackCommandRun`, `UnitHandEquipmentController.DidUpdate` for stand-ins | Skipped: weapon models in the hands, occlusion clipping, and waiting for the hand models to match the combat state |
+| `unit-hit-effects` | `HitPlayer.PlayDamageHit` when a stand-in is involved | Skipped: blood, hit effects and sounds. The game takes the same early return for units without a live view; `RuleDealDamage` deals the damage as shipped |
+| `debug-draw` | `Debug.DrawLine` | Skipped: editor scene-view lines, which a player build does not draw either |
+| `move-target-marker` | `UnitEntityView.OnMovementStarted` for battle units | Skipped: when a directly controllable unit starts a path, it only places the UI's destination marker (`ClickPointerManager`), which does not exist offline. The movement runs as shipped |
+| `hand-equipment-controller` | `Game.HandsEquipmentController` during a battle with an area | The default game mode provides `UnitHandEquipmentController`; no mode runs offline, so the battle's game loop sets a new instance of the game's controller and cleanup restores the previous value |
+| `frame-clock` | `TimeController` frame duration and game time, `Time.frameCount`, `Time.realtimeSinceStartup` | Each battle frame is 1/30 s. It starts as a Unity frame does: the frame count and real time advance before A* and the controllers run. In `TimeController`'s place, `DeltaTime` and `GameDeltaTime` are `min(PlayerTimeScale * DebugTimeScale / 12, Time.deltaTime)` and game time grows by it, as `TimeController.Tick` does in the default game mode outside turn-based combat; `Time.deltaTime` is the 1/30 s frame scaled by `PlayerTimeScale * DebugTimeScale * UiTimeScale`, unscaled in the first frame after the battle's loop starts. Between battle frames each frame-count read is a new frame, so per-frame caches are never stale; outside battles `Time.frameCount` and `Time.realtimeSinceStartup` fail as `unity-runtime-required`, as before |
 
 The game language setting is set to English before the game's own
 `LocalizationManager.Init`, as a player choosing English would; without it the
@@ -334,9 +532,38 @@ game would ask Unity for the system language.
 - **No engine.** Unit views, scenes, physics, pathing, animation and rendering do
   not exist. Spawning through `EntityCreationController` needs a view prefab; use
   pre-made units instead, for example the pre-made path of `RuleSummonUnit`.
-- **Starting equipment.** Pregens log "can't insert item ... to slot" for their
-  starting weapons and armor, so they are unarmed and unarmored. The cause has not
-  been established.
+- **Character-creation pregens.** Pregens such as `MC_Human_M_Cavalier_Base` are
+  templates for character creation. Their class levels come from a feature list
+  with `AddClassLevels`, but the blueprint's `ClassLevelLimit` is 0, so the game
+  records the class levels as a level-up plan and the unit has character level 0.
+  Mythic classes are capped only by `MythicLevelLimit`, which the cavalier pregen
+  lacks, so it does get its 2 mythic starting and 10 Angel mythic levels. Being in
+  the player faction, its starting weapons and armor fail the game's proficiency
+  check in `CanBeEquippedBy` ("can't insert item ... to slot") and stay in the
+  inventory: it is unarmed and unarmored. This is the game's behavior for such a
+  blueprint outside character creation. For battles use units that the blueprint
+  levels itself, for example NPC blueprints or player-faction test units with
+  `AddClassLevels` and no level limit.
+- **Battle loop.** Battles run the game controllers listed under
+  [Battles](#battles), not the whole default mode. In particular:
+  - No AI (`AiBrainController`): units act only on the commands you give them.
+  - Buff durations do not count down during frames (`UnitBuffsController`); use
+    `battle.AdvanceGameTime`.
+  - No fog of war: every unit counts as visible to the player.
+  - No animations: a command acts on its first tick, as the game's code does when
+    a command has no animation, so act timing and the spacing of iterative
+    attacks differ from the game.
+  - Units with doll data from character creation, and polymorphs into a doll,
+    need a corpulence override or fallback for their size: the game makes their
+    view from the doll room character, which battles do not read.
+- **Scene geometry.** The navigation mesh is the area's real one, so paths go
+  around walls and obstacles. Level colliders and sight blockers are not loaded:
+  units stand at navigation-mesh height, nothing blocks line of sight
+  (`LineOfSightGeometry` with no blockers, as before the game builds it), and only
+  battle units are in the physics scene.
+- **Turn-based combat.** The turn-based `CombatController` is not part of the
+  battle loop, so there is no initiative, rounds or turn order, and rules that
+  branch on turn-based state take their real-time path.
 - **Creature types.** The game gives undead and constructs no Constitution; pick
   test units whose rules match what is asserted.
 - **Harmony.** Runs use one `0Harmony` copy (UnityModManager's unless `-Harmony`
@@ -346,6 +573,8 @@ game would ask Unity for the system language.
   dependency mods. OwlcatModification mods are not.
 - **DLC ownership.** `WotrDlc` decides which DLCs exist; nothing asks a store.
   `local` reads Steam's installed depots only.
-- **Player state.** No save is loaded, so code that needs `Game.Instance.Player`
-  (for example `PrerequisitePlayerHasFeature`) logs errors when units are created.
+- **Player state.** No save is loaded. The player object exists with no main
+  character, an empty party and game time zero; code that needs more (for
+  example `PrerequisitePlayerHasFeature`) logs errors when units are created.
+  Battles can set a main character (see [Battles](#battles)).
 - **CI.** Public CI has no game files, so it cannot build or run these tests.

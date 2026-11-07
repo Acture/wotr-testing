@@ -49,7 +49,13 @@ foreach ($directory in 'MonoBleedingEdge/EmbedRuntime', 'MonoBleedingEdge/etc') 
     Get-ChildItem -LiteralPath (Join-Path $source $directory) -Recurse -File |
         ForEach-Object { $files.Add([System.IO.Path]::GetRelativePath($source, $_.FullName).Replace('\', '/')) }
 }
+# Navigation graphs for battles with an area: the asset-to-bundle list and every .nav bundle. Unit view prefabs (.unit,
+# about 7.5 GB) are not copied: battles read them on demand from the installation, or use a corpulence override or
+# fallback (BattleScenario.CorpulenceOverrideBySize, CorpulenceFallbackBySize).
+Get-ChildItem -LiteralPath (Join-Path $source 'Bundles') -File -Filter '*.nav' |
+    ForEach-Object { $files.Add([System.IO.Path]::GetRelativePath($source, $_.FullName).Replace('\', '/')) }
 foreach ($relative in @(
+        'Bundles/locationlist.json',
         'Bundles/blueprints-pack.bbp',
         'Bundles/blueprint.assets',
         'Wrath_Data/StreamingAssets/Version.info',
@@ -57,6 +63,14 @@ foreach ($relative in @(
         'Wrath_Data/StreamingAssets/Localization/Sound.json')) {
     if (-not (Test-Path -LiteralPath (Join-Path $source $relative))) { throw "Required file missing from installation: $relative" }
     $files.Add($relative)
+}
+# Navigation bundles the location list names but the installation lacks: battles in those areas fail as
+# environment-missing, with the snapshot as with the installation.
+$locations = Get-Content -LiteralPath (Join-Path $source 'Bundles/locationlist.json') -Raw | ConvertFrom-Json
+$missingNavigation = @($locations.m_Bundles | Where-Object { $_ -like '*.nav' } | Sort-Object -Unique |
+    Where-Object { -not (Test-Path -LiteralPath (Join-Path $source "Bundles/$_")) })
+if ($missingNavigation.Count -gt 0) {
+    Write-Warning "The installation lacks $($missingNavigation.Count) navigation bundle(s) its Bundles/locationlist.json names; battles in those areas cannot load their navigation graph: $($missingNavigation -join ', ')"
 }
 
 $hashes = [ordered]@{}
@@ -72,6 +86,7 @@ $manifest = [ordered]@{
     gameVersion = (Get-Content -LiteralPath $versionFile -Raw).Trim()
     sourceRoot = $source
     createdAt = (Get-Date).ToUniversalTime().ToString('o')
+    missingNavigationBundles = $missingNavigation
     files = $hashes
 }
 $manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $Destination 'manifest.json') -Encoding utf8

@@ -13,6 +13,62 @@
 - `system-random-observe` counts `System.Random` constructors without replacing
   the game's own instances. `RuleScope` fails an operation when that operation
   logs an error the game caught. `environment.json` records `gameRandom`.
+- Battle fixtures: `BattleScenario` describes units on each side by blueprint, with
+  faction, class levels, base stats, equipment, facts, abilities, buffs, resources,
+  positions, an optional main character and paths that already exist.
+  `OfflineBattle.Start(scenario, seed)` applies each entry through the game's API
+  and checks it; equipment the game refuses and errors logged while building fail
+  the build. `Reset()` rebuilds the same initial state in the same process and
+  compares game-wide state (EventBus and Rulebook subscriptions, entities, party
+  inventory, main character, game time, game RNG and more) with the state before
+  the build. A cleanup that leaves anything, or logs an error the game caught,
+  marks the process dirty: it refuses further battles and the run fails. A battle
+  never disposed fails the run as well. `environment.json` records `battles`.
+- Battle game loop: with `BattleScenario.Area` set, a battle loads the area and its
+  real navigation graph (read from the game's `.nav` bundle as `NavMeshManager`
+  does) and runs part of the game's default mode on its units:
+  `battle.RunUntilIdle(limit)` and `battle.Run(duration)` tick the game's
+  unit-group, line-of-sight, move, entity-bounds, vision-range, sleeping-unit,
+  memory, combat-join, cooldown, engagement, command, hand-equipment, combat-leave
+  and garbage-entity controllers in the game's order. Units walk A* paths with the
+  game's own `UnitMovementAgent`, see and remember each other, join combat, and
+  provoke attacks of opportunity when they leave an enemy's reach. Frames follow
+  the game's time scales and fail when those pause the game. Units have a
+  view stand-in without a model; AI, buff durations, fog of war, animations, level
+  colliders, sight blockers and turn-based combat do not run (see the known
+  limits).
+- Battle units take their view's serialized fields from their real view prefab,
+  read on demand from the game's `.unit` bundle as `Instantiate` does: corpulence
+  (used by reach, engagement, attacks of opportunity, spacing and vision), the size
+  override and the movement agent's acceleration, speeds and avoidance. New
+  `BattleScenario.CorpulenceOverrideBySize` replaces only the corpulence of units
+  of a size; `CorpulenceFallbackBySize` gives a corpulence used only when the
+  inputs lack a unit's bundle. A unit whose bundle is missing and whose size has
+  neither fails the build as environment-missing. The game's `AttachView` attaches
+  the view, so fact, part and view-attached hooks run. A polymorph swaps the view
+  for one of its own prefab and back, as the game's `Polymorph` does. The game's
+  `EntityBoundsController` keeps the units' bound spheres, and its
+  `GarbageEntityController` disposes items left without an owner. Units with doll
+  data from character creation need a corpulence override or fallback.
+- Snapshots now include `Bundles/locationlist.json` and the `.nav` bundles (about
+  95 MB) for battle navigation; make a new snapshot to use battles with an area.
+  Unit view prefabs (`.unit`, about 7.5 GB) are not copied; with a snapshot, set a
+  corpulence override or fallback for each size a battle uses.
+- New boundaries `navigation-graph`, `physics-scene`, `unit-view-stand-in`,
+  `unit-weapon-visuals`, `unit-hit-effects`, `debug-draw`, `move-target-marker`,
+  `hand-equipment-controller` and `frame-clock` for battles.
+- New boundary `unity-math`: managed versions of Unity's native quaternion, matrix
+  and vector math. Code that reached these functions failed as
+  `unity-runtime-required` before and now runs, also outside battles; the results
+  are the same computation, not an assumed scene. `Debug.DrawLine` is skipped
+  everywhere, as a player build draws nothing. Physics queries, `Time.frameCount`
+  and `Time.realtimeSinceStartup` are answered only while a battle runs its game
+  loop; outside battles they still fail as `unity-runtime-required`.
+- New boundary `profiling-counters`: Owlcat profiling counters no longer reach
+  Unity's native `Time.frameCount`, so setting a unit's `Position` works offline.
+- Documented why character-creation pregens such as `MC_Human_M_Cavalier_Base`
+  have character level 0, Angel mythic levels and no starting gear equipped
+  offline.
 
 ## 0.1.0-preview.3 - 2026-10-18
 

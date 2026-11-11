@@ -69,6 +69,10 @@
   environment failures with the episode and step, never outcomes; a turn-based
   surprise round in which the game's own code starts no turn fails the step at once
   with `TurnBasedStallException`.
+- `BattleEnvironmentServer` serves the battle environment to a training program in
+  another process (one client on a local TCP port, JSON lines);
+  `examples/training` has Python clients (REINFORCE, rollout planning, on-policy
+  distillation, MaskablePPO through a Gymnasium interface).
 - `BattleSlot.QuickSlot1` to `QuickSlot5` put usable items in a battle unit's quick
   slots. `BattleScenario.FrameLogAllowances` allows errors the game logs during
   battle frames that the scenario explains; the game's own known logs (a touch

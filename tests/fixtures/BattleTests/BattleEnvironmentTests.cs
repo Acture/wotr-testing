@@ -408,7 +408,13 @@ namespace WotR.Testing.BattleTests
 
             // The fighter drinks a potion from its quick slot, which empties; then it casts on the cultist with a click, and
             // the cultist turns its other prepared spell into Inflict Light Wounds on the fighter.
-            result = WaitUntilReady(environment, environment.Step(BattleAction.UseAbility("fighter", "item:2:PotionOfCureModerateWounds")), "fighter");
+            // A toggle goes together with the unit's command in one step: Fight Defensively off, then the potion.
+            Assert.Contains("one per unit", Assert.Throws<BattleActionRejectedException>(() => environment.Step(
+                BattleAction.UseAbility("fighter", "item:2:PotionOfCureModerateWounds"), BattleAction.Wait("fighter"))).Message);
+            result = WaitUntilReady(environment, environment.Step(
+                BattleAction.Toggle("fighter", "toggle:FightDefensivelyToggleAbility"),
+                BattleAction.UseAbility("fighter", "item:2:PotionOfCureModerateWounds")), "fighter");
+            Assert.DoesNotContain("FightDefensivelyToggleAbility", result.Observation.Unit("fighter").TogglesOn);
             Assert.DoesNotContain(result.Observation.Candidates, c => c.Ability != null && c.Ability.StartsWith("item:2:", StringComparison.Ordinal));
             Assert.False(result.Observation.Unit("fighter").ItemUses.ContainsKey("item:2:PotionOfCureModerateWounds"));
             result = environment.Step(

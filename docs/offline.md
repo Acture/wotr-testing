@@ -565,10 +565,11 @@ the player's turn checks. Usable items go into quick slots with
 real time the game's move command finds its own path to the point
 (`ClickGroundHandler`), in turn-based combat the click goes through the game's
 predictions as for a scenario path, and a controlled unit the player does not
-control gets the move with the path the game's agent finds. A unit given an action other than waiting
-decides again as soon as it is ready, so a toggle or a refused click returns at
-once. `BattleAction.Wait(unit)` leaves a ready unit idle until the next decision
-point.
+control gets the move with the path the game's agent finds. A unit given an action other than waiting or
+toggles decides again as soon as it is ready, so a refused click returns at once. A step takes one action per unit besides its toggles: toggles go together with
+the unit's command and are switched first, as the player switches them before
+clicking; a unit given only toggles waits like `Wait`. `BattleAction.Wait(unit)`
+leaves a ready unit idle until the next decision point.
 Units not listed keep running their commands, and units of other sides act on the
 game's AI. A step with an action that is not among the candidates, a unit that is
 not ready or not controlled, or two actions for one unit is rejected with
@@ -645,6 +646,17 @@ and actions. It is not an outcome or a training sample: the episode stops until
 `Reset`, and the record keeps the error. A cleanup that leaves state behind makes
 `Reset` throw `BattleCleanupException`, the process is dirty, and the environment
 cannot continue; run the next episodes in a new process.
+
+**Training programs in another process.** `BattleEnvironmentServer.Serve(port,
+scenario)` serves the environment to one client on a local TCP port, one JSON object
+per line: `start`, `reset`, `observe`, `step` with candidate indices or action
+objects (with a point for any-point candidates), `close`. The battle runs in the test
+process inside the offline runtime; the client only sends decisions. The battle
+fixture's `TrainingServer` test serves while `WOTR_TRAIN_PORT` is set, and
+[examples/training](../examples/training/README.md) has Python clients: REINFORCE,
+random-rollout planning, on-policy distillation and MaskablePPO through a Gymnasium
+interface with action masks. The environment has no save and restore; rollouts
+rebuild a state by replaying from the episode's seed.
 
 **Records.** `environment.Record` has the scenario, episode, seed, game version,
 library version, initial state, and per step the actions, game time, decision and

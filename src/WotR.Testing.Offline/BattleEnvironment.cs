@@ -169,17 +169,19 @@ namespace WotR.Testing.Offline
             {
                 var start = Game.Instance.Player.GameTime;
                 var notes = new List<string>();
-                foreach (var action in list)
+                // Toggles first, as the player switches them before giving the command.
+                foreach (var action in list.Where(a => a.Kind == BattleActionKind.Toggle).Concat(list.Where(a => a.Kind != BattleActionKind.Toggle)))
                     if (Issue(action, before, AfterFrame) is { } note) notes.Add(note);
-                // In real time a unit that waits stays ready and idle; a busy unit is one that runs a command or was given
-                // another action (a toggle, or a click the game refused, decides again after a frame). In turn-based
+                // In real time a unit that waits, or only switches toggles, stays ready and idle until the decision interval;
+                // a busy unit is one that runs a command or was given another action (a click the game refused decides
+                // again after a frame). In turn-based
                 // combat a unit given an action is busy until the game waits for it again, even when the game ignored it;
                 // a unit that ends its turn waits for its next turn (one the player does not control stays idle until the
                 // game ends its turn).
                 var turnAtStart = InTurnBasedCombat ? Game.Instance.TurnBasedCombatController.CurrentTurn : null;
                 var busy = battle.Units.Where(u => u.Controlled && u.Unit.Descriptor.State.IsConscious
                     && (turnAtStart == null
-                        ? !IsReady(u.Unit) || list.Any(a => a.Unit == u.Id && a.Kind != BattleActionKind.Wait)
+                        ? !IsReady(u.Unit) || list.Any(a => a.Unit == u.Id && a.Kind != BattleActionKind.Wait && a.Kind != BattleActionKind.Toggle)
                         : list.Any(a => a.Unit == u.Id && a.Kind != BattleActionKind.EndTurn))).ToList();
                 var realTime = TimeSpan.Zero;
                 var stalled = TimeSpan.Zero;
@@ -584,8 +586,14 @@ namespace WotR.Testing.Offline
         private static List<string> Reject(IReadOnlyList<BattleAction> actions, BattleObservation observation)
         {
             var problems = new List<string>();
-            foreach (var group in actions.GroupBy(a => a?.Unit, StringComparer.Ordinal).Where(g => g.Count() > 1))
-                problems.Add($"{group.Key} has {group.Count()} actions; a step takes at most one per unit");
+            // A player switches toggles and gives a command in the same moment: a unit takes one action besides its toggles.
+            foreach (var group in actions.Where(a => a != null).GroupBy(a => a.Unit, StringComparer.Ordinal))
+            {
+                var main = group.Count(a => a.Kind != BattleActionKind.Toggle);
+                if (main > 1) problems.Add($"{group.Key} has {main} actions besides toggles; a step takes at most one per unit");
+                foreach (var toggle in group.Where(a => a.Kind == BattleActionKind.Toggle).GroupBy(a => a.Ability, StringComparer.Ordinal).Where(g => g.Count() > 1))
+                    problems.Add($"{group.Key} switches {toggle.Key} {toggle.Count()} times in one step");
+            }
             foreach (var action in actions)
             {
                 if (action == null)

@@ -26,6 +26,10 @@ namespace WotR.Testing.Offline
         private static int builds;
         private static int cleanups;
         private static int failedCleanups;
+        private static int episodes;
+        private static int episodeSteps;
+        private static int endedEpisodes;
+        private static int failedEpisodes;
 
         /// <summary>Why the worker is dirty, or null while it is clean.</summary>
         public static string DirtyReason { get; private set; }
@@ -68,6 +72,26 @@ namespace WotR.Testing.Offline
             lock (Gate) builds++;
         }
 
+        /// <summary>A <see cref="BattleEnvironment"/> episode began.</summary>
+        internal static void NoteEpisode()
+        {
+            lock (Gate) episodes++;
+        }
+
+        internal static void NoteEpisodeStep(bool ended)
+        {
+            lock (Gate)
+            {
+                episodeSteps++;
+                if (ended) endedEpisodes++;
+            }
+        }
+
+        internal static void NoteEpisodeFailure()
+        {
+            lock (Gate) failedEpisodes++;
+        }
+
         internal static void NotePlayerContext(string name, string description)
         {
             lock (Gate) PlayerContext.Add(new KeyValuePair<string, string>(name, description));
@@ -87,6 +111,18 @@ namespace WotR.Testing.Offline
                     sha256 = navigation.BundleSha256,
                     graphs = navigation.GraphTypes,
                     nodes = navigation.Nodes,
+                    settings = navigation.SettingsSource,
+                    settingsUnset = navigation.SettingsGaps,
+                    nearestNodeSearch = new
+                    {
+                        full = navigation.Astar.fullGetNearestSearch,
+                        prioritizeGraphs = navigation.Astar.prioritizeGraphs,
+                        maxDistance = navigation.Astar.maxNearestNodeDistance,
+                    },
+                    heuristic = navigation.Astar.heuristic.ToString(),
+                    heuristicScale = navigation.Astar.heuristicScale,
+                    // Not applied: a battle frame does all of its path work (boundary pathfinding-clock).
+                    sceneMaxFrameTime = navigation.SceneFrameTime,
                 };
         }
 
@@ -150,6 +186,7 @@ namespace WotR.Testing.Offline
                     builds,
                     cleanups,
                     failedCleanups,
+                    environment = episodes == 0 ? null : new { episodes, steps = episodeSteps, ended = endedEpisodes, failed = failedEpisodes },
                     playerContext = PlayerContext.Select(pair => new { name = pair.Key, prepared = pair.Value }).ToArray(),
                     navigation = Navigation.Values.ToArray(),
                     unitViews = UnitViews.Values.ToArray(),
@@ -158,7 +195,7 @@ namespace WotR.Testing.Offline
                         "EventBus global and unit subscriptions", "Rulebook global, initiator and target subscriptions",
                         "EntityService entities", "game state and awake units", "Player.CrossSceneState entities", "player party inventory items, their counts and Player.Inventory identity", "game time",
                         "frame clock (DeltaTime, GameDeltaTime)", "unit view stand-ins",
-                        "player combat state, party and main character", "game unit groups", "loaded area", "entity-bounds scene",
+                        "player combat state, party and main character", "game unit groups", "loaded area and the scene loader's current area", "entity-bounds scene",
                         "Game.Instance.LevelUpController", "turn-based combat controller current turn", "rulebook event stack",
                         "game RNG seed and call count", "temporary blueprints",
                     },

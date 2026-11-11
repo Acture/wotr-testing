@@ -17,7 +17,9 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   runtime (the default test runtime) from the inputs.
   `src/WotR.Testing.VSTest/`, `src/WotR.Testing.VSTestBootstrap/` and
   `src/WotR.Testing.Build/` integrate it with `dotnet test`, isolate SDK host
-  dependencies and validate reports. These tools contain no game files.
+  dependencies and validate reports. `src/WotR.Testing.Snapshot/` (`wotr-snapshot`)
+  reads the A* settings of the mechanics scenes for `New-WotrSnapshot.ps1`. These
+  tools contain no game files.
   Planned: `src/WotR.Testing.InGame/` for in-game testing (added to the meta-package),
   and a shared library both use once they need one.
 - `scripts/`: `Invoke-WotrOfflineTests.ps1` (generic runner) and

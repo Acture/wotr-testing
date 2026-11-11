@@ -1,5 +1,7 @@
 using System;
 using System.Linq;
+using System.Reflection;
+using System.Threading;
 using Kingmaker.Blueprints;
 using Kingmaker.Blueprints.Items;
 using Kingmaker.EntitySystem.Stats;
@@ -65,7 +67,9 @@ namespace WotR.Testing.BattleTests
 
         internal static BattleScenario Duel()
         {
-            var scenario = new BattleScenario("duel") { MainCharacter = "fighter", Area = Guids.KenabresBurning };
+            // The mechanics tests give every command themselves, so both sides are controlled and the game's AI decides
+            // for nobody (TheGameAiFightsForUnitsOfUncontrolledSides runs it).
+            var scenario = new BattleScenario("duel") { MainCharacter = "fighter", Area = Guids.KenabresBurning, ControlledSides = { "party", "enemies" } };
             scenario.Unit("fighter", "party", Guids.Fighter)
                 .WithBaseStat(StatType.Strength, 16)
                 .Equip(BattleSlot.PrimaryHand, Guids.StandardLongsword)
@@ -368,6 +372,66 @@ namespace WotR.Testing.BattleTests
         }
 
         [Fact]
+        public void AFrameSearchesAndReturnsEveryQueuedPathHoweverSlowTheMachine()
+        {
+            game.RequireGame();
+            var scenario = new BattleScenario("slow-machine") { Area = Guids.KenabresBurning };
+            scenario.Unit("walker", "enemies", Guids.Cultist).At(52, 40, -70);
+            using var battle = OfflineBattle.Start(scenario, seed: 9);
+            var start = battle.Unit("walker").Position;
+            var graph = AstarPath.active.data.recastGraph;
+            var startNode = graph.GetNearest(start, Pathfinding.NNConstraint.Default).node;
+            var reachable = new System.Collections.Generic.List<UnityEngine.Vector3>();
+            graph.GetNodes(node => { if (node.Walkable && node.Area == startNode.Area) reachable.Add((UnityEngine.Vector3)node.position); });
+            // The farthest reachable point, then three near ones.
+            var targets = reachable.OrderByDescending(point => Distance(start, point)).ThenBy(point => point.x).ThenBy(point => point.z).Take(1)
+                .Concat(reachable.Where(point => Distance(start, point) is >= 3f and <= 10f).OrderBy(point => point.x).ThenBy(point => point.z).Take(3))
+                .ToList();
+            Assert.Equal(4, targets.Count);
+
+            // The game's A* stops searching for the frame after maxFrameTime (10 ms in this scene) on the computer's clock,
+            // checked after each search and every 500 nodes within one, and hands paths back in 0.5 ms slices. Here every
+            // search starts 25 ms late and every hand-back takes 1 ms, as on a slow or busy machine.
+            var returned = new System.Collections.Generic.List<(Pathfinding.Path Path, Pathfinding.PathCompleteState State, int Searched)>();
+            var searchedNodes = typeof(Pathfinding.Path).GetField("searchedNodes", BindingFlags.NonPublic | BindingFlags.Instance);
+            var paths = targets
+                .Select(target => Pathfinding.ABPath.Construct(start, target, path =>
+                {
+                    returned.Add((path, path.CompleteState, (int)searchedNodes.GetValue(path)));
+                    Thread.Sleep(1);
+                }))
+                .ToList();
+            using (new SlowPathSearches(TimeSpan.FromMilliseconds(25)))
+            {
+                foreach (var path in paths) AstarPath.StartPath(path);
+                battle.Run(TimeSpan.FromMilliseconds(1));
+            }
+
+            // One frame searched and returned them all, in the order they were requested.
+            Assert.Equal(paths.Cast<Pathfinding.Path>(), returned.Select(r => r.Path));
+            Assert.All(returned, r => Assert.Equal(Pathfinding.PathCompleteState.Complete, r.State));
+            Assert.True(returned[0].Searched > 500, $"the long path searched {returned[0].Searched} nodes");
+        }
+
+        /// <summary>Holds up every search of the active AstarPath's path processor before it starts.</summary>
+        private sealed class SlowPathSearches : IDisposable
+        {
+            private readonly object processor;
+            private readonly EventInfo searchStarts;
+            private readonly Action<Pathfinding.Path> handler;
+
+            internal SlowPathSearches(TimeSpan delay)
+            {
+                processor = typeof(AstarPath).GetField("pathProcessor", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(AstarPath.active);
+                searchStarts = processor.GetType().GetEvent("OnPathPreSearch");
+                handler = _ => Thread.Sleep(delay);
+                searchStarts.AddEventHandler(processor, handler);
+            }
+
+            public void Dispose() => searchStarts.RemoveEventHandler(processor, handler);
+        }
+
+        [Fact]
         public void FramesFollowTheGameTimeScalesAndRefuseAPausedGame()
         {
             game.RequireGame();
@@ -384,7 +448,7 @@ namespace WotR.Testing.BattleTests
 
                 time.PlayerTimeScale = 0f;
                 var paused = Assert.Throws<InvalidOperationException>(() => battle.Run(TimeSpan.FromSeconds(1)));
-                Assert.Contains("did not advance game time", paused.Message);
+                Assert.Contains("set its time scale to 0", paused.Message);
             }
             finally
             {
@@ -452,6 +516,11 @@ namespace WotR.Testing.BattleTests
             Assert.Contains(cultist, fighter.CombatState.EngagedUnits);
             Assert.Empty(attacks.Attacks);
 
+            // Before its initiative comes up, a unit surprised into combat makes no attack of opportunity
+            // (UnitCombatState.AttackOfOpportunity requires CanActInCombat, as the rules for flat-footed units do).
+            for (var waited = 0; waited < 80 && fighter.CombatState.IsWaitingInitiative; waited++) battle.Run(TimeSpan.FromSeconds(0.1));
+            Assert.False(fighter.CombatState.IsWaitingInitiative);
+
             // The cultist walks away along the navigation mesh; leaving the fighter's reach disengages it, and the
             // engagement controller makes the fighter attack.
             cultist.Commands.Run(new UnitMoveTo(new UnityEngine.Vector3(54f, 40f, -68.1f), 0.3f));
@@ -468,7 +537,7 @@ namespace WotR.Testing.BattleTests
         public void AHugeDemonThreatensAsFarAsItsOwnViewPrefabReaches()
         {
             game.RequireGame();
-            var scenario = new BattleScenario("demon") { MainCharacter = "fighter", Area = Guids.KenabresBurning };
+            var scenario = new BattleScenario("demon") { MainCharacter = "fighter", Area = Guids.KenabresBurning, ControlledSides = { "party", "enemies" } };
             scenario.Unit("fighter", "party", Guids.Fighter).At(50, 40, -70);
             scenario.Unit("demon", "enemies", Guids.Glabrezu).At(57, 40, -70);
             using var battle = OfflineBattle.Start(scenario, seed: 23);
@@ -498,7 +567,7 @@ namespace WotR.Testing.BattleTests
 
         private static BattleScenario Demon(string name)
         {
-            var scenario = new BattleScenario(name) { MainCharacter = "fighter", Area = Guids.KenabresBurning };
+            var scenario = new BattleScenario(name) { MainCharacter = "fighter", Area = Guids.KenabresBurning, ControlledSides = { "party", "enemies" } };
             scenario.Unit("fighter", "party", Guids.Fighter).At(50, 40, -70);
             scenario.Unit("demon", "enemies", Guids.Glabrezu).At(57, 40, -70);
             return scenario;
@@ -649,19 +718,108 @@ namespace WotR.Testing.BattleTests
             fighter.Commands.Run(attack);
             battle.RunUntilIdle(TimeSpan.FromSeconds(12));
             Assert.True(attack.IsActed);
-            // In real-time combat UnitEntityData.SpendAction charges the standard action for the round, and the game's
-            // UnitCombatCooldownsController counts it down frame by frame.
-            var cooldown = fighter.CombatState.Cooldown.StandardAction;
+            // Entering combat, the game's UnitCombatPrepareController rolls initiative and staggers when each unit's
+            // first round starts (Cooldown.Initiative). A unit that is not surprised may act before then; the attack
+            // charges the standard action for the round (UnitEntityData.SpendAction).
+            var state = fighter.CombatState;
+            Assert.True(state.Prepared);
+            var cooldown = state.Cooldown.StandardAction;
             Assert.InRange(cooldown, 3f, 6f);
+            // While a unit waits for its initiative, UnitCombatCooldownsController counts down only that wait.
+            if (state.IsWaitingInitiative)
+            {
+                var wait = state.Cooldown.Initiative;
+                battle.Run(TimeSpan.FromSeconds(wait + 0.05));
+                Assert.False(state.IsWaitingInitiative);
+                Assert.InRange(state.Cooldown.StandardAction, cooldown - 0.1f, cooldown);
+                cooldown = state.Cooldown.StandardAction;
+            }
             battle.Run(TimeSpan.FromSeconds(1));
-            Assert.InRange(fighter.CombatState.Cooldown.StandardAction, cooldown - 1.1f, cooldown - 0.9f);
+            Assert.InRange(state.Cooldown.StandardAction, cooldown - 1.1f, cooldown - 0.9f);
             battle.Run(TimeSpan.FromSeconds(6));
-            Assert.Equal(0f, fighter.CombatState.Cooldown.StandardAction);
+            Assert.Equal(0f, state.Cooldown.StandardAction);
 
             // The game's own disposal leaves combat (UnitEntityData.OnDispose), so the reset needs no extra step.
             battle.Reset();
             Assert.True(battle.LastCleanup.Clean, battle.LastCleanup.ToString());
             Assert.True(initial.Equals(battle.InitialState), string.Join(Environment.NewLine, initial.Difference(battle.InitialState)));
+        }
+
+        [Fact]
+        public void TheGameAiFightsForUnitsOfUncontrolledSides()
+        {
+            game.RequireGame();
+            var scenario = Duel();
+            scenario.ControlledSides.Remove("enemies");
+            using var battle = OfflineBattle.Start(scenario, seed: 17);
+            var initial = battle.InitialState;
+            Assert.Contains("unit fighter control controlled", initial.Lines);
+            Assert.Contains("unit cultist control game-ai", initial.Lines);
+            var fighter = battle.Unit("fighter");
+            var recorder = new CommandRecorder();
+            battle.Subscribe(recorder);
+
+            // Nobody commands anyone: the enemies see the fighter, join combat and attack it with the game's AI, which
+            // never decides for the controlled fighter.
+            battle.Run(TimeSpan.FromSeconds(12));
+            Assert.Contains(recorder.Acted, a => a.ByAi && a.Executor == battle.Unit("cultist"));
+            Assert.Contains(recorder.Acted, a => a.ByAi && a.Executor == battle.Unit("guard"));
+            Assert.DoesNotContain(recorder.Acted, a => a.Executor == fighter);
+            Assert.True(fighter.IsInCombat);
+
+            battle.Reset();
+            Assert.True(battle.LastCleanup.Clean, battle.LastCleanup.ToString());
+            Assert.True(initial.Equals(battle.InitialState), string.Join(Environment.NewLine, initial.Difference(battle.InitialState)));
+        }
+
+        [Fact]
+        public void LethalDamageKillsTheUnitThroughTheGameLifeController()
+        {
+            game.RequireGame();
+            using var battle = OfflineBattle.Start(Duel(), seed: 5);
+            var initial = battle.InitialState;
+            var fighter = battle.Unit("fighter");
+            var cultist = battle.Unit("cultist");
+            fighter.JoinCombat(notSurprised: true);
+            cultist.JoinCombat(notSurprised: true);
+            cultist.Commands.Run(new UnitAttack(fighter));
+            RuleScope.Run("lethal damage", () =>
+                Rulebook.Trigger(new RuleDealDamage(fighter, cultist, new PhysicalDamage(new ModifiableDiceFormula(new DiceFormula(20, DiceType.D20)), 200, PhysicalDamageForm.Slashing))));
+            // The rule only records the damage; the game's UnitLifeController decides the life state on the next frame.
+            Assert.Equal(Kingmaker.UnitLogic.UnitLifeState.Conscious, cultist.Descriptor.State.LifeState);
+
+            battle.Run(TimeSpan.FromSeconds(0.1));
+            Assert.Equal(Kingmaker.UnitLogic.UnitLifeState.Dead, cultist.Descriptor.State.LifeState);
+            Assert.True(cultist.Descriptor.State.IsFinallyDead);
+            Assert.False(cultist.IsInCombat);
+            Assert.True(cultist.Commands.Empty);
+            Assert.Equal(Kingmaker.UnitLogic.UnitLifeState.Conscious, fighter.Descriptor.State.LifeState);
+
+            battle.Reset();
+            Assert.True(battle.LastCleanup.Clean, battle.LastCleanup.ToString());
+            Assert.True(initial.Equals(battle.InitialState), string.Join(Environment.NewLine, initial.Difference(battle.InitialState)));
+        }
+
+        [Fact]
+        public void BuffDurationsRunOutInGameFrames()
+        {
+            game.RequireGame();
+            var scenario = Duel();
+            scenario.Units.Single(u => u.Id == "fighter").WithBuff(Guids.BlessBuff, rounds: 1);
+            using var battle = OfflineBattle.Start(scenario, seed: 5);
+            var bless = OfflineGame.Blueprint<BlueprintBuff>(Guids.BlessBuff);
+            var shield = OfflineGame.Blueprint<BlueprintBuff>(Guids.ShieldOfFaithBuff);
+            Assert.NotNull(battle.Unit("fighter").Buffs.GetBuff(bless));
+
+            battle.Run(TimeSpan.FromSeconds(5.5));
+            Assert.NotNull(battle.Unit("fighter").Buffs.GetBuff(bless));
+            battle.Run(TimeSpan.FromSeconds(1));
+            // The game's UnitBuffsController ends a one-round buff after 6 seconds of game time; ten rounds still run.
+            Assert.Null(battle.Unit("fighter").Buffs.GetBuff(bless));
+            Assert.NotNull(battle.Unit("cultist").Buffs.GetBuff(shield));
+
+            battle.Reset();
+            Assert.True(battle.LastCleanup.Clean, battle.LastCleanup.ToString());
         }
 
         [Fact]

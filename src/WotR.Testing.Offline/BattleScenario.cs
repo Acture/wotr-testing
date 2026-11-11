@@ -26,6 +26,14 @@ namespace WotR.Testing.Offline
         public IList<BattlePathSpec> Paths { get; } = new List<BattlePathSpec>();
 
         /// <summary>
+        /// Sides whose units act only on the commands given to them: the game's AI never decides for them, not even
+        /// the actions it takes for party members whose AI the player switched off (boundary <c>external-control</c>).
+        /// The game's AI decides for every other unit in combat, as in the game, where the party's own AI follows
+        /// <c>UnitEntityData.IsAIEnabled</c>. Commands are the game's own, as its AI or the player would give them.
+        /// </summary>
+        public ISet<string> ControlledSides { get; } = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>
         /// Id of a player-faction unit that becomes the player's main character through the game's
         /// <c>Player.SetMainCharacter</c> for the battle. Rules that consult the player character need one, for example
         /// <c>RuleDealDamage</c> through <c>GameHelper.IsAttackingGreenNPC</c> when a party unit damages a non-party unit.
@@ -39,6 +47,17 @@ namespace WotR.Testing.Offline
         /// unit speed and vision read the loaded area's settings. No scene is loaded.
         /// </summary>
         public string Area { get; set; }
+
+        /// <summary>
+        /// Turns on the game's turn-based mode for the battle with the game's own setting
+        /// <c>SettingsRoot.Game.TurnBased.EnableTurnBasedMode</c>, as a player switches it, and restores the previous value
+        /// at cleanup. The game's <c>TurnBased.Controllers.CombatController</c> then runs combat in turns: it orders the
+        /// units by initiative, starts rounds and lets one unit act at a time, while the rest of the game waits. As in the
+        /// game, combat becomes turn-based when the party enters it, so a turn-based battle needs an
+        /// <see cref="Area"/> (whose navigation graphs include the grid the game's turns use) and a
+        /// <see cref="MainCharacter"/>.
+        /// </summary>
+        public bool TurnBased { get; set; }
 
         /// <summary>
         /// Corpulence in meters that replaces the view prefab's, by a unit's original size (for a polymorph's view, the
@@ -82,6 +101,13 @@ namespace WotR.Testing.Offline
             var ids = new HashSet<string>(Units.Select(u => u.Id), StringComparer.Ordinal);
             if (MainCharacter != null && !ids.Contains(MainCharacter))
                 throw new ArgumentException($"Main character {MainCharacter} is not a unit of scenario {Name}.");
+            if (TurnBased && Area == null)
+                throw new ArgumentException($"Scenario {Name} is turn-based without an Area; the game's turns run in game frames on the area's navigation grid.");
+            if (TurnBased && MainCharacter == null)
+                throw new ArgumentException($"Scenario {Name} is turn-based without a MainCharacter; the game runs turns only while the party is in combat.");
+            foreach (var side in ControlledSides)
+                if (!Units.Any(u => u.Side == side))
+                    throw new ArgumentException($"Controlled side {side} has no unit in scenario {Name}.");
             foreach (var path in Paths)
             {
                 path.Validate();

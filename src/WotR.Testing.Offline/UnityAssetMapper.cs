@@ -200,16 +200,29 @@ namespace WotR.Testing.Offline
             if (pathId != 0 && byPathId.TryGetValue(pathId, out var cached)) return cached;
             var instance = Create(type);
             if (pathId != 0) byPathId[pathId] = instance;
+            if (instance is UnityEngine.Object asset)
+            {
+                // A loaded asset is alive in Unity: the game's `if (asset)` and `asset != null` checks see it.
+                OfflineUnitView.MarkLive(asset);
+                if (!field["m_Name"].IsDummy) AssetNames.Record(asset, field["m_Name"].AsString);
+            }
             MapFields(field, type, instance);
             return instance;
         }
+
+        /// <summary>Fields Unity serializes under another name than the managed field of its own structs.</summary>
+        private static readonly Dictionary<(Type, string), string> UnitySerializedNames = new()
+        {
+            [(typeof(UnityEngine.Bounds), "m_Extent")] = "m_Extents",
+            [(typeof(UnityEngine.LayerMask), "m_Bits")] = "m_Mask",
+        };
 
         private void MapFields(AssetTypeValueField field, Type type, object instance)
         {
             foreach (var child in field.Children)
             {
                 if (child.FieldName is "m_GameObject" or "m_Enabled" or "m_Script" or "m_Name" or "m_EditorHideFlags" or "m_EditorClassIdentifier") continue;
-                var target = FindField(type, child.FieldName);
+                var target = FindField(type, UnitySerializedNames.TryGetValue((type, child.FieldName), out var managed) ? managed : child.FieldName);
                 if (target == null)
                 {
                     Gap($"{type.Name}.{child.FieldName}: no managed field");
@@ -306,6 +319,35 @@ namespace WotR.Testing.Offline
                 if (field != null) return field;
             }
             return null;
+        }
+    }
+
+    /// <summary>
+    /// The serialized names (<c>m_Name</c>) of the objects mapped from the game's assets. Unity keeps an object's name in
+    /// native memory; <see cref="AssetNamePatch"/> answers <c>Object.name</c> for these objects from here.
+    /// </summary>
+    internal static class AssetNames
+    {
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<UnityEngine.Object, string> Names = new();
+
+        internal static void Record(UnityEngine.Object asset, string name)
+        {
+            Names.Remove(asset);
+            Names.Add(asset, name ?? "");
+        }
+
+        internal static bool TryGet(UnityEngine.Object asset, out string name) => Names.TryGetValue(asset, out name);
+    }
+
+    [HarmonyLib.HarmonyPatch(typeof(UnityEngine.Object), nameof(UnityEngine.Object.name), HarmonyLib.MethodType.Getter)]
+    internal static class AssetNamePatch
+    {
+        private static bool Prefix(UnityEngine.Object __instance, ref string __result)
+        {
+            if (__instance is null || !AssetNames.TryGet(__instance, out var name)) return true;
+            Boundaries.Hit("asset-names");
+            __result = name;
+            return false;
         }
     }
 }

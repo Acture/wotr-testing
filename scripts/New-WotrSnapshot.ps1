@@ -73,6 +73,7 @@ if ($missingNavigation.Count -gt 0) {
     Write-Warning "The installation lacks $($missingNavigation.Count) navigation bundle(s) its Bundles/locationlist.json names; battles in those areas cannot load their navigation graph: $($missingNavigation -join ', ')"
 }
 
+$gameVersion = (Get-Content -LiteralPath $versionFile -Raw).Trim()
 $hashes = [ordered]@{}
 foreach ($relative in ($files | Sort-Object)) {
     $target = Join-Path $Destination $relative
@@ -81,9 +82,18 @@ foreach ($relative in ($files | Sort-Object)) {
     $hashes[$relative] = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+# A* settings for battles: instead of the mechanics scene bundles (about 1.9 GB), the serialized settings of each scene's
+# AstarPath component without its graph data, which battles read from the .nav bundles. src/WotR.Testing.Snapshot reads
+# them with the .NET SDK, checks that the file gives them back exactly, and lists scenes without an AstarPath too.
+$navigationSettings = 'navigation-settings.json'
+$tool = Join-Path $PSScriptRoot '../src/WotR.Testing.Snapshot/WotR.Testing.Snapshot.csproj'
+& dotnet run --project $tool -c Release -- navigation-settings --bundles (Join-Path $source 'Bundles') --game-version $gameVersion --output (Join-Path $Destination $navigationSettings) | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "Reading the A* settings of the mechanics scenes failed (exit $LASTEXITCODE); see the output above." }
+$hashes[$navigationSettings] = (Get-FileHash -LiteralPath (Join-Path $Destination $navigationSettings) -Algorithm SHA256).Hash.ToLowerInvariant()
+
 $manifest = [ordered]@{
     description = 'Local WotR inputs for WotR.Testing.Offline. Licensed game files: do not commit or redistribute.'
-    gameVersion = (Get-Content -LiteralPath $versionFile -Raw).Trim()
+    gameVersion = $gameVersion
     sourceRoot = $source
     createdAt = (Get-Date).ToUniversalTime().ToString('o')
     missingNavigationBundles = $missingNavigation

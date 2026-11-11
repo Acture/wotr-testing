@@ -38,11 +38,13 @@ namespace WotR.Testing.Offline
         private Kingmaker.EntitySystem.SceneEntitiesState battleState;
         private Kingmaker.EntitySystem.AreaPersistentState area;
         private Kingmaker.EntitySystem.AreaPersistentState previousArea;
+        private LoadedArea previousLoadedArea;
         private bool areaLoaded;
         private BattleNavigation navigation;
         private BattleLoop loop;
         private GameRandomState outerRandom;
         private bool mainCharacterSet;
+        private bool? previousTurnBased;
         private bool disposed;
 
         private OfflineBattle(BattleScenario scenario, int seed)
@@ -142,16 +144,17 @@ namespace WotR.Testing.Offline
         /// <see cref="BattleScenario.Area"/>. Each frame (1/30 s) runs the game's A* path processing and its own
         /// default-mode controllers in the game's order: unit groups, the frame clock in TimeController's place, line of
         /// sight, movement, entity bounds, vision, sleeping units, memory, combat join, cooldowns, engagement, commands,
-        /// hand equipment, combat leave and garbage entities. So while commands approach, start, act and end, units also
-        /// see each other, join combat, and provoke attacks of opportunity when they leave an enemy's reach. AI, buff
-        /// durations, fog of war, animations and turn-based combat do not run. Throws <see cref="TimeoutException"/> when
+        /// buffs, hand equipment, life, combat leave and garbage entities. So while commands approach, start, act and end,
+        /// units also see each other, join combat, provoke attacks of opportunity when they leave an enemy's reach, lose
+        /// buffs that run out, and fall unconscious or die. AI, ability execution, fog of war, animations and turn-based
+        /// combat do not run. Throws <see cref="TimeoutException"/> when
         /// commands are still running after <paramref name="limit"/>, <see cref="InvalidOperationException"/> when a frame
         /// does not advance game time (the time scales pause the game), and fails like <see cref="RuleScope"/> when the
         /// game logs an error, for example an exception it caught.
         /// </summary>
         public TimeSpan RunUntilIdle(TimeSpan limit)
         {
-            var elapsed = Frames(limit, untilIdle: true);
+            var elapsed = Frames(limit, () => units.Any(u => !u.Unit.Commands.Empty), null);
             var running = units.Where(u => !u.Unit.Commands.Empty).ToList();
             if (running.Count > 0)
                 throw new TimeoutException($"Battle {Scenario.Name}: commands still running after {limit}: "
@@ -160,9 +163,23 @@ namespace WotR.Testing.Offline
         }
 
         /// <summary>Runs game frames as <see cref="RunUntilIdle"/> does, for a fixed span of game time.</summary>
-        public void Run(TimeSpan duration) => Frames(duration, untilIdle: false);
+        public void Run(TimeSpan duration) => Frames(duration, null, null);
 
-        private TimeSpan Frames(TimeSpan limit, bool untilIdle)
+        /// <summary>
+        /// Runs at least one frame, then more until <paramref name="stop"/> returns true after a frame or
+        /// <paramref name="limit"/> of game time has passed; <paramref name="afterFrame"/> sees every frame.
+        /// </summary>
+        internal TimeSpan RunFrames(TimeSpan limit, Func<bool> stop, Action afterFrame)
+        {
+            var stopped = false;
+            return Frames(limit, () => !stopped, () =>
+            {
+                afterFrame?.Invoke();
+                stopped = stop();
+            });
+        }
+
+        private TimeSpan Frames(TimeSpan limit, Func<bool> keepGoing, Action afterFrame)
         {
             ThrowIfDisposed();
             if (loop == null)
@@ -173,16 +190,19 @@ namespace WotR.Testing.Offline
                 BattleClock.InFrames = true;
                 RuleScope.Run("battle frames " + Scenario.Name, () =>
                 {
-                    while (Game.Instance.Player.GameTime - start < limit && (!untilIdle || units.Any(u => !u.Unit.Commands.Empty)))
+                    // Limits count frame time, the TimeController.DeltaTime the game's controllers advance by. In real time
+                    // the game's clock advances by the same amount; in turn-based combat it stands still during a turn,
+                    // because the game's CombatController sets it from the time that passed between turns.
+                    var frameTime = TimeSpan.Zero;
+                    while (frameTime < limit && (keepGoing == null || keepGoing()))
                     {
-                        var before = Game.Instance.Player.GameTime;
                         loop.Frame();
-                        if (Game.Instance.Player.GameTime <= before)
-                        {
-                            var time = Game.Instance.TimeController;
+                        var time = Game.Instance.TimeController;
+                        if (!(BattleClock.TimeScale > 0f))
                             throw new InvalidOperationException(FormattableString.Invariant(
-                                $"Battle {Scenario.Name}: a frame did not advance game time (PlayerTimeScale {time.PlayerTimeScale}, DebugTimeScale {time.DebugTimeScale}, UiTimeScale {time.UiTimeScale}). The game is paused at these time scales, so frames would never reach {limit}."));
-                        }
+                                $"Battle {Scenario.Name}: the game set its time scale to {BattleClock.TimeScale} (PlayerTimeScale {time.PlayerTimeScale}, DebugTimeScale {time.DebugTimeScale}, UiTimeScale {time.UiTimeScale}). The game is paused at these time scales, so frames would never reach {limit}."));
+                        frameTime += TimeSpan.FromSeconds(time.DeltaTime);
+                        afterFrame?.Invoke();
                     }
                 });
             }
@@ -252,12 +272,14 @@ namespace WotR.Testing.Offline
                     LoadArea();
                     foreach (var spec in Scenario.Units) BuildUnit(spec);
                     if (Scenario.MainCharacter != null) SetMainCharacter(units.First(u => u.Id == Scenario.MainCharacter));
+                    if (Scenario.TurnBased) SwitchTurnBased();
                     if (navigation != null)
                     {
                         loop = new BattleLoop(navigation);
                         loop.Activate();
                     }
                 }, Scenario.SetupLogAllowances.ToArray());
+                BattleControl.Set(units.Where(u => Scenario.ControlledSides.Contains(u.Side)).Select(u => u.Unit));
                 Paths = Scenario.Paths.Select(path => new BattlePath(path, Find(path.From), Find(path.To))).ToList().AsReadOnly();
                 InitialState = BattleState.Capture(this);
             }
@@ -284,12 +306,29 @@ namespace WotR.Testing.Offline
             }
             var blueprint = OfflineGame.Blueprint<Kingmaker.Blueprints.Area.BlueprintArea>(Scenario.Area);
             previousArea = Game.Instance.State.LoadedAreaState;
+            previousLoadedArea = LoadedArea.Current;
             area = new Kingmaker.EntitySystem.AreaPersistentState(blueprint);
             Game.Instance.State.LoadedAreaState = area;
             areaLoaded = true;
+            // The game's SceneLoader.LoadAreaCoroutine records the area and, without an enter point, the area itself as
+            // the current part (NavMeshManager loads that part's graph); code such as BuffCollection.TickBuff reads it.
+            new LoadedArea(blueprint, blueprint).MakeCurrent();
             battleState = area.MainState;
             navigation = BattleNavigation.Load(blueprint);
             BattleWorker.NoteNavigation(navigation);
+        }
+
+        /// <summary>
+        /// Turns on the game's turn-based setting as a player does, before the battle's game mode starts: the game's
+        /// CombatController reads it when the mode activates.
+        /// </summary>
+        private void SwitchTurnBased()
+        {
+            var setting = Kingmaker.Settings.SettingsRoot.Game.TurnBased.EnableTurnBasedMode;
+            previousTurnBased = setting.GetValue();
+            setting.SetValueAndConfirm(true);
+            if (!Game.Instance.Player.IsTurnBasedModeOn())
+                throw new InvalidOperationException("The game's turn-based setting is on, but Player.IsTurnBasedModeOn() is false: the player's turn-based state is mandatory and off (Player.IsTurnBasedStateMandatory).");
         }
 
         private void SetMainCharacter(BattleUnit entry)
@@ -449,17 +488,19 @@ namespace WotR.Testing.Offline
             for (var i = units.Count - 1; i >= 0; i--)
             {
                 var unit = units[i].Unit;
-                // The view stand-in goes first, so the game destroys the unit as one without a view and never tries to
-                // destroy a GameObject. Then the steps EntityDestructionController takes for entities the game removes;
-                // like the game, cleanup does not interrupt unfinished commands first.
-                Step("remove the view stand-in of " + units[i].Id, () => OfflineUnitView.Detach(unit));
+                var view = unit.View as Kingmaker.View.UnitEntityView;
+                // The steps EntityDestructionController takes for entities the game removes; like the game, cleanup does
+                // not interrupt unfinished commands first. Dispose leaves combat with the view still attached, then
+                // detaches the view and destroys its object, which destroys the stand-in.
                 Step("destroy " + units[i].Id, unit.Destroy);
                 Step("dispose " + units[i].Id, unit.Dispose);
+                Step("release the view stand-in of " + units[i].Id, () => OfflineUnitView.Release(unit, view));
                 Step("remove " + units[i].Id + " from its scene state", () => unit.HoldingState?.RemoveEntityData(unit));
                 Step("remove " + units[i].Id + " from the awake units", () => Game.Instance.State.AwakeUnits.Remove(unit));
                 Step("report the destruction of " + units[i].Id,
                     () => EventBus.RaiseEvent((Kingmaker.PubSubSystem.IEntityDestructionHandler h) => h.HandleEntityDestruction(unit)));
             }
+            BattleControl.Clear();
             battleState = null;
             // After the units left their scene states, or the game's UpdateCharacterLists would put the main character back
             // into the party; before anything reads the party, because SetMainCharacter refreshes the cached lists.
@@ -474,6 +515,11 @@ namespace WotR.Testing.Offline
             }
             // UnitCombatJoinController updates the player's combat state every frame; after the units left, so does cleanup.
             Step("update the player's combat state", () => Game.Instance.Player.UpdateIsInCombat());
+            if (previousTurnBased is { } turnBased)
+            {
+                Step("restore the game's turn-based setting", () => Kingmaker.Settings.SettingsRoot.Game.TurnBased.EnableTurnBasedMode.SetValueAndConfirm(turnBased));
+                previousTurnBased = null;
+            }
             if (navigation != null)
             {
                 var loaded = navigation;
@@ -489,8 +535,11 @@ namespace WotR.Testing.Offline
             if (areaLoaded)
             {
                 Step("restore the loaded area", () => Game.Instance.State.LoadedAreaState = previousArea);
+                var loadedArea = previousLoadedArea;
+                Step("restore the scene loader's current area", () => loadedArea.MakeCurrent());
                 areaLoaded = false;
                 previousArea = null;
+                previousLoadedArea = null;
             }
             units.Clear();
             Paths = Array.Empty<BattlePath>();
@@ -534,6 +583,34 @@ namespace WotR.Testing.Offline
         }
     }
 
+    /// <summary>The area and area part the game's SceneLoader records as loaded (Game.CurrentlyLoadedArea and its part).</summary>
+    internal sealed class LoadedArea
+    {
+        private static readonly System.Reflection.FieldInfo SceneLoader = HarmonyLib.AccessTools.Field(typeof(Game), "m_SceneLoader");
+        private static readonly System.Reflection.MethodInfo SetArea = HarmonyLib.AccessTools.PropertySetter(
+            typeof(Kingmaker.EntitySystem.Persistence.Scenes.SceneLoader), nameof(Kingmaker.EntitySystem.Persistence.Scenes.SceneLoader.CurrentlyLoadedArea));
+        private static readonly System.Reflection.MethodInfo SetPart = HarmonyLib.AccessTools.PropertySetter(
+            typeof(Kingmaker.EntitySystem.Persistence.Scenes.SceneLoader), nameof(Kingmaker.EntitySystem.Persistence.Scenes.SceneLoader.CurrentlyLoadedAreaPart));
+
+        internal LoadedArea(Kingmaker.Blueprints.Area.BlueprintArea area, Kingmaker.Blueprints.Area.BlueprintAreaPart part)
+        {
+            Area = area;
+            Part = part;
+        }
+
+        internal Kingmaker.Blueprints.Area.BlueprintArea Area { get; }
+        internal Kingmaker.Blueprints.Area.BlueprintAreaPart Part { get; }
+
+        internal static LoadedArea Current => new(Game.Instance.CurrentlyLoadedArea, Game.Instance.CurrentlyLoadedAreaPart);
+
+        internal void MakeCurrent()
+        {
+            var loader = SceneLoader.GetValue(Game.Instance);
+            SetArea.Invoke(loader, new object[] { Area });
+            SetPart.Invoke(loader, new object[] { Part });
+        }
+    }
+
     /// <summary>A unit of the current build, with the scenario entry it was built from.</summary>
     public sealed class BattleUnit
     {
@@ -547,6 +624,9 @@ namespace WotR.Testing.Offline
         public string Id => Spec.Id;
         public string Side => Spec.Side;
         public UnitEntityData Unit { get; }
+
+        /// <summary>True when the unit's side is controlled: the game's AI does not decide for it.</summary>
+        public bool Controlled => BattleControl.IsControlled(Unit);
     }
 
     /// <summary>A scenario path as a decision maker observes it: the supplied data plus the current units at its ends.</summary>
@@ -604,6 +684,7 @@ namespace WotR.Testing.Offline
                 var descriptor = unit.Descriptor;
                 var prefix = "unit " + entry.Id + " ";
                 lines.Add(prefix + "side " + entry.Side);
+                lines.Add(prefix + "control " + (entry.Controlled ? "controlled" : "game-ai"));
                 lines.Add(prefix + "blueprint " + unit.Blueprint.name);
                 lines.Add(prefix + "faction " + descriptor.Faction?.name);
                 lines.Add(prefix + "level " + descriptor.Progression.CharacterLevel + " mythic " + descriptor.Progression.MythicLevel);

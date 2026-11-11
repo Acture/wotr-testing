@@ -107,7 +107,9 @@ namespace WotR.Testing.Offline
         private static void ApplyBoundaries()
         {
             Boundaries.DeclareHarmonyBoundaries();
-            new Harmony(HarmonyId).PatchAll(typeof(GameSession).Assembly);
+            var harmony = new Harmony(HarmonyId);
+            harmony.PatchAll(typeof(GameSession).Assembly);
+            PathPreviewDrawingPatches.Apply(harmony);
             GameRandom.Init(GameRandom.DefaultSeed);
         }
 

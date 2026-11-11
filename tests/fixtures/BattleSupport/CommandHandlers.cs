@@ -27,4 +27,13 @@ namespace WotR.Testing.BattleSupport
         public void HandleAttackOfOpportunity(UnitEntityData attacker, UnitEntityData target)
             => Attacks.Add(new KeyValuePair<UnitEntityData, UnitEntityData>(attacker, target));
     }
+
+    /// <summary>Records every command the game reports as acted, with its executor and whether the game's AI created it.</summary>
+    public sealed class CommandRecorder : IUnitCommandActHandler
+    {
+        public readonly List<(UnitEntityData Executor, string Command, bool ByAi)> Acted = new();
+
+        public void HandleUnitCommandDidAct(UnitCommand command)
+            => Acted.Add((command.Executor, command.GetType().Name, command.AiAction != null));
+    }
 }

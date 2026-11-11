@@ -59,7 +59,10 @@ The meta-package also includes FsCheck.Xunit for author-written `[Property]` tes
 game's API, runs them in an area with the game's own movement, vision, combat and
 command controllers on the area's real navigation mesh, and resets it to the same
 initial state, checking that the previous build left no game state behind.
-See [battles](docs/offline.md#battles).
+`BattleEnvironment` runs such a battle as a reset, observe and step loop for an
+external decision maker, in real time or in the game's own turn-based combat, for
+the party against the game's AI or with every side controlled. See [battles](docs/offline.md#battles) and the
+[battle environment](docs/offline.md#battle-environment).
 
 ## Building
 

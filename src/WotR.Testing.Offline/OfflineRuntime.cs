@@ -47,6 +47,13 @@ namespace WotR.Testing.Offline
         public static IReadOnlyList<string> Warnings => warnings;
         private static readonly List<string> warnings = new();
 
+        /// <summary>Adds a warning to the report once; warnings never fail a run.</summary>
+        internal static void Warn(string warning)
+        {
+            lock (warnings)
+                if (!warnings.Contains(warning)) warnings.Add(warning);
+        }
+
         /// <summary>Private libraries copied next to the mods, for example BlueprintCore.dll.</summary>
         public static IReadOnlyList<string> ModDependencies { get; private set; } = Array.Empty<string>();
 

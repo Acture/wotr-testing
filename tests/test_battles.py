@@ -6,6 +6,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -13,15 +14,19 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = ROOT / "tests/fixtures/BattleTests/WotR.Testing.BattleTests.csproj"
-SOURCE = ROOT / "tests/fixtures/BattleTests/BattleTests.cs"
+SOURCES = ROOT / "tests/fixtures/BattleTests"
 RUNS = ROOT / "artifacts/obj/WotR.Testing.BattleTests/wotr/test-runs"
 REPORTS = re.compile(r"WotR reports: (.+)")
 FACTS = re.compile(r"\[Fact\]\s+public void (\w+)\(")
 
 
-def run(*arguments: str, scenario: str = "") -> subprocess.CompletedProcess[str]:
+def run(
+	*arguments: str, scenario: str = "", inputs: Path | None = None
+) -> subprocess.CompletedProcess[str]:
 	environment = os.environ.copy()
 	environment["WOTR_TEST_SCENARIO"] = scenario
+	if inputs is not None:
+		environment["WOTR_INPUT_ROOT"] = str(inputs)
 	return subprocess.run(
 		["dotnet", "test", str(PROJECT), "--nologo", *arguments],
 		cwd=ROOT,
@@ -50,6 +55,15 @@ def classifications(result: subprocess.CompletedProcess[str]) -> dict[str, str]:
 	}
 
 
+def installation() -> Path:
+	"""The WotR installation GamePath.props names, as the build reads it."""
+	props = (ROOT / "GamePath.props").read_text(encoding="utf-8-sig")
+	match = re.search(r"<WrathInstallDir>([^<]+)</WrathInstallDir>", props)
+	if match is None:
+		raise AssertionError("GamePath.props names no WrathInstallDir")
+	return Path(match.group(1).strip())
+
+
 def battles(result: subprocess.CompletedProcess[str]) -> dict[str, Any]:
 	environment = report_directory(result) / "environment.json"
 	report = json.loads(environment.read_text(encoding="utf-8"))
@@ -70,13 +84,76 @@ class BattleFixtureTests(unittest.TestCase):
 				result = run(f"-p:WotrRuntime={runtime}")
 				self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 				# Every fixture test ran and passed; unity-runtime-required skips do not count.
-				facts = FACTS.findall(SOURCE.read_text(encoding="utf-8"))
+				facts = [
+					fact
+					for source in sorted(SOURCES.glob("*.cs"))
+					for fact in FACTS.findall(source.read_text(encoding="utf-8"))
+				]
 				self.assertGreater(len(facts), 0)
 				self.assertEqual(classifications(result), dict.fromkeys(facts, "passed"))
 				section = battles(result)
 				self.assertFalse(section["dirty"])
 				self.assertGreater(section["builds"], section["battlesStarted"])
 				self.assertEqual(section["failedCleanups"], 0)
+				# One environment test injects a failure; every other episode step ran.
+				self.assertEqual(section["environment"]["failed"], 1)
+				self.assertGreater(section["environment"]["ended"], 3)
+				# The installation has the area's mechanics scene, so A* takes its settings.
+				for navigation in section["navigation"]:
+					self.assertTrue(navigation["settings"].startswith("Bundles/"), navigation)
+
+	def test_a_snapshot_gives_battles_the_scene_settings_of_a_star(self) -> None:
+		# The snapshot has no scene bundles; the A* settings come from its navigation-settings.json.
+		# The fallback test runs without the unit prefabs, which snapshots do not copy either.
+		install = installation()
+		fallback = ("--filter", "FullyQualifiedName~ACorpulenceFallbackAppliesOnlyWithoutTheBundle")
+		with tempfile.TemporaryDirectory(prefix="wotr-snapshot-") as directory:
+			snapshot = Path(directory) / "wotr"
+			made = subprocess.run(
+				[
+					"pwsh",
+					"-NoProfile",
+					"-File",
+					str(ROOT / "scripts/New-WotrSnapshot.ps1"),
+					"-WrathInstallDir",
+					str(install),
+					"-Destination",
+					str(snapshot),
+				],
+				cwd=ROOT,
+				capture_output=True,
+				text=True,
+				encoding="utf-8",
+				errors="replace",
+				timeout=900,
+			)
+			self.assertEqual(made.returncode, 0, made.stdout + made.stderr)
+			manifest = json.loads((snapshot / "manifest.json").read_text(encoding="utf-8-sig"))
+			self.assertIn("navigation-settings.json", manifest["files"])
+			self.assertFalse(list((snapshot / "Bundles").glob("*.scenes")))
+
+			from_snapshot = run(*fallback, inputs=snapshot)
+			self.assertEqual(
+				from_snapshot.returncode, 0, from_snapshot.stdout + from_snapshot.stderr
+			)
+		from_installation = run(*fallback)
+		self.assertEqual(
+			from_installation.returncode, 0, from_installation.stdout + from_installation.stderr
+		)
+		[read] = battles(from_snapshot)["navigation"]
+		[expected] = battles(from_installation)["navigation"]
+		self.assertTrue(
+			read["settings"].startswith("navigation-settings.json, read from Bundles/"), read
+		)
+		self.assertTrue(expected["settings"].startswith("Bundles/"), expected)
+		# Same scene bundle, same settings.
+		self.assertEqual(
+			read["settings"].split("Bundles/", 1)[1], expected["settings"].split("Bundles/", 1)[1]
+		)
+		self.assertEqual(
+			{key: value for key, value in read.items() if key != "settings"},
+			{key: value for key, value in expected.items() if key != "settings"},
+		)
 
 	def test_residue_marks_the_worker_dirty_and_fails_the_run(self) -> None:
 		result = run(

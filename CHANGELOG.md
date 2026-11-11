@@ -13,6 +13,12 @@
 - `system-random-observe` counts `System.Random` constructors without replacing
   the game's own instances. `RuleScope` fails an operation when that operation
   logs an error the game caught. `environment.json` records `gameRandom`.
+- ScriptableObjects mapped from `blueprint.assets` now read as alive under Unity's
+  checks (`if (asset)`, `asset != null`), as loaded assets do; before, the game's code
+  treated them as missing (for example an area's bounds). `Bounds` and `LayerMask`
+  values in assets now keep their extents and masks (Unity serializes them as
+  `m_Extent` and `m_Bits`). Their `Object.name` is the asset's name (boundary
+  `asset-names`).
 - Battle fixtures: `BattleScenario` describes units on each side by blueprint, with
   faction, class levels, base stats, equipment, facts, abilities, buffs, resources,
   positions, an optional main character and paths that already exist.
@@ -27,16 +33,32 @@
 - Battle game loop: with `BattleScenario.Area` set, a battle loads the area and its
   real navigation graph (read from the game's `.nav` bundle as `NavMeshManager`
   does) and runs part of the game's default mode on its units:
-  `battle.RunUntilIdle(limit)` and `battle.Run(duration)` tick the game's
-  unit-group, line-of-sight, move, entity-bounds, vision-range, sleeping-unit,
-  memory, combat-join, cooldown, engagement, command, hand-equipment, combat-leave
-  and garbage-entity controllers in the game's order. Units walk A* paths with the
+  `battle.RunUntilIdle(limit)` and `battle.Run(duration)` run the game's default
+  mode as `Game.StartMode` starts it, with every controller except presentation
+  (input, pause, camera, fog of war, effects, animation, UI windows, game over):
+  the game's AI, initiative, abilities, projectiles, area effects, buffs and life
+  and death among them. `BattleScenario.ControlledSides` names sides the game's AI
+  never decides for, so their units act only on the commands given to them. Units walk A* paths with the
   game's own `UnitMovementAgent`, see and remember each other, join combat, and
   provoke attacks of opportunity when they leave an enemy's reach. Frames follow
   the game's time scales and fail when those pause the game. Units have a
-  view stand-in without a model; AI, buff durations, fog of war, animations, level
-  colliders, sight blockers and turn-based combat do not run (see the known
-  limits).
+  view stand-in without a model. Fog of war, animations, level colliders and sight
+  blockers are not supported (see the known limits). A* takes the settings of the area's own `AstarPath`
+  from its mechanics scene bundle, read on demand. Snapshots do not copy the scene
+  bundles: `New-WotrSnapshot.ps1` writes the `AstarPath` settings of every mechanics
+  scene to `navigation-settings.json` (with `src/WotR.Testing.Snapshot`, which needs
+  the .NET SDK), and battles read them from there. Without either, A* keeps its class
+  defaults and the report warns.
+- `BattleEnvironment` runs a battle as a decision loop for an external decision
+  maker such as a training program: `Reset(seed)`, `Observe()` (units, the game's
+  paths to other units and every action the game allows), `Step(actions)` (the
+  game's attack and move commands for units of controlled sides, then frames until
+  the next decision point while the game's AI fights for the other sides),
+  self-play by controlling every side, turn-based combat through the game's own
+  turns and the player's input (`BattleScenario.TurnBased`, `BattleAction.EndTurn`),
+  configurable outcome and reward, a step
+  limit, records per episode and `Replay(record)`. Errors during a step are
+  environment failures with the episode and step, never outcomes.
 - Battle units take their view's serialized fields from their real view prefab,
   read on demand from the game's `.unit` bundle as `Instantiate` does: corpulence
   (used by reach, engagement, attacks of opportunity, spacing and vision), the size
@@ -55,8 +77,13 @@
   Unit view prefabs (`.unit`, about 7.5 GB) are not copied; with a snapshot, set a
   corpulence override or fallback for each size a battle uses.
 - New boundaries `navigation-graph`, `physics-scene`, `unit-view-stand-in`,
-  `unit-weapon-visuals`, `unit-hit-effects`, `debug-draw`, `move-target-marker`,
-  `hand-equipment-controller` and `frame-clock` for battles.
+  `unit-weapon-visuals`, `unit-hit-effects`, `unit-death-visuals`, `unit-highlight`,
+  `ability-cast-fx`, `fx`, `sound`, `camera`, `debug-draw`, `move-target-marker`,
+  `game-mode`, `external-control`, `frame-clock`, `pathfinding-clock`, `asset-names`,
+  `loading-process`, `main-thread-dispatcher`, `pointer`, `path-preview`,
+  `selection-ui`, `cursor` and `input` for battles. With `pathfinding-clock`, a battle
+  frame does all of A*'s path work instead of stopping at its limits on the
+  computer's clock, so episodes do not depend on the machine's speed or load.
 - New boundary `unity-math`: managed versions of Unity's native quaternion, matrix
   and vector math. Code that reached these functions failed as
   `unity-runtime-required` before and now runs, also outside battles; the results

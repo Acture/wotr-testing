@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- wotr-snapshot: reads what New-WotrSnapshot.ps1 keeps of the game's bundles. Contains no game files. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>wotr-snapshot</AssemblyName>
+    <RootNamespace>WotR.Testing.Snapshot</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <RollForward>LatestMajor</RollForward>
+    <UseAppHost>false</UseAppHost>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="AssetsTools.NET" Version="$(AssetsToolsNetVersion)" />
+    <!-- The offline library reads the same file with the same code. -->
+    <Compile Include="../WotR.Testing.Offline/SceneNavigationSettings.cs" Link="SceneNavigationSettings.cs" />
+  </ItemGroup>
+</Project>

@@ -41,10 +41,21 @@ namespace WotR.Testing.Offline
         private object playerInventory;
         private int unitGroups;
         private object loadedArea;
+        private object sceneArea;
+        private object scenePart;
         private object astar;
         private int boundsScene;
         private object levelUpController;
         private object currentTurn;
+        private bool turnBasedSetting;
+        private bool turnBasedInitialized;
+        private bool paused;
+        private object loadingProcess;
+        private object dispatcher;
+        private object pathVisualizer;
+        private object selectionManager;
+        private object clickEvents;
+        private int detachedStandIns;
         private int ruleStack;
         private int randomSeed;
         private long randomCalls;
@@ -62,6 +73,12 @@ namespace WotR.Testing.Offline
                 player.EnsureInventory();
                 BattleWorker.NotePlayerContext("shared-inventory",
                     "Player.EnsureInventory(): the party inventory that player-faction units without their own inventory use for starting items.");
+            }
+            if (player.Get<Kingmaker.Formations.PartyFormationManager>() == null)
+            {
+                _ = player.FormationManager;
+                BattleWorker.NotePlayerContext("party-formation",
+                    "Player.FormationManager: the party formation the game's click handlers read when the player moves or attacks; the player creates it on first use and keeps it for the session.");
             }
         }
 
@@ -112,10 +129,21 @@ namespace WotR.Testing.Offline
                 playerInventory = player.Inventory,
                 unitGroups = Game.Instance.UnitGroups.Count,
                 loadedArea = Game.Instance.State.LoadedAreaState,
+                sceneArea = Game.Instance.CurrentlyLoadedArea,
+                scenePart = Game.Instance.CurrentlyLoadedAreaPart,
                 astar = AstarPath.active,
                 boundsScene = Game.Instance.EntityBoundsController.Scene.handle,
                 levelUpController = Game.Instance.LevelUpController,
                 currentTurn = Game.Instance.TurnBasedCombatController?.CurrentTurn,
+                turnBasedSetting = Kingmaker.Settings.SettingsRoot.Game.TurnBased.EnableTurnBasedMode.GetValue(),
+                turnBasedInitialized = Game.Instance.TurnBasedCombatController?.Initialized ?? false,
+                paused = Game.Instance.IsPaused,
+                loadingProcess = LoadingProcessStandIn.Current,
+                dispatcher = MainThreadDispatcherStandIn.Current,
+                pathVisualizer = PathVisualizerStandIn.Current,
+                selectionManager = SelectionManagerStandIn.Current,
+                clickEvents = Game.Instance.ClickEventsController,
+                detachedStandIns = OfflineUnitView.DetachedCount,
                 ruleStack = Rulebook.CurrentContext.StackSize,
                 randomSeed = GameRandom.Seed,
                 randomCalls = GameRandom.CallsSinceInit,
@@ -170,10 +198,21 @@ namespace WotR.Testing.Offline
             if (!ReferenceEquals(playerInventory, after.playerInventory)) residue.Add("Player.Inventory is a different collection than before the build");
             Value(residue, "game unit groups", unitGroups, after.unitGroups);
             if (!ReferenceEquals(loadedArea, after.loadedArea)) residue.Add("Game.Instance.State.LoadedAreaState changed");
+            if (!ReferenceEquals(sceneArea, after.sceneArea) || !ReferenceEquals(scenePart, after.scenePart))
+                residue.Add($"the scene loader's current area changed from {sceneArea ?? "none"}/{scenePart ?? "none"} to {after.sceneArea ?? "none"}/{after.scenePart ?? "none"}");
             if (!ReferenceEquals(astar, after.astar)) residue.Add("AstarPath.active changed");
             if (boundsScene != after.boundsScene) residue.Add($"EntityBoundsController scene handle changed from {boundsScene} to {after.boundsScene}");
             if (!ReferenceEquals(levelUpController, after.levelUpController)) residue.Add("Game.Instance.LevelUpController changed");
             if (!ReferenceEquals(currentTurn, after.currentTurn)) residue.Add("the turn-based combat controller's current turn changed");
+            Value(residue, "the game's turn-based setting", turnBasedSetting, after.turnBasedSetting);
+            Value(residue, "turn-based combat initialized", turnBasedInitialized, after.turnBasedInitialized);
+            Value(residue, "game paused", paused, after.paused);
+            if (!ReferenceEquals(loadingProcess, after.loadingProcess)) residue.Add("LoadingProcess.Instance changed");
+            if (!ReferenceEquals(dispatcher, after.dispatcher)) residue.Add("UniRx MainThreadDispatcher instance changed");
+            if (!ReferenceEquals(pathVisualizer, after.pathVisualizer)) residue.Add("PathVisualizer.Instance changed");
+            if (!ReferenceEquals(selectionManager, after.selectionManager)) residue.Add("SelectionManagerBase.Instance changed");
+            if (!ReferenceEquals(clickEvents, after.clickEvents)) residue.Add("Game.ClickEventsController changed");
+            Value(residue, "presentation stand-ins", detachedStandIns, after.detachedStandIns);
             Value(residue, "rulebook event stack", ruleStack, after.ruleStack);
             Value(residue, "game RNG seed", randomSeed, after.randomSeed);
             Value(residue, "game RNG calls since init", randomCalls, after.randomCalls);

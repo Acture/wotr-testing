@@ -395,6 +395,22 @@ namespace WotR.Testing.Offline
         }
     }
 
+    [HarmonyPatch(typeof(Bounds), "Contains_Injected")]
+    internal static class BoundsContainsPatch
+    {
+        // Unity's AABB::IsInside: a point on a face is inside.
+        private static bool Prefix(ref Bounds _unity_self, ref Vector3 point, ref bool __result)
+        {
+            Boundaries.Hit("unity-math");
+            var center = _unity_self.center;
+            var extents = _unity_self.extents;
+            __result = !(point.x < center.x - extents.x || point.x > center.x + extents.x
+                || point.y < center.y - extents.y || point.y > center.y + extents.y
+                || point.z < center.z - extents.z || point.z > center.z + extents.z);
+            return false;
+        }
+    }
+
     /// <summary>
     /// While a battle runs its game loop, its physics scene is empty: no level is loaded, so no colliders exist. Casts
     /// report no hit and overlaps find nothing, as Unity answers for an empty scene; the movement agent, for example,

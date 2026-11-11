@@ -110,6 +110,7 @@ namespace WotR.Testing.Offline
             var harmony = new Harmony(HarmonyId);
             harmony.PatchAll(typeof(GameSession).Assembly);
             PathPreviewDrawingPatches.Apply(harmony);
+            ProjectileViewReleasePatch.Apply(harmony);
             GameRandom.Init(GameRandom.DefaultSeed);
         }
 

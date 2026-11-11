@@ -58,4 +58,16 @@ namespace WotR.Testing.Offline
             return false;
         }
     }
+
+    /// <summary>The action bar's click sound while a battle runs: a slot the battle environment clicks plays it through the game's UI.</summary>
+    [HarmonyPatch(typeof(Kingmaker.UI.UnitSettings.MechanicActionBarSlot), nameof(Kingmaker.UI.UnitSettings.MechanicActionBarSlot.PlaySound))]
+    internal static class ActionBarSoundPatch
+    {
+        private static bool Prefix()
+        {
+            if (!BattleLoop.Running) return true;
+            Boundaries.Hit("sound");
+            return false;
+        }
+    }
 }

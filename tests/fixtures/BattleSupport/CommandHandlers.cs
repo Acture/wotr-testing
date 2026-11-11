@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Kingmaker.EntitySystem.Entities;
 using Kingmaker.PubSubSystem;
+using Kingmaker.RuleSystem.Rules;
 using Kingmaker.UnitLogic.Commands.Base;
 
 namespace WotR.Testing.BattleSupport
@@ -26,6 +27,18 @@ namespace WotR.Testing.BattleSupport
 
         public void HandleAttackOfOpportunity(UnitEntityData attacker, UnitEntityData target)
             => Attacks.Add(new KeyValuePair<UnitEntityData, UnitEntityData>(attacker, target));
+    }
+
+    /// <summary>Records every weapon attack the game's rulebook settles, with its attacker, target and whether it was part of a full attack.</summary>
+    public sealed class AttackRecorder : IGlobalRulebookHandler<RuleAttackWithWeapon>
+    {
+        public readonly List<(UnitEntityData Attacker, UnitEntityData Target, bool FullAttack)> Attacks = new();
+
+        public void OnEventAboutToTrigger(RuleAttackWithWeapon evt)
+        {
+        }
+
+        public void OnEventDidTrigger(RuleAttackWithWeapon evt) => Attacks.Add((evt.Initiator, evt.Target, evt.IsFullAttack));
     }
 
     /// <summary>Records every command the game reports as acted, with its executor and whether the game's AI created it.</summary>

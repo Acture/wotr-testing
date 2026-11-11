@@ -147,6 +147,7 @@ namespace WotR.Testing.Offline
             var number = step + 1;
             var before = Capture();
             var problems = Reject(list, before);
+            if (problems.Count == 0) problems.AddRange(PointProblems(list));
             if (problems.Count > 0) throw new BattleActionRejectedException(battle.Scenario.Name, Episode, number, list, problems);
 
             var beforeState = battle.Observe();
@@ -170,14 +171,18 @@ namespace WotR.Testing.Offline
                 var notes = new List<string>();
                 foreach (var action in list)
                     if (Issue(action, before, AfterFrame) is { } note) notes.Add(note);
-                // In real time a unit that waits stays ready and idle; a busy unit is one that runs a command. In turn-based
+                // In real time a unit that waits stays ready and idle; a busy unit is one that runs a command or was given
+                // another action (a toggle, or a click the game refused, decides again after a frame). In turn-based
                 // combat a unit given an action is busy until the game waits for it again, even when the game ignored it;
                 // a unit that ends its turn waits for its next turn (one the player does not control stays idle until the
                 // game ends its turn).
                 var turnAtStart = InTurnBasedCombat ? Game.Instance.TurnBasedCombatController.CurrentTurn : null;
                 var busy = battle.Units.Where(u => u.Controlled && u.Unit.Descriptor.State.IsConscious
-                    && (turnAtStart == null ? !IsReady(u.Unit) : list.Any(a => a.Unit == u.Id && a.Kind != BattleActionKind.EndTurn))).ToList();
+                    && (turnAtStart == null
+                        ? !IsReady(u.Unit) || list.Any(a => a.Unit == u.Id && a.Kind != BattleActionKind.Wait)
+                        : list.Any(a => a.Unit == u.Id && a.Kind != BattleActionKind.EndTurn))).ToList();
                 var realTime = TimeSpan.Zero;
+                var stalled = TimeSpan.Zero;
                 battle.RunFrames(battle.Scenario.TurnBased ? Options.TurnBasedStepLimit : Options.DecisionInterval, () =>
                 {
                     var ended = Decide(ObserveUnits());
@@ -190,6 +195,16 @@ namespace WotR.Testing.Offline
                     List<string> readyAgain;
                     if (InTurnBasedCombat)
                     {
+                        // The game's own dead end: a second of frames is enough to tell it from a turn about to start.
+                        if (SurpriseRoundStall() is { } stall)
+                        {
+                            stalled += TimeSpan.FromSeconds(Game.Instance.TimeController.DeltaTime);
+                            if (stalled >= TimeSpan.FromSeconds(1)) throw new TurnBasedStallException(stall);
+                        }
+                        else
+                        {
+                            stalled = TimeSpan.Zero;
+                        }
                         // A decision point when the game waits for a controlled unit's command: on a turn that began during
                         // this step, or again on the turn of a unit that acted in it.
                         var newTurn = !ReferenceEquals(Game.Instance.TurnBasedCombatController.CurrentTurn, turnAtStart);
@@ -321,6 +336,25 @@ namespace WotR.Testing.Offline
         private static bool InTurnBasedCombat
             => CombatController.IsInTurnBasedCombat() && Game.Instance.TurnBasedCombatController.Initialized;
 
+        private static readonly FieldInfo NextUnit = HarmonyLib.AccessTools.Field(typeof(CombatController), "m_NextUnit");
+
+        /// <summary>
+        /// Why the game's turn-based combat can start no turn, or null. In the surprise round the game's
+        /// <c>CombatController.ChooseNextUnit</c> skips surprised units and units acting in the surprise round without an
+        /// offensive command; when it skips every unit it still chooses the last one. If that unit is surprised, its turn
+        /// waits for its initiative, which <c>UnitCombatCooldownsController</c> does not count down for surprised units, so
+        /// no turn ever starts. This reads the game's state; the game's code, not the environment, ends in it.
+        /// </summary>
+        private static string SurpriseRoundStall()
+        {
+            var combat = Game.Instance.TurnBasedCombatController;
+            if (combat.CurrentTurn != null || combat.RoundNumber != 0) return null;
+            if (NextUnit.GetValue(combat) is not UnitEntityData next || !combat.IsSurprised(next) || next.GetTimeToNextTurn() <= 0f) return null;
+            return $"the game's turn-based combat starts no turn: in the surprise round it skipped every unit and chose {next.CharacterName} ({next.UniqueId}), "
+                + $"which is surprised, so its initiative ({next.GetTimeToNextTurn():0.##} s to its turn) does not count down "
+                + "(CombatController.ChooseNextUnit, UnitCombatCooldownsController). Units acting in the surprise round are skipped without an offensive command.";
+        }
+
         /// <summary>
         /// In real time a unit is ready when it is conscious, the game lets it act and it has no command left. In
         /// turn-based combat only the unit whose turn it is acts: it is ready while the game's TurnController waits for its
@@ -357,9 +391,23 @@ namespace WotR.Testing.Offline
                     // control ends its turn by giving no command.
                     else if (!unit.IsDirectlyControllable || Game.Instance.TurnBasedCombatController.CurrentTurn.CanEndTurnAndNoActing())
                         candidates.Add(BattleAction.EndTurn(entry.Id));
+                    // The player's smart cursor in turn-based combat: attack variants, movement limits, delaying the turn.
+                    var cursor = turnBased && unit.IsDirectlyControllable ? Game.Instance.TurnBasedCombatController.CurrentTurn : null;
                     foreach (var target in battle.Units)
-                        if (CanAttack(unit, target.Unit) && (!turnBased || CanStartInTurn(unit, target.Unit)))
-                            candidates.Add(BattleAction.Attack(entry.Id, target.Id));
+                    {
+                        if (!CanAttack(unit, target.Unit) || (turnBased && !CanStartInTurn(unit, target.Unit))) continue;
+                        candidates.Add(BattleAction.Attack(entry.Id, target.Id));
+                        if (cursor != null)
+                            foreach (var variant in BattleSmartCursor.AttackCandidates(cursor, unit, WithinReach(unit, target.Unit)))
+                                candidates.Add(BattleAction.Attack(entry.Id, target.Id, variant));
+                    }
+                    candidates.AddRange(AbilityCandidates(entry, turnBased));
+                    if (cursor != null && cursor.CanDelay())
+                    {
+                        var tracker = Game.Instance.TurnBasedCombatController.SortedUnits.ToList();
+                        foreach (var target in battle.Units.Where(t => t.Unit != unit && tracker.Contains(t.Unit)))
+                            candidates.Add(BattleAction.Delay(entry.Id, target.Id));
+                    }
                     if (!unit.Descriptor.State.CanMove) continue;
                     foreach (var target in battle.Units.Where(t => t != entry && !t.Unit.Descriptor.State.IsDead))
                     {
@@ -368,8 +416,17 @@ namespace WotR.Testing.Offline
                         // In turn-based combat a move is a click on the ground; the ground under a unit is the unit.
                         if (path.Usable && !turnBased) candidates.Add(BattleAction.Move(entry.Id, path.Id));
                     }
+                    var limits = cursor == null ? new List<string>() : BattleSmartCursor.GroundLimits(cursor, unit).ToList();
                     foreach (var path in scenarioPaths.Where(p => p.Usable && p.Unit == entry.Id))
+                    {
                         candidates.Add(BattleAction.Move(entry.Id, path.Id));
+                        if (limits.Count > 1)
+                            foreach (var limit in limits) candidates.Add(BattleAction.Move(entry.Id, path.Id, limit));
+                    }
+                    // Any point on the ground the game's pathfinding reaches, checked when it is given.
+                    candidates.Add(BattleAction.MoveToAnyPoint(entry.Id));
+                    if (limits.Count > 1)
+                        foreach (var limit in limits) candidates.Add(BattleAction.MoveToAnyPoint(entry.Id, limit));
                 }
             }
             return new BattleObservation(battle.Scenario.Name, Episode, step, battle.Seed, Game.Instance.Player.GameTime, units,
@@ -386,13 +443,62 @@ namespace WotR.Testing.Offline
         /// the unit, never run.
         /// </summary>
         private static bool CanStartInTurn(UnitEntityData unit, UnitEntityData target)
+            => CanStartInTurn(unit, Kingmaker.Controllers.Clicks.Handlers.ClickUnitHandler.CreateCommand(unit, target.View));
+
+        /// <summary>Whether the command a click on the target gives needs no movement to act.</summary>
+        private static bool WithinReach(UnitEntityData unit, UnitEntityData target)
         {
             var command = Kingmaker.Controllers.Clicks.Handlers.ClickUnitHandler.CreateCommand(unit, target.View);
+            command.Init(unit);
+            return command.IsUnitCloseEnough();
+        }
+
+        private static bool CanStartInTurn(UnitEntityData unit, Kingmaker.UnitLogic.Commands.Base.UnitCommand command)
+        {
             var state = unit.Descriptor.State;
             if (!state.CanAct || state.HasCondition(Kingmaker.UnitLogic.UnitCondition.Nauseated)) return false;
             if (!command.IsIgnoreCooldown && (!unit.CombatState.CanActInCombat || unit.CombatState.HasCooldownForCommand(command))) return false;
             command.Init(unit);
             return command.IsUnitCloseEnough() || Game.Instance.TurnBasedCombatController.CurrentTurn.HasMovement(unit);
+        }
+
+        /// <summary>
+        /// The unit's action bar entries (BattleAbilities.Collect) it can use now, each on every unit the ability accepts as
+        /// a target (AbilityData.CanTarget, as a click with the selected ability checks it): for a unit the player controls,
+        /// as the action bar allows it (IsPossibleActive, which in turn-based combat checks the turn's actions); for one the
+        /// player does not control, by the slot's own availability. Abilities without target selection act on the caster.
+        /// In turn-based combat the command must also be able to start this turn, as for attacks. Toggles switch on or off.
+        /// </summary>
+        private IEnumerable<BattleAction> AbilityCandidates(BattleUnit entry, bool turnBased)
+        {
+            var unit = entry.Unit;
+            var asPlayer = unit.IsDirectlyControllable || !turnBased;
+            foreach (var slot in BattleAbilities.Collect(unit))
+            {
+                if (!(asPlayer ? BattleAbilities.PlayerCanUse(slot) : BattleAbilities.AvailableToUnit(slot))) continue;
+                if (slot.Toggle != null)
+                {
+                    yield return BattleAction.Toggle(entry.Id, slot.Id);
+                    continue;
+                }
+                if (slot.Ability == null) continue;
+                if (slot.Ability.TargetAnchor == Kingmaker.UnitLogic.Abilities.Blueprints.AbilityTargetAnchor.Owner)
+                {
+                    if (!turnBased || CanStartInTurn(unit, BattleAbilities.CommandFor(slot.Ability, unit)))
+                        yield return BattleAction.UseAbility(entry.Id, slot.Id);
+                    continue;
+                }
+                // A point ability also takes any point on the ground, which the game checks when it is given.
+                if (slot.Ability.TargetAnchor == Kingmaker.UnitLogic.Abilities.Blueprints.AbilityTargetAnchor.Point)
+                    yield return BattleAction.UseAbilityAtAnyPoint(entry.Id, slot.Id);
+                foreach (var target in battle.Units)
+                {
+                    var wrapper = BattleAbilities.TargetOn(slot.Ability, target.Unit);
+                    if (!slot.Ability.CanTarget(wrapper)) continue;
+                    if (turnBased && !CanStartInTurn(unit, BattleAbilities.CommandFor(slot.Ability, wrapper))) continue;
+                    yield return BattleAction.UseAbility(entry.Id, slot.Id, target.Id);
+                }
+            }
         }
 
         /// <summary>The game's player attack checks (ClickUnitHandler): a unit it may attack, and a weapon to attack with.</summary>
@@ -412,6 +518,13 @@ namespace WotR.Testing.Offline
             var resources = new SortedDictionary<string, int>(StringComparer.Ordinal);
             foreach (var resource in descriptor.Resources) resources[resource.name] = descriptor.Resources.GetResourceAmount(resource);
             var abilities = unit.Abilities.RawFacts.Select(a => a.Blueprint.name).OrderBy(x => x, StringComparer.Ordinal).ToList().AsReadOnly();
+            var spellSlots = new SortedDictionary<string, int>(StringComparer.Ordinal);
+            foreach (var book in descriptor.Spellbooks)
+                for (var level = 1; level <= book.MaxSpellLevel; level++)
+                    spellSlots[book.Blueprint.name + ":" + level] = book.Blueprint.Spontaneous
+                        ? book.GetSpontaneousSlots(level)
+                        : book.GetMemorizedSpells(level).Count(slot => slot.Available);
+            var togglesOn = unit.ActivatableAbilities.RawFacts.Where(a => a.IsOn).Select(a => a.Blueprint.name).OrderBy(x => x, StringComparer.Ordinal).ToList().AsReadOnly();
             var command = unit.Commands.Raw.FirstOrDefault(c => c != null)?.GetType().Name;
             var cooldown = unit.CombatState.Cooldown;
             var position = unit.Position;
@@ -419,7 +532,7 @@ namespace WotR.Testing.Offline
                 descriptor.Faction?.name, unit.HPLeft, descriptor.MaxHP, descriptor.TemporaryHP, state.LifeState.ToString(),
                 state.IsConscious, state.CanAct, state.CanMove, ready, unit.IsInCombat, new BattlePoint(position.x, position.y, position.z),
                 unit.Orientation, unit.Corpulence, unit.CurrentSpeedMps, command, cooldown.StandardAction, cooldown.MoveAction,
-                cooldown.SwiftAction, buffs, resources, abilities);
+                cooldown.SwiftAction, buffs, resources, abilities, spellSlots, togglesOn, BattleAbilities.ItemUses(unit));
         }
 
         /// <summary>
@@ -480,7 +593,12 @@ namespace WotR.Testing.Offline
                     problems.Add("an action is null");
                     continue;
                 }
-                if (observation.Candidates.Contains(action)) continue;
+                if (action.AnyPoint)
+                {
+                    problems.Add($"{action}: give the point with At(point)");
+                    continue;
+                }
+                if (observation.Candidates.Contains(action) || observation.Candidates.Any(action.IsAt)) continue;
                 var unit = observation.Units.FirstOrDefault(u => u.Id == action.Unit);
                 if (unit == null) problems.Add($"{action}: the battle has no unit {action.Unit}");
                 else if (observation.Outcome != null || observation.Truncated) problems.Add($"{action}: the episode has ended");
@@ -492,6 +610,34 @@ namespace WotR.Testing.Offline
             }
             return problems;
         }
+
+        /// <summary>
+        /// The game's checks of the points the decision maker gave for any-point candidates: a move needs a path the game's
+        /// agent finds; an entry used at a point needs the ability to accept it (AbilityData.CanTarget, as a click on the
+        /// ground checks it) and, in turn-based combat, a command that can start this turn there.
+        /// </summary>
+        private List<string> PointProblems(IEnumerable<BattleAction> actions)
+        {
+            var problems = new List<string>();
+            foreach (var action in actions.Where(a => a.Point != null))
+            {
+                var unit = battle.Unit(action.Unit);
+                var point = ToVector(action.Point.Value);
+                if (action.Kind == BattleActionKind.MoveTo)
+                {
+                    if (FindForcedPath(unit, point, 0.3f, false) == null) problems.Add($"{action}: the game's pathfinding finds no path there");
+                    continue;
+                }
+                var ability = BattleAbilities.Collect(unit).First(s => s.Id == action.Ability).Ability;
+                var target = BattleAbilities.TargetAt(ability, point);
+                if (!ability.CanTarget(target)) problems.Add($"{action}: the ability does not accept that point (AbilityData.CanTarget)");
+                else if (InTurnBasedCombat && !CanStartInTurn(unit, BattleAbilities.CommandFor(ability, target)))
+                    problems.Add($"{action}: the command cannot start there this turn");
+            }
+            return problems;
+        }
+
+        private static UnityEngine.Vector3 ToVector(BattlePoint point) => new(point.X, point.Y, point.Z);
 
         private static string Describe(BattleUnitObservation unit)
             => !unit.Conscious ? unit.LifeState.ToLowerInvariant()
@@ -505,6 +651,7 @@ namespace WotR.Testing.Offline
         /// </summary>
         private string Issue(BattleAction action, BattleObservation observation, Action afterFrame)
         {
+            if (action.Kind is BattleActionKind.UseAbility or BattleActionKind.Toggle) return IssueAbility(action, afterFrame);
             if (InTurnBasedCombat) return IssueTurnBased(action, observation, afterFrame);
             IssueRealTime(action, observation);
             return null;
@@ -527,9 +674,30 @@ namespace WotR.Testing.Offline
                     // Game's end-turn key: CurrentTurn.ForceToEnd() when CanEndTurnAndNoActing().
                     if (player) Game.Instance.TurnBasedCombatController.CurrentTurn.ForceToEnd();
                     return null;
+                case BattleActionKind.MoveTo:
+                {
+                    var destination = ToVector(action.Point.Value);
+                    if (player && action.Variant != null)
+                        return ClickWithVariant(action, null, destination, afterFrame,
+                            turn => BattleSmartCursor.SelectLimit(turn, action.Variant), BattleSmartCursor.CurrentLimit,
+                            turn => "it is at " + BattleSmartCursor.CurrentLimit(turn));
+                    if (player) return Click(action, null, destination, afterFrame);
+                    var command = new UnitMoveTo(destination, 0.3f);
+                    command.ForcedPath = FindForcedPath(unit, destination, 0.3f, false);
+                    unit.Commands.Run(command);
+                    return null;
+                }
+                case BattleActionKind.Delay:
+                    // The initiative tracker's delay (InitiativeTrackerVM.DelayInitiaive); its confirmation dialogs are UI.
+                    Game.Instance.TurnBasedCombatController.CurrentTurn.DelayInitiaive(battle.Unit(action.Target));
+                    return null;
                 case BattleActionKind.Attack:
                 {
                     var target = battle.Unit(action.Target);
+                    if (player && action.Variant != null)
+                        return ClickWithVariant(action, target.View.gameObject, target.Position, afterFrame,
+                            turn => BattleSmartCursor.Select(turn, action.Variant), BattleSmartCursor.Current,
+                            turn => "it offers " + (BattleSmartCursor.Enabled(turn) is { Count: > 0 } offered ? string.Join(", ", offered) : "none"));
                     if (player) return Click(action, target.View.gameObject, target.Position, afterFrame);
                     var command = Kingmaker.Controllers.Clicks.Handlers.ClickUnitHandler.CreateCommand(unit, target.View);
                     command.ForcedPath = FindForcedPath(unit, command.ApproachPoint, command.ApproachRadius, command.NeedLoS);
@@ -541,6 +709,10 @@ namespace WotR.Testing.Offline
                 {
                     var end = observation.Paths.First(p => p.Id == action.Path && p.Unit == action.Unit).Destination;
                     var destination = new UnityEngine.Vector3(end.X, end.Y, end.Z);
+                    if (player && action.Variant != null)
+                        return ClickWithVariant(action, null, destination, afterFrame,
+                            turn => BattleSmartCursor.SelectLimit(turn, action.Variant), BattleSmartCursor.CurrentLimit,
+                            turn => "it is at " + BattleSmartCursor.CurrentLimit(turn));
                     if (player) return Click(action, null, destination, afterFrame);
                     var command = new UnitMoveTo(destination, 0.3f);
                     command.ForcedPath = FindForcedPath(unit, destination, 0.3f, false);
@@ -550,6 +722,76 @@ namespace WotR.Testing.Offline
                 default:
                     throw new ArgumentOutOfRangeException(nameof(action), action.Kind, null);
             }
+        }
+
+        /// <summary>
+        /// A unit the player controls uses the entry as the player does: the action bar slot's click, which casts an ability
+        /// without target selection, switches a toggle or selects the ability; then the pointer on the target unit and a
+        /// click, which the game's ClickWithSelectedAbilityHandler turns into the command (in turn-based combat after a frame
+        /// for the game's predictions, as for attacks). A refused click leaves no ability selected, as the player's Escape. A
+        /// unit the player does not control gets the command that click would give, with the game's path in turn-based
+        /// combat, or its toggle switched as the slot switches it.
+        /// </summary>
+        private string IssueAbility(BattleAction action, Action afterFrame)
+        {
+            var unit = battle.Unit(action.Unit);
+            var slot = BattleAbilities.Collect(unit).First(s => s.Id == action.Ability);
+            var turnBased = InTurnBasedCombat;
+            if (unit.IsDirectlyControllable)
+            {
+                slot.Slot.OnClick();
+                if (slot.Toggle != null || slot.Ability.TargetAnchor == Kingmaker.UnitLogic.Abilities.Blueprints.AbilityTargetAnchor.Owner) return null;
+                var target = action.Point == null ? battle.Unit(action.Target) : null;
+                var gameObject = target?.View.gameObject;
+                var position = target?.Position ?? ToVector(action.Point.Value);
+                string note;
+                if (turnBased)
+                {
+                    note = Click(action, gameObject, position, afterFrame);
+                }
+                else
+                {
+                    BattlePointer.PointAt(gameObject, position);
+                    note = BattlePointer.Click() ? null : $"the game ignored the click for {action}";
+                }
+                if (Game.Instance.SelectedAbilityHandler.SelectedAbility != null)
+                {
+                    Game.Instance.ClickEventsController.ClearPointerMode();
+                    Game.Instance.SelectedAbilityHandler.DropAbility();
+                }
+                return note;
+            }
+            if (slot.Toggle != null)
+            {
+                slot.Toggle.IsOn = !slot.Toggle.IsOn;
+                return null;
+            }
+            var wrapper = action.Point is { } point
+                ? BattleAbilities.TargetAt(slot.Ability, ToVector(point))
+                : BattleAbilities.TargetOn(slot.Ability, action.Target == null ? unit : battle.Unit(action.Target));
+            var command = BattleAbilities.CommandFor(slot.Ability, wrapper);
+            if (turnBased) command.ForcedPath = FindForcedPath(unit, command.ApproachPoint, command.ApproachRadius, command.NeedLoS);
+            unit.Commands.Run(command);
+            return null;
+        }
+
+        /// <summary>
+        /// The player's smart cursor: the pointer on the target, a frame for the game's predictions (which enable the
+        /// variants for that target), the player's key until the variant is current, a frame for the predictions of that
+        /// variant, and the click. When the game does not offer the variant, nothing is clicked and the note says so.
+        /// </summary>
+        private string ClickWithVariant(BattleAction action, UnityEngine.GameObject target, UnityEngine.Vector3 position, Action afterFrame,
+            Func<TurnController, bool> select, Func<TurnController, string> current, Func<TurnController, string> offered)
+        {
+            BattlePointer.PointAt(target, position);
+            battle.RunFrames(TimeSpan.FromSeconds(1), () => true, afterFrame);
+            var turn = Game.Instance.TurnBasedCombatController.CurrentTurn;
+            if (turn == null || !select(turn))
+                return $"the game does not offer {action.Variant} for {action}" + (turn == null ? "" : "; " + offered(turn));
+            battle.RunFrames(TimeSpan.FromSeconds(1), () => true, afterFrame);
+            if (current(turn) != action.Variant)
+                return $"the game's predictions changed {action} to {current(turn)}; nothing was clicked";
+            return BattlePointer.Click() ? null : $"the game ignored the click for {action}";
         }
 
         private string Click(BattleAction action, UnityEngine.GameObject target, UnityEngine.Vector3 position, Action afterFrame)
@@ -585,6 +827,10 @@ namespace WotR.Testing.Offline
                     unit.CombatState.ManualTarget = target;
                     return;
                 }
+                case BattleActionKind.MoveTo:
+                    // A click on the ground (ClickGroundHandler): the game's move command finds its own path there.
+                    unit.Commands.Run(new UnitMoveTo(ToVector(action.Point.Value), 0.3f) { CreatedByPlayer = true });
+                    return;
                 case BattleActionKind.Move:
                 {
                     var path = observation.Paths.First(p => p.Id == action.Path && p.Unit == action.Unit);
@@ -661,19 +907,53 @@ namespace WotR.Testing.Offline
         /// the player does not control ends its turn by giving no command.
         /// </summary>
         EndTurn,
+
+        /// <summary>
+        /// A spell, ability or usable item from the unit's action bar (<see cref="BattleAction.Ability"/>), cast on a unit
+        /// (<see cref="BattleAction.Target"/>; for point abilities, at its position) or, for abilities without target
+        /// selection, on the caster (no target).
+        /// </summary>
+        UseAbility,
+
+        /// <summary>Switches an ability of the unit's action bar on or off (<see cref="BattleAction.Ability"/>), such as Power Attack.</summary>
+        Toggle,
+
+        /// <summary>
+        /// Turn-based combat: the player's unit delays its turn until after another unit's (<see cref="BattleAction.Target"/>),
+        /// as the initiative tracker does (<c>TurnController.DelayInitiaive</c>).
+        /// </summary>
+        Delay,
+
+        /// <summary>A move to a point on the ground (<see cref="BattleAction.Point"/>), as a click on the ground gives it.</summary>
+        MoveTo,
     }
 
-    /// <summary>An action of one unit; equal actions have the same kind, unit, target and path.</summary>
+    /// <summary>An action of one unit; equal actions have the same kind, unit, target, path and ability.</summary>
     public sealed class BattleAction : IEquatable<BattleAction>
     {
-        private BattleAction(BattleActionKind kind, string unit, string target, string path)
+        private BattleAction(BattleActionKind kind, string unit, string target, string path, string ability = null, string variant = null,
+            BattlePoint? point = null, bool anyPoint = false)
         {
             if (string.IsNullOrWhiteSpace(unit)) throw new ArgumentException("A unit id is required.", nameof(unit));
             Kind = kind;
             Unit = unit;
             Target = target;
             Path = path;
+            Ability = ability;
+            Variant = variant;
+            Point = point;
+            AnyPoint = anyPoint;
         }
+
+        /// <summary>The smart cursor variants of a turn-based attack: movement (a five-foot step or a move) and attack.</summary>
+        public static readonly IReadOnlyList<string> AttackVariants = new[]
+        {
+            "five-foot-step+full-attack", "five-foot-step+single-attack", "five-foot-step+touch",
+            "move+full-attack", "move+single-attack", "move+touch",
+        };
+
+        /// <summary>The movement limits of a turn-based move on the ground.</summary>
+        public static readonly IReadOnlyList<string> MoveLimits = new[] { "two-actions", "one-action", "five-foot-step" };
 
         public static BattleAction Wait(string unit) => new(BattleActionKind.Wait, unit, null, null);
 
@@ -682,8 +962,54 @@ namespace WotR.Testing.Offline
         public static BattleAction Attack(string unit, string target)
             => new(BattleActionKind.Attack, unit, string.IsNullOrWhiteSpace(target) ? throw new ArgumentException("A target unit id is required.", nameof(target)) : target, null);
 
+        /// <summary>A turn-based attack with one of the game's smart cursor variants (<see cref="AttackVariants"/>).</summary>
+        public static BattleAction Attack(string unit, string target, string variant)
+            => new(BattleActionKind.Attack, unit, string.IsNullOrWhiteSpace(target) ? throw new ArgumentException("A target unit id is required.", nameof(target)) : target, null, null,
+                variant == null || AttackVariants.Contains(variant) ? variant : throw new ArgumentException($"Unknown attack variant {variant}.", nameof(variant)));
+
         public static BattleAction Move(string unit, string path)
             => new(BattleActionKind.Move, unit, null, string.IsNullOrWhiteSpace(path) ? throw new ArgumentException("A path id is required.", nameof(path)) : path);
+
+        /// <summary>A turn-based move on the ground with one of the game's movement limits (<see cref="MoveLimits"/>).</summary>
+        public static BattleAction Move(string unit, string path, string limit)
+            => new(BattleActionKind.Move, unit, null, string.IsNullOrWhiteSpace(path) ? throw new ArgumentException("A path id is required.", nameof(path)) : path, null,
+                limit == null || MoveLimits.Contains(limit) ? limit : throw new ArgumentException($"Unknown movement limit {limit}.", nameof(limit)));
+
+        /// <summary>A move to a point on the ground, with a turn-based movement limit (<see cref="MoveLimits"/>) or the game's.</summary>
+        public static BattleAction MoveTo(string unit, BattlePoint point, string limit = null)
+            => new(BattleActionKind.MoveTo, unit, null, null, null, ValidLimit(limit), point);
+
+        /// <summary>A spell, ability or item of the unit's action bar used at a point on the ground.</summary>
+        public static BattleAction UseAbility(string unit, string ability, BattlePoint point)
+            => new(BattleActionKind.UseAbility, unit, null, null,
+                string.IsNullOrWhiteSpace(ability) ? throw new ArgumentException("An ability id is required.", nameof(ability)) : ability, null, point);
+
+        /// <summary>The candidate that stands for moves to any point; give one with <see cref="At"/>.</summary>
+        public static BattleAction MoveToAnyPoint(string unit, string limit = null)
+            => new(BattleActionKind.MoveTo, unit, null, null, null, ValidLimit(limit), null, anyPoint: true);
+
+        /// <summary>The candidate that stands for using the entry at any point on the ground; give one with <see cref="At"/>.</summary>
+        public static BattleAction UseAbilityAtAnyPoint(string unit, string ability)
+            => new(BattleActionKind.UseAbility, unit, null, null,
+                string.IsNullOrWhiteSpace(ability) ? throw new ArgumentException("An ability id is required.", nameof(ability)) : ability, null, null, anyPoint: true);
+
+        /// <summary>This any-point candidate at the point.</summary>
+        public BattleAction At(BattlePoint point)
+            => AnyPoint ? new(Kind, Unit, Target, Path, Ability, Variant, point) : throw new InvalidOperationException($"{this} is not an any-point candidate.");
+
+        private static string ValidLimit(string limit)
+            => limit == null || MoveLimits.Contains(limit) ? limit : throw new ArgumentException($"Unknown movement limit {limit}.", nameof(limit));
+
+        public static BattleAction Delay(string unit, string target)
+            => new(BattleActionKind.Delay, unit, string.IsNullOrWhiteSpace(target) ? throw new ArgumentException("A unit id to delay after is required.", nameof(target)) : target, null);
+
+        /// <summary>Uses an action bar entry, by the id the observation's candidates give it, on a unit or (target null) on the caster.</summary>
+        public static BattleAction UseAbility(string unit, string ability, string target = null)
+            => new(BattleActionKind.UseAbility, unit, string.IsNullOrWhiteSpace(target) ? null : target, null,
+                string.IsNullOrWhiteSpace(ability) ? throw new ArgumentException("An ability id is required.", nameof(ability)) : ability);
+
+        public static BattleAction Toggle(string unit, string ability)
+            => new(BattleActionKind.Toggle, unit, null, null, string.IsNullOrWhiteSpace(ability) ? throw new ArgumentException("An ability id is required.", nameof(ability)) : ability);
 
         public BattleActionKind Kind { get; }
         public string Unit { get; }
@@ -694,17 +1020,47 @@ namespace WotR.Testing.Offline
         /// <summary>The observed path's id, for <see cref="BattleActionKind.Move"/>.</summary>
         public string Path { get; }
 
+        /// <summary>
+        /// The action bar entry, for <see cref="BattleActionKind.UseAbility"/> and <see cref="BattleActionKind.Toggle"/>:
+        /// spell:BOOK:LEVEL:SPELL[+METAMAGIC], item:QUICKSLOT:ITEM, ability:ABILITY or toggle:TOGGLE (blueprint names), with
+        /// &gt;CONVERTED for a conversion the entry offers.
+        /// </summary>
+        public string Ability { get; }
+
+        /// <summary>
+        /// Turn-based combat: the smart cursor variant of an attack (<see cref="AttackVariants"/>) or the movement limit of a
+        /// move (<see cref="MoveLimits"/>); null takes the one the game picks.
+        /// </summary>
+        public string Variant { get; }
+
+        /// <summary>The point on the ground of a <see cref="BattleActionKind.MoveTo"/> or of an entry used at a point.</summary>
+        public BattlePoint? Point { get; }
+
+        /// <summary>A candidate that stands for every point: the decision maker gives one with <see cref="At"/>, which the game then checks.</summary>
+        public bool AnyPoint { get; }
+
+        /// <summary>Whether this action is the any-point candidate at a point.</summary>
+        internal bool IsAt(BattleAction anyPoint)
+            => anyPoint.AnyPoint && Point != null && Kind == anyPoint.Kind && Unit == anyPoint.Unit && Ability == anyPoint.Ability && Variant == anyPoint.Variant;
+
         public bool Equals(BattleAction other)
-            => other != null && Kind == other.Kind && Unit == other.Unit && Target == other.Target && Path == other.Path;
+            => other != null && Kind == other.Kind && Unit == other.Unit && Target == other.Target && Path == other.Path && Ability == other.Ability
+                && Variant == other.Variant && Nullable.Equals(Point, other.Point) && AnyPoint == other.AnyPoint;
 
         public override bool Equals(object obj) => Equals(obj as BattleAction);
-        public override int GetHashCode() => (Kind, Unit, Target, Path).GetHashCode();
+        public override int GetHashCode() => (Kind, Unit, Target, Path, Ability, Variant, Point, AnyPoint).GetHashCode();
+
+        private string Where => AnyPoint ? " at any point" : Point is { } p ? FormattableString.Invariant($" at ({p.X:0.##}, {p.Y:0.##}, {p.Z:0.##})") : "";
 
         public override string ToString() => Kind switch
         {
-            BattleActionKind.Attack => $"{Unit} attack {Target}",
-            BattleActionKind.Move => $"{Unit} move {Path}",
+            BattleActionKind.Attack => Variant == null ? $"{Unit} attack {Target}" : $"{Unit} attack {Target} ({Variant})",
+            BattleActionKind.Move => Variant == null ? $"{Unit} move {Path}" : $"{Unit} move {Path} ({Variant})",
+            BattleActionKind.Delay => $"{Unit} delay after {Target}",
             BattleActionKind.EndTurn => $"{Unit} end turn",
+            BattleActionKind.UseAbility => Target == null ? $"{Unit} use {Ability}{Where}" : $"{Unit} use {Ability} on {Target}",
+            BattleActionKind.MoveTo => $"{Unit} move{Where}" + (Variant == null ? "" : $" ({Variant})"),
+            BattleActionKind.Toggle => $"{Unit} toggle {Ability}",
             _ => $"{Unit} wait",
         };
     }
@@ -768,8 +1124,12 @@ namespace WotR.Testing.Offline
             int maxHitPoints, int temporaryHitPoints, string lifeState, bool conscious, bool canAct, bool canMove, bool ready,
             bool inCombat, BattlePoint position, float orientation, float corpulence, float speed, string command,
             float standardActionCooldown, float moveActionCooldown, float swiftActionCooldown, IReadOnlyList<BattleBuffObservation> buffs,
-            IReadOnlyDictionary<string, int> resources, IReadOnlyList<string> abilities)
+            IReadOnlyDictionary<string, int> resources, IReadOnlyList<string> abilities, IReadOnlyDictionary<string, int> spellSlots,
+            IReadOnlyList<string> togglesOn, IReadOnlyDictionary<string, int> itemUses)
         {
+            SpellSlots = spellSlots;
+            ItemUses = itemUses;
+            TogglesOn = togglesOn;
             Id = id;
             Side = side;
             Controlled = controlled;
@@ -851,8 +1211,24 @@ namespace WotR.Testing.Offline
         public IReadOnlyList<BattleBuffObservation> Buffs { get; }
         public IReadOnlyDictionary<string, int> Resources { get; }
 
-        /// <summary>Names of the unit's abilities. Using abilities is not an action yet.</summary>
+        /// <summary>Names of the unit's abilities; the actions list what the unit can use now.</summary>
         public IReadOnlyList<string> Abilities { get; }
+
+        /// <summary>
+        /// Casts left per spellbook and spell level from 1 (BOOK:LEVEL): a spontaneous book's slots
+        /// (Spellbook.GetSpontaneousSlots), a prepared book's memorized spells still available. Cantrips are at will.
+        /// </summary>
+        public IReadOnlyDictionary<string, int> SpellSlots { get; }
+
+        /// <summary>Names of the unit's switched-on abilities (ActivatableAbility.IsOn), such as Power Attack.</summary>
+        public IReadOnlyList<string> TogglesOn { get; }
+
+        /// <summary>
+        /// Uses left of the usable items in the unit's quick slots, by action bar id (item:QUICKSLOT:ITEM), as the action bar
+        /// shows them: a single item's charges (a wand), a stack's count (potions, scrolls), -1 for an item that spends nothing.
+        /// An item used up leaves its slot and this list.
+        /// </summary>
+        public IReadOnlyDictionary<string, int> ItemUses { get; }
     }
 
     public sealed class BattleBuffObservation
@@ -1100,6 +1476,15 @@ namespace WotR.Testing.Offline
     /// The environment failed during a step: the game logged an error, a frame failed, or a command could not be given.
     /// This is not a battle outcome and not a training sample; the episode stops until Reset.
     /// </summary>
+    /// <summary>
+    /// The game's turn-based combat can start no turn (for example the surprise-round dead end of its own code); the step
+    /// fails as a <see cref="BattleEnvironmentException"/> with this as its cause, instead of running to the step limit.
+    /// </summary>
+    public sealed class TurnBasedStallException : InvalidOperationException
+    {
+        internal TurnBasedStallException(string message) : base(message) { }
+    }
+
     public sealed class BattleEnvironmentException : Exception
     {
         internal BattleEnvironmentException(string scenario, int episode, int step, IReadOnlyList<BattleAction> actions, Exception inner)

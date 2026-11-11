@@ -56,9 +56,24 @@
   the next decision point while the game's AI fights for the other sides),
   self-play by controlling every side, turn-based combat through the game's own
   turns and the player's input (`BattleScenario.TurnBased`, `BattleAction.EndTurn`),
+  every entry of a unit's action bar (`BattleAction.UseAbility` for spells with their
+  spontaneous conversions and metamagic, abilities and their variants, and usable
+  items in quick slots; `BattleAction.Toggle` for toggles), moves to and abilities at
+  points on the ground the decision maker gives (`MoveToAnyPoint`, `UseAbilityAtAnyPoint`,
+  checked by the game), the turn-based smart cursor's variants and movement limits
+  (`BattleAction.Attack(unit, target, variant)`, `Move(unit, path, limit)`) and
+  delaying a turn (`BattleAction.Delay`), spell slots, item uses and toggles in the
+  observation,
   configurable outcome and reward, a step
   limit, records per episode and `Replay(record)`. Errors during a step are
-  environment failures with the episode and step, never outcomes.
+  environment failures with the episode and step, never outcomes; a turn-based
+  surprise round in which the game's own code starts no turn fails the step at once
+  with `TurnBasedStallException`.
+- `BattleSlot.QuickSlot1` to `QuickSlot5` put usable items in a battle unit's quick
+  slots. `BattleScenario.FrameLogAllowances` allows errors the game logs during
+  battle frames that the scenario explains; the game's own known logs (a touch
+  spell's duplicate EventBus subscription) are allowed with their reason and counted
+  in `battles.allowedFrameLogs`.
 - Battle units take their view's serialized fields from their real view prefab,
   read on demand from the game's `.unit` bundle as `Instantiate` does: corpulence
   (used by reach, engagement, attacks of opportunity, spacing and vision), the size
@@ -79,7 +94,7 @@
 - New boundaries `navigation-graph`, `physics-scene`, `unit-view-stand-in`,
   `unit-weapon-visuals`, `unit-hit-effects`, `unit-death-visuals`, `unit-highlight`,
   `ability-cast-fx`, `fx`, `sound`, `camera`, `debug-draw`, `move-target-marker`,
-  `game-mode`, `external-control`, `frame-clock`, `pathfinding-clock`, `asset-names`,
+  `game-mode`, `external-control`, `frame-clock`, `pathfinding-clock`, `projectile-view`, `asset-names`,
   `loading-process`, `main-thread-dispatcher`, `pointer`, `path-preview`,
   `selection-ui`, `cursor` and `input` for battles. With `pathfinding-clock`, a battle
   frame does all of A*'s path work instead of stopping at its limits on the

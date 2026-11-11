@@ -387,7 +387,14 @@ unit's control (`control controlled` or `control game-ai`).
 
 Frames run inside `RuleScope`: an
 error the game logs and catches, for example an exception in an event handler,
-fails the call. A frame in which the game sets its time scale to 0, which pauses
+fails the call. Errors the game's own code logs in normal play are allowed, each
+with the code path that logs it: a touch spell's held charge, which
+`AbilityEffectStickyTouch` adds as `UnitPartTouch`, is subscribed to EventBus by
+`EntityPart.TurnOn` and again by `UnitPartTouch.Init`, and the game's
+`SubscriptionManager` logs "Can't subscribe on events twice" and keeps one
+subscription. A scenario allows further logs it explains in
+`BattleScenario.FrameLogAllowances`, as `SetupLogAllowances` does for the build;
+`battles.allowedFrameLogs` counts the allowed logs by reason. A frame in which the game sets its time scale to 0, which pauses
 the game (`PlayerTimeScale` 0, for example), fails the call with
 `InvalidOperationException` instead of running forever. Limits count frame time:
 the `TimeController.DeltaTime` each frame advances the game's controllers by. In
@@ -489,11 +496,23 @@ var differences = environment.Replay(record);      // empty when the episode rep
 its id, side, blueprint, faction, hit points, the game's life state, `CanAct` and
 `CanMove`, whether it is in combat, position, facing, corpulence, speed, the
 command it runs, its standard, move and swift action cooldowns, buffs with their
-remaining time, resources and abilities, and whether it is controlled. A
-controlled unit is ready when it is conscious, the game lets it act and it has no
-command left. `Candidates` lists every action the game allows a ready unit: waiting, attacking each unit the game's player attack
-checks allow (`UnitEntityData.CanAttack` and a weapon to attack with), and moving
-along each usable path.
+remaining time, resources and abilities, casts left per spellbook and spell level
+(`SpellSlots`), the uses left of the usable items in its quick slots as the action
+bar shows them (`ItemUses`: a wand's charges, a stack's count), the abilities
+switched on (`TogglesOn`), and whether it is controlled. A controlled unit is ready when it is conscious, the game lets it act
+and it has no command left. `Candidates` lists every action the game allows a ready
+unit: waiting, attacking each unit the game's player attack checks allow
+(`UnitEntityData.CanAttack` and a weapon to attack with), using each entry of its
+action bar on each target the entry accepts, switching its toggles, and moving
+along each usable path. Two candidates stand for every point on the ground
+(`AnyPoint`): `BattleAction.MoveToAnyPoint(unit)` and, for an entry that targets a
+point, `BattleAction.UseAbilityAtAnyPoint(unit, ability)`. The decision maker gives
+the point with `At(point)` (or `BattleAction.MoveTo(unit, point)` and
+`BattleAction.UseAbility(unit, ability, point)`), and the game checks it before
+anything changes: a move needs a path the game's agent finds there, an entry needs
+the ability to accept the point (`AbilityData.CanTarget`) and, in turn-based combat,
+a command that can start there this turn. A refused point rejects the step with the
+reason; a candidate without a point is not an action.
 
 **Paths.** The observation lists scenario paths as supplied, and for each ready
 unit that can move, the path the game's `UnitMovementAgent.FindPath` finds to every
@@ -517,7 +536,39 @@ destination as a click on the ground does. In real time the game's move commands
 find their own path to the destination (only turn-based combat follows a
 precomputed one), so the path walked can differ from the path observed;
 `BattleStepResult.Walked` reports the distance each unit actually walked.
-`BattleAction.Wait(unit)` leaves a ready unit idle until the next decision point.
+`BattleAction.UseAbility(unit, ability, target)` uses an entry of the unit's action
+bar, and `BattleAction.Toggle(unit, ability)` switches one on or off. The entries
+are those the game's action bar offers, collected as its `ActionBarVM` does: the
+spells of the unit's spellbooks (`ActionBarSpellbookHelper.Fetch`: prepared and
+spontaneous, with metamagic), the usable items in its quick slots (potions,
+scrolls, wands), its abilities that are not hidden, cantrips or temporarily
+disabled, and its toggles (Power Attack, Rage and the like), each followed by the
+conversions its slot offers (spontaneous conversions such as a cleric's cure
+spells, an ability's variants). Ids name them by blueprint:
+`spell:BOOK:LEVEL:SPELL[+METAMAGIC]`, `item:QUICKSLOT:ITEM`, `ability:ABILITY`,
+`toggle:TOGGLE`, with `>CONVERTED` for a conversion. An entry is a candidate while
+the action bar lets the player use it (`IsPossibleActive`: resources, spell slots,
+and in turn-based combat the turn's actions), on every unit it accepts as a target
+(`AbilityData.CanTarget`, as a click with the selected ability checks it; a point
+ability targets the unit's position); an ability without target selection acts on
+the caster and takes no target. A unit the player controls uses it as the player
+does, in real time and in turn-based combat: the slot's click
+(`MechanicActionBarSlot.OnClick`) casts an ability without target selection,
+switches a toggle or selects the ability, and the pointer on the target and a click
+let the game's `ClickWithSelectedAbilityHandler` give the command. A controlled unit
+the player does not control (an enemy in self-play) gets the command that click
+would give (`UnitUseAbility.CreateCastCommand`, an item's `UnitUseAbility`, or a
+custom move or attack), with the game's path in turn-based combat, or its toggle
+switched as the slot does; its entries are those whose slot is available, without
+the player's turn checks. Usable items go into quick slots with
+`BattleSlot.QuickSlot1` to `QuickSlot5`. `MoveTo` is a click on the ground: in
+real time the game's move command finds its own path to the point
+(`ClickGroundHandler`), in turn-based combat the click goes through the game's
+predictions as for a scenario path, and a controlled unit the player does not
+control gets the move with the path the game's agent finds. A unit given an action other than waiting
+decides again as soon as it is ready, so a toggle or a refused click returns at
+once. `BattleAction.Wait(unit)` leaves a ready unit idle until the next decision
+point.
 Units not listed keep running their commands, and units of other sides act on the
 game's AI. A step with an action that is not among the candidates, a unit that is
 not ready or not controlled, or two actions for one unit is rejected with
@@ -537,7 +588,14 @@ command (the turn is preparing or acting, and nothing of the unit runs). A step
 stops after the frame in which the game waits for a controlled unit's command on a
 turn that began during the step, or again on the turn of a unit that acted in it;
 `TurnBasedStepLimit` (default 10 minutes of frame time) bounds a step, and reaching
-it is an environment failure. Instead of `Wait`, a ready unit can take
+it is an environment failure. A step also fails, with `TurnBasedStallException`, after
+a second of frames in which the game's own code can start no turn: in the surprise
+round its `CombatController.ChooseNextUnit` skips surprised units and units acting in
+the surprise round without an offensive command, and when it skips every unit it
+chooses the last one; if that unit is surprised, the game does not count down its
+initiative (`UnitCombatCooldownsController`), so its turn never starts. A unit that
+started combat with a move and a party member that joined combat a moment later can
+lead there. Instead of `Wait`, a ready unit can take
 `BattleAction.EndTurn(unit)`. A unit the player controls (a party member) acts
 through the player's input. `EndTurn` presses the game's end-turn key (`ForceToEnd`
 when `CanEndTurnAndNoActing`). `Attack` moves the pointer onto the target's view,
@@ -549,7 +607,25 @@ which the game's `ClickGroundHandler` handles. A click the game ignores
 the player does not control, such as an enemy in self-play, gets the command a click
 would give with the path the game's agent finds for it, as the game's AI commands
 carry one in turn-based combat (`ForcedPath`); `EndTurn` gives it no command, and the
-game ends its turn when it stays idle. An attack is a candidate only while the game
+game ends its turn when it stays idle. The player's unit also has the smart cursor
+of the game's `TurnController`. `BattleAction.Attack(unit, target, variant)` takes one
+of its variants (`BattleAction.AttackVariants`: a five-foot step or a move, then a
+full attack, a single attack or the delivery of a held touch): the attack variants
+whose conditions on the unit hold are candidates (a full attack with more than one
+attack and a full-round action, a touch with a held charge, a five-foot step while
+the unit has it or the target is within reach, a move unless the target is within
+reach and the unit has its step), and the plain `Attack(unit, target)` keeps the
+variant the game picks. The environment moves the pointer onto the target, lets a
+frame pass so the game's predictions enable the variants for the path they find,
+switches to the variant with the player's key (`TryChangeSmartAction`), lets the
+predictions follow and clicks; when the game does not offer the variant for that
+path, nothing is clicked and the decision names the variants it offers. A move on the
+ground takes a movement limit the same way (`BattleAction.MoveLimits`: two actions,
+one action, a five-foot step, as `TryChangeMovementLimit` cycles them), offered when
+the unit has more than one. `BattleAction.Delay(unit, target)` delays the turn until
+after another unit of the initiative order, as the initiative tracker does
+(`TurnController.DelayInitiaive`), while the game allows it (`CanDelay`: the
+player's unit has not acted yet). An attack is a candidate only while the game
 would start it this turn: the unit can act and has the action
 (`UnitCommandController`'s turn-based check of `CanActInCombat` and
 `HasCooldownForCommand`), and the target is within reach or the turn leaves the unit
@@ -734,7 +810,7 @@ rulebook calculations.
 | `debug-draw` | `Debug.DrawLine` | Skipped: editor scene-view lines, which a player build does not draw either |
 | `unit-death-visuals` | `UnitEntityView.HandleDeath` for battle units | Skipped: the blood and dismemberment effect, the fade, occlusion clipping, a swarm's health display, the prefab's death effects and moving the click collider with the torso. The death itself is `UnitLifeController`'s and runs as shipped |
 | `fx` | `FxHelper` spawn methods and `AbilitySpawnFx.Spawn` while a battle runs | Skipped: visual effects. Ability effects are skipped as when their execution context disables effects; `FxHelper` returns no handle, which its callers allow for |
-| `sound` | `SoundEventsManager.PostEvent` while a battle runs | Skipped: sound events; the game gets no playing id (0) |
+| `sound` | `SoundEventsManager.PostEvent` and the action bar's click sound (`MechanicActionBarSlot.PlaySound`) while a battle runs | Skipped: sound events; the game gets no playing id (0). An action bar slot the battle environment clicks plays no click sound |
 | `ability-cast-fx` | `UnitUseAbility.CastAbilityFx` for battle units | Skipped: the ability's spawn effects, the precast effects and the caster's spell voice; the ability is cast and resolved by the game's code |
 | `unit-highlight` | `UnitEntityView.UpdateHighlight` for battle units | Skipped: the highlight of a unit under the mouse, in a drag box or among the objects the player can use |
 | `camera` | `Game.CameraController`, `TurnController.TryScrollToUnit` and `IslesController.TickCameraRotation` while a battle runs | No camera exists in a battle. `Game.CameraController` is the default mode's own `CameraController` without its `Activate` or `Tick`, which bind the follow key and move the camera rig: code that follows or releases a unit with the camera sets the follower's state, and nothing scrolls. When a turn starts the camera does not scroll to the unit, so the turn is prepared at once, as when the player switches the scroll off. Reading the camera rig's rotation for the Isles is skipped; the isles themselves tick |
@@ -742,13 +818,14 @@ rulebook calculations.
 | `asset-names` | `Object.name` of ScriptableObjects mapped from `blueprint.assets` | The asset's serialized `m_Name`, which Unity keeps in native memory; the game reads it, for example, as the key of a keyboard binding. Any other object's name fails as `unity-runtime-required` |
 | `loading-process` | `LoadingProcess.Instance` while a battle runs | A `LoadingProcess` without a GameObject for the battle: a battle loads no scenes and shows no loading screens. The game's code asks it as usual (the turn-based `CombatController` resets the manual loading screen when combat starts); its `Update` and coroutines never run |
 | `main-thread-dispatcher` | UniRx `MainThreadDispatcher` while a battle runs | A dispatcher without a GameObject for the battle. Actions the game posts to the main thread (for example when turn-based combat ends) run in the dispatcher's own `Update` at the end of every battle frame and once when the battle stops, as Unity's next frame would; its coroutines are not started |
-| `pointer` | `Game.ClickEventsController` and the pointer's object, position and clicks while a battle runs | The game's `DefaultPointerController`, set as `SetupPublicControllers` sets it, without its `Tick`: no mouse, camera or level to cast rays into. The battle environment points it at a unit's view or a point of the ground (no object, as no level is loaded) and clicks as `PointerController.Tick` handles a left click: the game picks the handler by its priorities, the current turn may ignore the click, and the handler's `OnClick` runs. Hover changes are announced as the pointer announces them |
+| `pointer` | `Game.ClickEventsController` and the pointer's object, position and clicks while a battle runs | The game's `DefaultPointerController`, set as `SetupPublicControllers` sets it, without its `Tick`: no mouse, camera or level to cast rays into. The battle environment points it at a unit's view or a point of the ground (no object, as no level is loaded) and clicks as `PointerController.Tick` handles a left click: the game picks the handler by its priorities, the current turn may ignore the click, and the handler's `OnClick` runs. Hover changes are announced as the pointer announces them. At cleanup, before the units go, the pointer moves off the unit it is on and the player's selection is cleared as an unloading area clears it (`SelectionCharacterController.OnAreaBeginUnloading`); the reset compares both |
 | `path-preview` | `PathVisualizer` while a battle runs | The turn-based path preview without a GameObject; its line renderer and decals are stand-ins without native objects. Its `Update` runs every battle frame, the game's predictions ask it for the path of the command under the pointer, and its movement simulation shortens a move to the movement left. Only drawing the line (`DecimateLine`, `SetGradientsToRenderer`: points, colors, materials, decal positions) is skipped |
 | `selection-ui` | `SelectionManagerBase.Instance` (`Game.UI.SelectionManager`) while a battle runs | A `SelectionManagerPC` without a GameObject, registered as its `Awake` registers it, for the click handlers that ask which selected unit acts. The selection is the game's `Game.SelectionCharacter` state, which the `TurnController` sets to the unit whose turn it is. Selection marks are never created, and party changes, which it handles with UI coroutines, are not followed |
 | `cursor` | `CursorController.SetCursor` while a battle runs | Skipped: setting the mouse cursor's image. The game's `CursorController` still decides which cursor it would show |
 | `input` | `UnityEngine.Input` keys, buttons, axes and mouse position while a battle runs | No keyboard or mouse: no key or button is held, pressed or released, axes are at rest and the mouse is at the origin, so the game takes its branches for no modifier key held (no Ctrl to force a move) |
 | `move-target-marker` | `UnitEntityView.OnMovementStarted` for battle units | Skipped: when a directly controllable unit starts a path, it only places the UI's destination marker (`ClickPointerManager`), which does not exist offline. The movement runs as shipped |
 | `game-mode` | The game's default mode during a battle with an area: `Game.DoStartMode`, `Game.Tick` and `Game.DoStopMode` | The default mode `GameModesFactory` builds, without the presentation controllers listed under [Battles](#battles). It is pushed on the game's mode stack, started and activated, and stopped and popped at cleanup, as `DoStartMode` and `DoStopMode` do; of the public controllers only those the mechanics use (hand equipment, combat engagement) are set, not the pointer, interaction highlight or camera. Each frame runs `Game.Tick`'s scheduled actions, real time, mode tick and temporary entities, not its sound, atlas and statistics updates. A request to switch to another mode fails the frame |
+| `projectile-view` | `ProjectileController.CreateView`, `ProjectileController.Clear` and `GameObjectsPool.Release` of projectile views, and `TrajectoryCalculator.CalculateShift`, while a battle runs | A projectile (an arrow, a ray, a cone, a fireball) gets a stand-in view object that keeps the position and rotation its flight gives it, instead of its prefab from the effects pool; the pool releases it, and the controller's `Clear` (when the mode stops) releases the views it clears, as destroying their parent object does in the game. The launch position follows `CreateView`; a source bone is a point of the unit's model, which battles do not load, so the game's own fallback for a missing bone applies: the launcher's point one meter up, then the corpulence offset. Target offset, launch, flight, hit and miss are the game's. Cast effects, trails, the source bone's scale and the trajectory's visual shift of the view (an `AnimationCurve`) are skipped; the flight that decides the hit does not use the shift. Projectiles launched in the controller's last tick are dropped with the battle, since the game's single controller would pass them to the next one |
 | `pathfinding-clock` | `AstarPath.maxFrameTime` and the time slice of A*'s path return queue while a battle runs | The game's A* code limits its work per frame by the computer's clock: the scene's `maxFrameTime` in milliseconds of path searching, after which a search or the rest of the queue continues in the next frame, and 0.5 ms of handing finished paths back, so the frame a path finishes in would depend on the machine's speed and load. A battle frame does all of it, as a machine fast enough for both limits does: `maxFrameTime` is 10^12 ms (`battles.navigation` keeps the scene's value), and the paths the time slice leaves go back right after A*'s `Update`, in the same frame and order. Paths requested during that hand-back are searched in the next frame, as in the game. Path results are the game's; which frame they finish in follows the game's order only |
 | `frame-clock` | Unity's `Time` (`frameCount`, `realtimeSinceStartup`, `time`, `unscaledTime`, `deltaTime`, `unscaledDeltaTime`, `timeScale`) while a battle runs its game loop | Each battle frame is 1/30 s of real time. It starts as a Unity frame does: the frame count, real time and Unity's scaled and unscaled time advance before A* and the controllers run, and `Time.deltaTime` is the frame scaled by `Time.timeScale`. The game's own `TimeController` runs in the default mode and sets `Time.timeScale`, the frame durations and game time, including its turn-based time scales. Between battle frames each frame-count read is a new frame, so per-frame caches are never stale; outside battles these calls fail as `unity-runtime-required`, as before |
 
@@ -778,8 +855,10 @@ game would ask Unity for the system language.
   `AddClassLevels` and no level limit.
 - **Battle loop.** Battles run the game controllers listed under
   [Battles](#battles), not the whole default mode. In particular:
-  - Abilities run when the game's AI uses them, but are not yet actions of the
-    battle environment, which offers waiting, attacks and moves.
+  - Lasting area effects (Grease, Web, Entangle and the like) need the game's
+    area effect view, a GameObject the game creates with native code; casting one
+    fails the step as `unity-runtime-required`. Effects that act at once, including
+    those a projectile delivers (rays, cones, Fireball), run.
   - No camera: no unit is in the camera's view, so a dead unit's body is not
     revealed and its view deactivates, as for a body off screen in the game.
   - No fog of war: every unit counts as visible to the player.
@@ -797,11 +876,15 @@ game would ask Unity for the system language.
 - **Turn-based combat.** `BattleScenario.TurnBased` runs the game's turn-based
   combat; without it battles run real-time combat and rules that branch on
   turn-based state take their real-time path. In the battle environment, turn-based
-  moves are clicks on the ground at scenario path destinations; the smart cursor's
-  other variants (a full attack instead of a single attack, a five-foot step, a
-  single move), abilities and delaying a turn are not actions yet. In turn-based
+  moves are clicks on the ground at scenario path destinations and at points the
+  decision maker gives. Smart cursor variants are offered by the conditions on the
+  unit; whether the game offers one for a target depends on the path its predictions
+  find, which the click checks. In turn-based
   self-play, a controlled enemy's commands carry the path the game's agent finds,
-  not the path the game's AI scores and trims.
+  not the path the game's AI scores and trims. The surprise-round dead end of the
+  game's code (see [Battle environment](#battle-environment)) ends the episode with an
+  environment failure; it follows from the decompiled code and was not reproduced in
+  the running game.
 - **Area parts.** A battle loads its area as the current area part. The game picks
   the part from the main character's position when it loads an area without an
   enter point, and loads that part's navigation graph; battles use the area's own

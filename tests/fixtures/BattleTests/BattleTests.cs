@@ -48,6 +48,8 @@ namespace WotR.Testing.BattleTests
         public const string StandardBastardSword = "07531989333442348b7d0102b24af236";
         public const string ChainShirtPlus1 = "91bf657f26eb80f4ba05b0b8440b1e8c";
         public const string Toughness = "d09b20029e9abfe4480b356c92095623";
+        // BurningHands: a cone aimed at a point on the ground; no projectile and no lasting area.
+        public const string BurningHands = "4783c3709a74a794dbe7c8e7e0b1b038";
         public const string CureLightWounds = "47808d23c67033d4bbab86a1070fd62f";
         public const string ShieldOfFaithBuff = "5274ddc289f4a7447b7ace68ad8bebb0";
         public const string BlessBuff = "87b8c6270ea85c743afc734dfe99afee";

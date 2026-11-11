@@ -188,7 +188,7 @@ namespace WotR.Testing.Offline
             try
             {
                 BattleClock.InFrames = true;
-                RuleScope.Run("battle frames " + Scenario.Name, () =>
+                var allowed = RuleScope.Run("battle frames " + Scenario.Name, () =>
                 {
                     // Limits count frame time, the TimeController.DeltaTime the game's controllers advance by. In real time
                     // the game's clock advances by the same amount; in turn-based combat it stands still during a turn,
@@ -204,7 +204,8 @@ namespace WotR.Testing.Offline
                         frameTime += TimeSpan.FromSeconds(time.DeltaTime);
                         afterFrame?.Invoke();
                     }
-                });
+                }, KnownGameLogs.Frames.Concat(Scenario.FrameLogAllowances).ToArray()).Allowed;
+                BattleWorker.NoteAllowedFrameLogs(allowed);
             }
             finally
             {
@@ -414,7 +415,7 @@ namespace WotR.Testing.Offline
         private static void Equip(BattleUnitSpec spec, UnitEntityData unit, BattleEquipment equipment)
         {
             var blueprint = OfflineGame.Blueprint<Kingmaker.Blueprints.Items.BlueprintItem>(equipment.Item);
-            var slot = Slot(unit, equipment.Slot);
+            var slot = Slot(spec, unit, equipment.Slot);
             var item = blueprint.CreateEntity();
             if (!slot.CanInsertItem(item))
             {
@@ -432,7 +433,7 @@ namespace WotR.Testing.Offline
             Require(spec, slot.MaybeItem?.Blueprint == blueprint, $"{equipment.Slot} holds {slot.MaybeItem?.Blueprint?.name ?? "nothing"} after inserting {blueprint.name}");
         }
 
-        private static ItemSlot Slot(UnitEntityData unit, BattleSlot slot)
+        private static ItemSlot Slot(BattleUnitSpec spec, UnitEntityData unit, BattleSlot slot)
         {
             var body = unit.Body;
             return slot switch
@@ -451,6 +452,9 @@ namespace WotR.Testing.Offline
                 BattleSlot.Ring2 => body.Ring2,
                 BattleSlot.Wrist => body.Wrist,
                 BattleSlot.Shoulders => body.Shoulders,
+                >= BattleSlot.QuickSlot1 and <= BattleSlot.QuickSlot5 => slot - BattleSlot.QuickSlot1 < body.QuickSlots.Length
+                    ? body.QuickSlots[slot - BattleSlot.QuickSlot1]
+                    : throw new BattleSetupException(spec.Id, $"the unit's body has {body.QuickSlots.Length} quick slots, not {slot}"),
                 _ => throw new ArgumentOutOfRangeException(nameof(slot), slot, null),
             };
         }
@@ -472,6 +476,22 @@ namespace WotR.Testing.Offline
             if (!condition) throw new BattleSetupException(spec.Id, problem + ".");
         }
 
+        /// <summary>
+        /// What SelectionCharacterController.OnAreaBeginUnloading clears: its group of the moment (built by its Tick, which a
+        /// battle does not run), the selected units, the selected unit and the full-screen selection.
+        /// </summary>
+        private static void ClearSelection()
+        {
+            var selection = Game.Instance.SelectionCharacter;
+            var type = typeof(Kingmaker.Controllers.SelectionCharacterController);
+            (HarmonyLib.AccessTools.Field(type, "m_ActualGroup").GetValue(selection) as System.Collections.IList)?.Clear();
+            selection.SelectedUnits.Clear();
+            var property = HarmonyLib.AccessTools.Field(type, "SelectedUnit").GetValue(selection);
+            var value = property.GetType().GetProperty("Value");
+            value.SetValue(property, value.PropertyType.IsValueType ? Activator.CreateInstance(value.PropertyType) : null);
+            HarmonyLib.AccessTools.Field(type, "m_FullScreenSelectedUnit").SetValue(selection, null);
+        }
+
         private BattleCleanup Cleanup()
         {
             var failures = new List<string>();
@@ -485,6 +505,14 @@ namespace WotR.Testing.Offline
             foreach (var subscriber in subscriptions)
                 Step("unsubscribe " + subscriber.GetType().FullName, () => EventBus.Unsubscribe(subscriber));
             subscriptions.Clear();
+            if (loop != null)
+            {
+                // Before the units go: the pointer moves off the unit it is on, and the player's selection is cleared as the
+                // game's SelectionCharacterController clears it when an area begins unloading. Both would otherwise keep
+                // units of this battle for the next one.
+                Step("move the pointer off the battle's units", BattlePointer.Leave);
+                Step("clear the player's selection as an unloading area does", ClearSelection);
+            }
             for (var i = units.Count - 1; i >= 0; i--)
             {
                 var unit = units[i].Unit;

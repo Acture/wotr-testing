@@ -84,6 +84,12 @@ namespace WotR.Testing.Offline
         /// </summary>
         public IList<RuleLogAllowance> SetupLogAllowances { get; } = new List<RuleLogAllowance>();
 
+        /// <summary>
+        /// Errors the game logs while battle frames run that the scenario explains, each with a reason; the library already
+        /// allows the game's own known logs. Any other logged error fails the frames.
+        /// </summary>
+        public IList<RuleLogAllowance> FrameLogAllowances { get; } = new List<RuleLogAllowance>();
+
         public BattleUnitSpec Unit(string id, string side, string blueprint)
         {
             var unit = new BattleUnitSpec(id, side, blueprint);
@@ -115,11 +121,11 @@ namespace WotR.Testing.Offline
                     if (end != null && !ids.Contains(end))
                         throw new ArgumentException($"Path {path.Id} names unit {end}, which scenario {Name} does not declare.");
             }
-            foreach (var allowance in SetupLogAllowances)
+            foreach (var (allowance, kind) in SetupLogAllowances.Select(a => (a, "setup")).Concat(FrameLogAllowances.Select(a => (a, "frame"))))
             {
-                if (allowance == null) throw new ArgumentException($"Scenario {Name} has a null setup log allowance.");
-                if (string.IsNullOrWhiteSpace(allowance.Reason)) throw new ArgumentException($"Scenario {Name} has a setup log allowance without a reason.");
-                if (allowance.Match == null) throw new ArgumentException($"Scenario {Name} has a setup log allowance without a match.");
+                if (allowance == null) throw new ArgumentException($"Scenario {Name} has a null {kind} log allowance.");
+                if (string.IsNullOrWhiteSpace(allowance.Reason)) throw new ArgumentException($"Scenario {Name} has a {kind} log allowance without a reason.");
+                if (allowance.Match == null) throw new ArgumentException($"Scenario {Name} has a {kind} log allowance without a match.");
             }
         }
     }
@@ -264,6 +270,13 @@ namespace WotR.Testing.Offline
         Ring2,
         Wrist,
         Shoulders,
+
+        /// <summary>The unit body's quick slots for usable items (potions, scrolls, wands), in the action bar's order.</summary>
+        QuickSlot1,
+        QuickSlot2,
+        QuickSlot3,
+        QuickSlot4,
+        QuickSlot5,
     }
 
     public sealed class BattleEquipment

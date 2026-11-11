@@ -95,8 +95,9 @@ class BattleFixtureTests(unittest.TestCase):
 				self.assertFalse(section["dirty"])
 				self.assertGreater(section["builds"], section["battlesStarted"])
 				self.assertEqual(section["failedCleanups"], 0)
-				# One environment test injects a failure; every other episode step ran.
-				self.assertEqual(section["environment"]["failed"], 1)
+				# One environment test injects a failure and one runs into the game's surprise-round
+				# stall; every other episode step ran.
+				self.assertEqual(section["environment"]["failed"], 2)
 				self.assertGreater(section["environment"]["ended"], 3)
 				# The installation has the area's mechanics scene, so A* takes its settings.
 				for navigation in section["navigation"]:

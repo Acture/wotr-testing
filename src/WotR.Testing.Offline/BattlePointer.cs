@@ -55,7 +55,17 @@ namespace WotR.Testing.Offline
             Boundaries.Hit("pointer");
         }
 
-        /// <summary>The pointer leaves the battle as the mode's deactivation leaves it: hovering nothing, in its default mode.</summary>
+        /// <summary>
+        /// The pointer moves off the object it is on, onto the ground where it is, as a mouse leaving a unit does; the game
+        /// hears it while the battle's units still exist. Battle cleanup does this before the units are destroyed.
+        /// </summary>
+        internal static void Leave()
+        {
+            var pointer = Game.Instance.DefaultPointerController;
+            if (installed && pointer.PointerOn != null) PointAt(null, pointer.WorldPosition);
+        }
+
+        /// <summary>The pointer leaves the battle hovering nothing (<see cref="Leave"/>), in its default mode.</summary>
         internal static void Remove()
         {
             if (!installed) return;

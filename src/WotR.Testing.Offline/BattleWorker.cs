@@ -92,6 +92,16 @@ namespace WotR.Testing.Offline
             lock (Gate) failedEpisodes++;
         }
 
+        private static readonly SortedDictionary<string, int> AllowedFrameLogs = new(StringComparer.Ordinal);
+
+        /// <summary>Errors the game logged during battle frames that a known game log or the scenario allowed, by reason.</summary>
+        internal static void NoteAllowedFrameLogs(IReadOnlyList<AllowedRuleLog> allowed)
+        {
+            lock (Gate)
+                foreach (var log in allowed)
+                    AllowedFrameLogs[log.Reason] = (AllowedFrameLogs.TryGetValue(log.Reason, out var count) ? count : 0) + 1;
+        }
+
         internal static void NotePlayerContext(string name, string description)
         {
             lock (Gate) PlayerContext.Add(new KeyValuePair<string, string>(name, description));
@@ -187,6 +197,7 @@ namespace WotR.Testing.Offline
                     cleanups,
                     failedCleanups,
                     environment = episodes == 0 ? null : new { episodes, steps = episodeSteps, ended = endedEpisodes, failed = failedEpisodes },
+                    allowedFrameLogs = AllowedFrameLogs.Select(pair => new { reason = pair.Key, count = pair.Value }).ToArray(),
                     playerContext = PlayerContext.Select(pair => new { name = pair.Key, prepared = pair.Value }).ToArray(),
                     navigation = Navigation.Values.ToArray(),
                     unitViews = UnitViews.Values.ToArray(),
@@ -194,7 +205,7 @@ namespace WotR.Testing.Offline
                     {
                         "EventBus global and unit subscriptions", "Rulebook global, initiator and target subscriptions",
                         "EntityService entities", "game state and awake units", "Player.CrossSceneState entities", "player party inventory items, their counts and Player.Inventory identity", "game time",
-                        "frame clock (DeltaTime, GameDeltaTime)", "unit view stand-ins",
+                        "frame clock (DeltaTime, GameDeltaTime)", "unit view stand-ins", "the pointer's hovered object and the player's selection",
                         "player combat state, party and main character", "game unit groups", "loaded area and the scene loader's current area", "entity-bounds scene",
                         "Game.Instance.LevelUpController", "turn-based combat controller current turn", "rulebook event stack",
                         "game RNG seed and call count", "temporary blueprints",

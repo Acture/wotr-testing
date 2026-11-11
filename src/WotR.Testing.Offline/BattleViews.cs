@@ -59,6 +59,8 @@ namespace WotR.Testing.Offline
         private static readonly Dictionary<object, StandIn> StandIns = new(ReferenceComparer.Instance);
         private static readonly Dictionary<object, UnitEntityData> Transforms = new(ReferenceComparer.Instance);
         private static readonly Dictionary<object, Vector3> StoredPositions = new(ReferenceComparer.Instance);
+        private static readonly Dictionary<object, Quaternion> StoredRotations = new(ReferenceComparer.Instance);
+        private static readonly Dictionary<object, StandIn> DetachedObjects = new(ReferenceComparer.Instance);
         private static readonly Dictionary<object, Transform> ComponentTransforms = new(ReferenceComparer.Instance);
         private static readonly Dictionary<object, GameObject> GameObjects = new(ReferenceComparer.Instance);
         private static readonly Dictionary<object, bool> Enabled = new(ReferenceComparer.Instance);
@@ -319,6 +321,7 @@ namespace WotR.Testing.Offline
                 Radii.Remove(part);
                 Transforms.Remove(part);
                 StoredPositions.Remove(part);
+                StoredRotations.Remove(part);
                 ComponentTransforms.Remove(part);
                 GameObjects.Remove(part);
                 Enabled.Remove(part);
@@ -352,7 +355,45 @@ namespace WotR.Testing.Offline
             Detached.Remove(component);
         }
 
-        internal static int DetachedCount => Detached.Count;
+        internal static int DetachedCount => Detached.Count + DetachedObjects.Count;
+
+        /// <summary>
+        /// A view object the game's code makes for itself (a projectile's), as a stand-in without a native object: a
+        /// GameObject with an active flag and a transform that keeps the position and rotation it is given. Released with
+        /// <see cref="ReleaseDetachedObject"/>.
+        /// </summary>
+        internal static GameObject CreateDetachedObject(Vector3 position, Quaternion rotation)
+        {
+            var standIn = new StandIn();
+            standIn.GameObject = CreateGameObject(standIn);
+            standIn.Transform = (Transform)Create(typeof(Transform), standIn, standIn.GameObject, null);
+            StoredPositions[standIn.Transform] = position;
+            StoredRotations[standIn.Transform] = rotation;
+            DetachedObjects[standIn.GameObject] = standIn;
+            return standIn.GameObject;
+        }
+
+        /// <summary>Releases a view object from <see cref="CreateDetachedObject"/>; false for any other object.</summary>
+        internal static bool ReleaseDetachedObject(GameObject gameObject)
+        {
+            if (gameObject is null || !DetachedObjects.TryGetValue(gameObject, out var standIn)) return false;
+            ReleaseParts(standIn);
+            DetachedObjects.Remove(gameObject);
+            return true;
+        }
+
+        internal static bool TryGetStoredRotation(Transform transform, out Quaternion rotation)
+        {
+            rotation = default;
+            return transform is not null && StoredRotations.TryGetValue(transform, out rotation);
+        }
+
+        internal static bool TrySetStoredRotation(Transform transform, Quaternion rotation)
+        {
+            if (transform is null || !StoredRotations.ContainsKey(transform)) return false;
+            StoredRotations[transform] = rotation;
+            return true;
+        }
 
         /// <summary>
         /// The components on a stand-in GameObject, its transform first as in Unity, then in the order they were added;
@@ -877,13 +918,25 @@ namespace WotR.Testing.Offline
         [HarmonyPatch("get_rotation_Injected"), HarmonyPrefix]
         private static bool GetRotation(Transform __instance, ref Quaternion ret)
         {
+            if (OfflineUnitView.TryGetStoredRotation(__instance, out ret)) return false;
             if (OfflineUnitView.TransformOwner(__instance) is not { } unit) return true;
             ret = UnityMath.FromEulerRad(new Vector3(0f, unit.Orientation * (float)(Math.PI / 180.0), 0f));
             return false;
         }
 
         [HarmonyPatch("set_rotation_Injected"), HarmonyPrefix]
-        private static bool SetRotation(Transform __instance) => OfflineUnitView.TransformOwner(__instance) is null;
+        private static bool SetRotation(Transform __instance, ref Quaternion value)
+            => !OfflineUnitView.TrySetStoredRotation(__instance, value) && OfflineUnitView.TransformOwner(__instance) is null;
+
+        /// <summary>A stand-in view object turns to look at the point, as Unity's Transform.LookAt turns its transform.</summary>
+        [HarmonyPatch("Internal_LookAt_Injected"), HarmonyPrefix]
+        private static bool LookAt(Transform __instance, ref Vector3 worldPosition, ref Vector3 worldUp)
+        {
+            if (!OfflineUnitView.TryGetStoredPosition(__instance, out var position) || !OfflineUnitView.TryGetStoredRotation(__instance, out _)) return true;
+            var direction = worldPosition - position;
+            if (direction != Vector3.zero) OfflineUnitView.TrySetStoredRotation(__instance, Quaternion.LookRotation(direction, worldUp));
+            return false;
+        }
     }
 
     /// <summary>

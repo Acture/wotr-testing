@@ -53,6 +53,17 @@ namespace WotR.Testing.Offline
         private object loadingProcess;
         private object dispatcher;
         private object pathVisualizer;
+        private object pointerOn;
+
+        /// <summary>SelectionCharacterController.SelectedUnit, a UniRx reactive property of a UnitReference, read by reflection.</summary>
+        private static object SelectedUnit()
+        {
+            var property = HarmonyLib.AccessTools.Field(typeof(Kingmaker.Controllers.SelectionCharacterController), "SelectedUnit").GetValue(Game.Instance.SelectionCharacter);
+            var reference = property?.GetType().GetProperty("Value")?.GetValue(property);
+            return reference?.GetType().GetProperty("Value")?.GetValue(reference);
+        }
+        private object[] selectedUnits;
+        private object selectedUnit;
         private object selectionManager;
         private object clickEvents;
         private int detachedStandIns;
@@ -141,6 +152,9 @@ namespace WotR.Testing.Offline
                 loadingProcess = LoadingProcessStandIn.Current,
                 dispatcher = MainThreadDispatcherStandIn.Current,
                 pathVisualizer = PathVisualizerStandIn.Current,
+                pointerOn = Game.Instance.DefaultPointerController?.PointerOn,
+                selectedUnits = Game.Instance.SelectionCharacter.SelectedUnits.Cast<object>().ToArray(),
+                selectedUnit = SelectedUnit(),
                 selectionManager = SelectionManagerStandIn.Current,
                 clickEvents = Game.Instance.ClickEventsController,
                 detachedStandIns = OfflineUnitView.DetachedCount,
@@ -210,6 +224,9 @@ namespace WotR.Testing.Offline
             if (!ReferenceEquals(loadingProcess, after.loadingProcess)) residue.Add("LoadingProcess.Instance changed");
             if (!ReferenceEquals(dispatcher, after.dispatcher)) residue.Add("UniRx MainThreadDispatcher instance changed");
             if (!ReferenceEquals(pathVisualizer, after.pathVisualizer)) residue.Add("PathVisualizer.Instance changed");
+            if (!ReferenceEquals(pointerOn, after.pointerOn)) residue.Add("the pointer hovers another object (DefaultPointerController.PointerOn)");
+            if (!selectedUnits.SequenceEqual(after.selectedUnits) || !ReferenceEquals(selectedUnit, after.selectedUnit))
+                residue.Add($"the player's selection holds other units ({after.selectedUnits.Length} selected)");
             if (!ReferenceEquals(selectionManager, after.selectionManager)) residue.Add("SelectionManagerBase.Instance changed");
             if (!ReferenceEquals(clickEvents, after.clickEvents)) residue.Add("Game.ClickEventsController changed");
             Value(residue, "presentation stand-ins", detachedStandIns, after.detachedStandIns);

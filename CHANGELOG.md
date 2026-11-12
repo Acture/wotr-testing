@@ -102,6 +102,11 @@
   the variation's prefab, race and gender. Before, they kept the blueprint's own
   prefab, which for some is in no bundle. Blueprints their preset does not list keep
   their own prefab, as in the game.
+- A position the game writes to a battle unit's view transform is read back until the
+  unit's position changes, as in the game, where the two are separate values the
+  game sets together. Before, the write was dropped: a turn-based unit snapped onto
+  its path's end still read its position from before the snap, and could stop on a
+  node an ally occupies ("TBM: Stop: stopping in a bad state (ally blocked)").
 - `BattleScenario.Difficulty` chooses the game's difficulty level for a battle as a
   player chooses it in the options (the game fills in the level's preset), and
   `BattleScenario.LimitedAI` sets the limited-AI option; cleanup restores both and

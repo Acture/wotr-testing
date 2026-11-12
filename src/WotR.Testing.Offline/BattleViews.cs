@@ -59,6 +59,8 @@ namespace WotR.Testing.Offline
         private static readonly Dictionary<object, StandIn> StandIns = new(ReferenceComparer.Instance);
         private static readonly Dictionary<object, UnitEntityData> Transforms = new(ReferenceComparer.Instance);
         private static readonly Dictionary<object, Vector3> StoredPositions = new(ReferenceComparer.Instance);
+        // A position the game wrote to a stand-in view's transform, with the unit's position at the write.
+        private static readonly Dictionary<object, (Vector3 Written, Vector3 Unit)> WrittenPositions = new(ReferenceComparer.Instance);
         private static readonly Dictionary<object, Quaternion> StoredRotations = new(ReferenceComparer.Instance);
         private static readonly Dictionary<object, StandIn> DetachedObjects = new(ReferenceComparer.Instance);
         private static readonly Dictionary<object, Transform> ComponentTransforms = new(ReferenceComparer.Instance);
@@ -321,6 +323,7 @@ namespace WotR.Testing.Offline
                 Radii.Remove(part);
                 Transforms.Remove(part);
                 StoredPositions.Remove(part);
+                WrittenPositions.Remove(part);
                 StoredRotations.Remove(part);
                 ComponentTransforms.Remove(part);
                 GameObjects.Remove(part);
@@ -433,6 +436,29 @@ namespace WotR.Testing.Offline
             if (transform is null || !StoredPositions.ContainsKey(transform)) return false;
             StoredPositions[transform] = position;
             return true;
+        }
+
+        /// <summary>
+        /// The position of a stand-in view's transform: the one the game last wrote to it while the unit's position has not
+        /// changed since, else the unit's position. In the game the view's transform and UnitEntityData.Position are two
+        /// values that the game sets together (UnitMoveController writes both after every movement tick); in between, the
+        /// game's code reads back what it wrote (UnitMovementAgent.TickMovement snaps a turn-based unit onto its path's end
+        /// and then checks where it stopped).
+        /// </summary>
+        internal static Vector3 ViewPosition(Transform transform, UnitEntityData unit)
+        {
+            if (WrittenPositions.TryGetValue(transform, out var written))
+            {
+                if (written.Unit == unit.Position) return written.Written;
+                WrittenPositions.Remove(transform);
+            }
+            return unit.Position;
+        }
+
+        internal static void WriteViewPosition(Transform transform, UnitEntityData unit, Vector3 position)
+        {
+            if (position == unit.Position) WrittenPositions.Remove(transform);
+            else WrittenPositions[transform] = (position, unit.Position);
         }
 
         internal static Transform ComponentTransform(Component component)
@@ -938,8 +964,10 @@ namespace WotR.Testing.Offline
 
     /// <summary>
     /// A stand-in view's Transform reads as the unit: its position is the unit's position and its rotation the unit's
-    /// orientation, which the game keeps in UnitEntityData. Writes to either are dropped, because only the model would
-    /// show them; game code that moves a unit sets the data as well (UnitPlaceOnGroundController sets both, for example).
+    /// orientation, which the game keeps in UnitEntityData. A position the game writes to it is read back until the unit's
+    /// position changes (<see cref="OfflineUnitView.ViewPosition"/>); rotation writes are dropped, because only the model
+    /// would show them. Game code that moves a unit sets the data as well (UnitMoveController and
+    /// UnitPlaceOnGroundController set both, for example).
     /// The entity-bounds sphere's transform keeps the position the game's EntityBoundsController gives it, with scale one.
     /// </summary>
     [HarmonyPatch(typeof(Transform))]
@@ -950,13 +978,18 @@ namespace WotR.Testing.Offline
         {
             if (OfflineUnitView.TryGetStoredPosition(__instance, out ret)) return false;
             if (OfflineUnitView.TransformOwner(__instance) is not { } unit) return true;
-            ret = unit.Position;
+            ret = OfflineUnitView.ViewPosition(__instance, unit);
             return false;
         }
 
         [HarmonyPatch("set_position_Injected"), HarmonyPrefix]
         private static bool SetPosition(Transform __instance, ref Vector3 value)
-            => !OfflineUnitView.TrySetStoredPosition(__instance, value) && OfflineUnitView.TransformOwner(__instance) is null;
+        {
+            if (OfflineUnitView.TrySetStoredPosition(__instance, value)) return false;
+            if (OfflineUnitView.TransformOwner(__instance) is not { } unit) return true;
+            OfflineUnitView.WriteViewPosition(__instance, unit, value);
+            return false;
+        }
 
         [HarmonyPatch("get_lossyScale_Injected"), HarmonyPrefix]
         private static bool GetLossyScale(Transform __instance, ref Vector3 ret)

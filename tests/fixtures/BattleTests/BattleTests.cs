@@ -789,6 +789,29 @@ namespace WotR.Testing.BattleTests
         }
 
         [Fact]
+        public void AStandInViewReadsBackThePositionTheGameWritesUntilTheUnitMoves()
+        {
+            game.RequireGame();
+            using var battle = OfflineBattle.Start(Duel(), seed: 1);
+            var fighter = battle.Unit("fighter");
+            var transform = fighter.View.transform;
+            var start = fighter.Position;
+            Assert.Equal(start, transform.position);
+
+            // The game's turn-based arrival snap writes the agent's transform and reads it back before UnitMoveController
+            // sets the unit's position; in the game the view's transform and the unit's data are two values.
+            var snapped = start + new UnityEngine.Vector3(0.05f, -0.06f, 0.04f);
+            transform.position = snapped;
+            Assert.Equal(snapped, transform.position);
+            Assert.Equal(start, fighter.Position);
+
+            // Once the unit's data moves, the view reads as the unit again.
+            var moved = start + new UnityEngine.Vector3(0.3f, 0f, 0f);
+            fighter.Position = moved;
+            Assert.Equal(moved, transform.position);
+        }
+
+        [Fact]
         public void LethalDamageKillsTheUnitThroughTheGameLifeController()
         {
             game.RequireGame();

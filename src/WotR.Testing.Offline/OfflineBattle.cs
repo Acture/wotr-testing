@@ -416,6 +416,13 @@ namespace WotR.Testing.Offline
                 Require(spec, unit.Buffs.GetBuff(blueprintBuff) != null, $"buff {blueprintBuff.name} is not active after AddBuff");
             }
             foreach (var resource in spec.Resources) SetResource(spec, unit, resource.Key, resource.Value);
+            if (spec.Brain != null)
+            {
+                var brain = OfflineGame.Blueprint<Kingmaker.AI.Blueprints.BlueprintBrain>(spec.Brain);
+                unit.Brain.SetBrain(brain);
+                unit.Brain.RestoreAvailableActions();
+                Require(spec, unit.Brain.Blueprint == brain, $"brain is {unit.Brain.Blueprint?.name}, expected {brain.name}");
+            }
             if (spec.Position is { } point) unit.Position = new UnityEngine.Vector3(point.X, point.Y, point.Z);
             // Commands interrupt themselves when their target is in no scene state (IsInState). The game keeps party
             // units, which use the party inventory, in Player.CrossSceneState; other units belong to an area's state,
@@ -426,6 +433,18 @@ namespace WotR.Testing.Offline
             // The units of a loaded area are in the game; the game's unit pools and controllers enumerate only those.
             unit.IsInGame = true;
             OfflineUnitView.Attach(unit);
+            if (spec.AutoUseAbility != null) SetAutoUse(spec, unit);
+        }
+
+        /// <summary>Right-clicks the ability's action bar slot, as the player chooses what the unit's AI may use on its own.</summary>
+        private static void SetAutoUse(BattleUnitSpec spec, UnitEntityData unit)
+        {
+            var ability = OfflineGame.Blueprint<BlueprintAbility>(spec.AutoUseAbility);
+            var slot = BattleAbilities.Collect(unit).FirstOrDefault(s => s.Ability?.Blueprint == ability && !s.Id.Contains(">"));
+            Require(spec, slot != null, $"has no action bar slot for {ability.name}");
+            slot.Slot.OnRightClick();
+            Require(spec, unit.Brain.AutoUseAbility?.Blueprint == ability,
+                $"auto use of {ability.name} was not set by a right click on its slot: the game allows it only for abilities suitable for auto use (AbilityData.IsSuitableForAutoUse is {slot.Ability.IsSuitableForAutoUse})");
         }
 
         private static void AddClassLevels(BattleUnitSpec spec, UnitEntityData unit, BattleClassLevels levels)

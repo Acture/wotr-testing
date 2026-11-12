@@ -205,6 +205,8 @@ of this table; changes of one kind in the order they were added:
 | `Equip` | `ItemSlot.InsertItem` | The slot holds the item; a refused item fails the build with the game's reason |
 | `WithFact`, `WithAbility`, `WithBuff` | `AddFact`, `AddBuff` (the unit as caster, duration in rounds) | The fact, ability or buff is active |
 | `WithResource` | `Restore` and `Spend` on a resource the unit has | Current amount |
+| `WithBrain` | `UnitBrain.SetBrain` and `RestoreAvailableActions`, as the game's `ChangeBrain` action and spawners change a unit's brain | The unit has the brain |
+| `WithAutoUseAbility` | A right click on the ability's action bar slot, as the player chooses what a party unit's AI may use on its own | `Brain.AutoUseAbility` is the ability (the game allows abilities suitable for auto use) |
 | `At` | `UnitEntityData.Position` | Nothing else |
 | `MainCharacter` | `Player.SetMainCharacter` for a player-faction unit | `GameHelper.GetPlayerCharacter()` |
 | `Companions` | `Player.AddCompanion` for player-faction units next to the main character; `RemoveCompanion` at cleanup | In `Player.Party` and `IsDirectlyControllable` |

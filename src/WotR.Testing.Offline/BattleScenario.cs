@@ -231,6 +231,21 @@ namespace WotR.Testing.Offline
         /// <summary>Position set on <c>UnitEntityData.Position</c>; no scene, navmesh or collision checks it.</summary>
         public BattlePoint? Position { get; set; }
 
+        /// <summary>
+        /// Guid of a <c>BlueprintBrain</c> the unit gets instead of its blueprint's, as the game's <c>ChangeBrain</c> action
+        /// and spawners do (<c>UnitBrain.SetBrain</c>, then <c>RestoreAvailableActions</c>): the game's AI then chooses the
+        /// unit's actions from that brain.
+        /// </summary>
+        public string Brain { get; set; }
+
+        /// <summary>
+        /// Guid of the ability, spell or usable item the game's AI may use on its own for this party unit, set as the player
+        /// sets it: a right click on its action bar slot, which the game accepts for abilities suitable for auto use
+        /// (<c>AbilityData.IsSuitableForAutoUse</c>). The game's AI acts for party units in real time while their AI is on,
+        /// which it is by default; in turn-based combat it does not act for units the player controls.
+        /// </summary>
+        public string AutoUseAbility { get; set; }
+
         public BattleUnitSpec WithFaction(string faction)
         {
             Faction = faction;
@@ -270,6 +285,18 @@ namespace WotR.Testing.Offline
         public BattleUnitSpec WithBuff(string buff, int? rounds = null)
         {
             Buffs.Add(new BattleBuff(buff, rounds));
+            return this;
+        }
+
+        public BattleUnitSpec WithBrain(string brain)
+        {
+            Brain = brain;
+            return this;
+        }
+
+        public BattleUnitSpec WithAutoUseAbility(string ability)
+        {
+            AutoUseAbility = ability;
             return this;
         }
 

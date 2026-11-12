@@ -88,6 +88,11 @@
 - Battle units can wield enchanted weapons: the enchantment's glow
   (`ItemEnchantment.RespawnFx`, which loads a prefab from the asset bundles while
   the unit is built) is skipped under the `fx` boundary; the enchantment applies.
+- `BattleUnitSpec.WithBrain` gives a unit another game brain as the game's
+  `ChangeBrain` does, and `WithAutoUseAbility` chooses a party unit's auto-use
+  ability with a right click on its action bar slot, as the player does. The game's
+  AI acts for party units in real time while their AI is on (the default); in
+  turn-based combat it never acts for units the player controls.
 - `BattleScenario.Difficulty` chooses the game's difficulty level for a battle as a
   player chooses it in the options (the game fills in the level's preset), and
   `BattleScenario.LimitedAI` sets the limited-AI option; cleanup restores both and

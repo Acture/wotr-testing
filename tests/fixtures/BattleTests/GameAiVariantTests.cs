@@ -64,6 +64,53 @@ namespace WotR.Testing.BattleTests
             Assert.True(fighter.HPLeft <= hitPoints);
         }
 
+        // DLC3_PALADIN_TRAILER_LOW: Player faction, Paladin 2; its blueprint's brain (CultistWizard_Brain_Standard) has no
+        // action a paladin can take. DLC3_ARCANIST_TRAILER_LOW: Sorcerer 2 who knows Magic Missile.
+        private const string Paladin = "8e32f5f0db9c4ba6adad110aa76ff2e6";
+        private const string Arcanist = "38d1cc56076c43499b447d3e4c81db2f";
+        private const string MagicMissile = "4ac47ddb9fa1eaf43a1b6809980cfbd2";
+
+        [Fact]
+        public void AUnitGivenAnotherBrainActsOnItAsTheGamesChangeBrainMakesIt()
+        {
+            game.RequireGame();
+            string characterBrain;
+            using (var source = OfflineBattle.Start(OneOnOne("brain-source", Guids.Fighter, Guids.Cultist), seed: 1))
+                characterBrain = source.Unit("hero").Brain.Blueprint.AssetGuid.ToString();
+
+            // Commands the game's AI gave the paladin in the first seconds of the fight.
+            int AiCommands(BattleScenario scenario)
+            {
+                using var battle = OfflineBattle.Start(scenario, seed: 1);
+                var paladin = battle.Unit("hero");
+                var commands = new WotR.Testing.BattleSupport.CommandRecorder();
+                battle.Subscribe(commands);
+                for (var second = 0; second < 15 && paladin.Descriptor.State.IsConscious && !commands.Acted.Any(c => c.Executor == paladin && c.ByAi); second++)
+                    battle.Run(TimeSpan.FromSeconds(1));
+                return commands.Acted.Count(c => c.Executor == paladin && c.ByAi);
+            }
+
+            Assert.Equal(0, AiCommands(OneOnOne("own-brain", Paladin, Guids.Cultist)));
+            var swapped = OneOnOne("swapped-brain", Paladin, Guids.Cultist);
+            swapped.Units.First(u => u.Id == "hero").WithBrain(characterBrain);
+            Assert.True(AiCommands(swapped) > 0);
+        }
+
+        [Fact]
+        public void AnAutoUseAbilityIsChosenAsThePlayerChoosesItOnTheActionBar()
+        {
+            game.RequireGame();
+            var scenario = OneOnOne("auto-use", Arcanist, Guids.Cultist);
+            scenario.Units.First(u => u.Id == "hero").WithAutoUseAbility(MagicMissile);
+            using (var battle = OfflineBattle.Start(scenario, seed: 1))
+                Assert.Equal(MagicMissile, battle.Unit("hero").Brain.AutoUseAbility?.Blueprint.AssetGuid.ToString());
+
+            var fighter = OneOnOne("auto-use-without-slot", Guids.Fighter, Guids.Cultist);
+            fighter.Units.First(u => u.Id == "hero").WithAutoUseAbility(MagicMissile);
+            var error = Assert.Throws<BattleSetupException>(() => OfflineBattle.Start(fighter, seed: 1));
+            Assert.Contains("has no action bar slot for MagicMissile", error.ToString());
+        }
+
         [Fact]
         public void AnEnchantedWeaponKeepsItsEnchantmentWithoutItsGlow()
         {

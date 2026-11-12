@@ -31,6 +31,10 @@ namespace WotR.Testing.Offline
     {
         private const string UniqueIdPrefix = "wotr-battle:";
 
+        /// <summary>True for a unit a battle built, also while the battle is still building it.</summary>
+        internal static bool IsBattleUnit(Kingmaker.EntitySystem.Entities.UnitEntityData unit)
+            => unit?.UniqueId != null && unit.UniqueId.StartsWith(UniqueIdPrefix, StringComparison.Ordinal);
+
         private readonly List<BattleUnit> units = new();
         private readonly List<object> subscriptions = new();
         private readonly List<BlueprintGuid> temporaryBlueprints = new();

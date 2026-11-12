@@ -65,6 +65,23 @@ namespace WotR.Testing.BattleTests
         }
 
         [Fact]
+        public void AnEnchantedWeaponKeepsItsEnchantmentWithoutItsGlow()
+        {
+            game.RequireGame();
+            var effects = Hits("fx");
+            // DLC3_BARBARIAN_TRAILER_MID: Barbarian 8 with a +1 shock greataxe.
+            using var battle = OfflineBattle.Start(OneOnOne("enchanted", "cc6a64ab9dad47d0868bd59d283ca7df", Guids.Cultist), seed: 1);
+            var weapon = battle.Unit("hero").Body.PrimaryHand.MaybeWeapon;
+
+            // ItemEnchantment.RespawnFx loads the glow from the asset bundles when the enchantment activates, while the battle
+            // builds the unit; the battle skips the glow, and the game's enchantment stays on the weapon.
+            Assert.NotNull(weapon);
+            Assert.NotEmpty(weapon.Enchantments);
+            Assert.True(Hits("fx") > effects);
+            battle.Run(TimeSpan.FromSeconds(3));
+        }
+
+        [Fact]
         public void TheBattlesDifficultyIsTheGamesPresetWhichItsRulesReadAndCleanupRestoresTheSettings()
         {
             game.RequireGame();

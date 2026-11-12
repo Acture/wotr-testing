@@ -85,6 +85,9 @@
   `unit-hit-effects`, `fx`); the notice goes to a bark player that shows nothing
   (new boundary `bark`). Summoned creatures (`ContextActionSpawnMonster`) are not
   supported yet.
+- Battle units can wield enchanted weapons: the enchantment's glow
+  (`ItemEnchantment.RespawnFx`, which loads a prefab from the asset bundles while
+  the unit is built) is skipped under the `fx` boundary; the enchantment applies.
 - `BattleScenario.Difficulty` chooses the game's difficulty level for a battle as a
   player chooses it in the options (the game fills in the level's preset), and
   `BattleScenario.LimitedAI` sets the limited-AI option; cleanup restores both and

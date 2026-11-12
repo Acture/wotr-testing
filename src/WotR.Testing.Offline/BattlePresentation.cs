@@ -58,6 +58,23 @@ namespace WotR.Testing.Offline
         }
     }
 
+    /// <summary>
+    /// The glow of an enchanted weapon a battle unit wields (<c>ItemEnchantment.RespawnFx</c>, when the enchantment
+    /// activates, also while the battle builds the unit): it loads the enchantment's prefab from the game's asset bundles,
+    /// which a battle does not load, and puts it on the weapon model, which a stand-in does not have. The enchantment's
+    /// rules (its context and components) are set up by the game as usual.
+    /// </summary>
+    [HarmonyPatch(typeof(Kingmaker.Blueprints.Items.Ecnchantments.ItemEnchantment), nameof(Kingmaker.Blueprints.Items.Ecnchantments.ItemEnchantment.RespawnFx))]
+    internal static class ItemEnchantmentFxPatch
+    {
+        private static bool Prefix(Kingmaker.Blueprints.Items.Ecnchantments.ItemEnchantment __instance)
+        {
+            if (!OfflineBattle.IsBattleUnit(__instance.Owner?.Wielder?.Unit)) return true;
+            Boundaries.Hit("fx");
+            return false;
+        }
+    }
+
     /// <summary>Sound events while a battle runs its game loop: nothing is played, and the game gets no playing id (0).</summary>
     [HarmonyPatch]
     internal static class BattleSoundPatches

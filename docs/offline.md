@@ -198,7 +198,7 @@ of this table; changes of one kind in the order they were added:
 
 | Scenario entry | Game API | Checked |
 |---|---|---|
-| Unit | `UnitEntityData` constructor from the blueprint (body, starting items, `AddClassLevels`) | Errors the game logs while building fail the build |
+| Unit | `UnitEntityData` constructor from the blueprint (body, starting items, `AddClassLevels`); a blueprint with a customization preset that lists it first selects a variation as `EntityCreationController.SpawnUnit` does, and the unit takes its prefab, race and gender (a preset that does not list the blueprint selects none, and the unit keeps its blueprint's prefab, as in the game) | Errors the game logs while building fail the build |
 | `WithFaction` | `UnitDescriptor.SwitchFactions` after the unit is built | Faction |
 | `WithClassLevels` | `AddClassLevels.LevelUp` with the game's default selections | Class level; a blueprint's `ClassLevelLimit` turns levels into a level-up plan and fails the build |
 | `WithBaseStat` | `ModifiableValue.BaseValue` | Base value |
@@ -398,9 +398,13 @@ with the code path that logs it: a touch spell's held charge, which
 `AbilityEffectStickyTouch` adds as `UnitPartTouch`, is subscribed to EventBus by
 `EntityPart.TurnOn` and again by `UnitPartTouch.Init`, and the game's
 `SubscriptionManager` logs "Can't subscribe on events twice" and keeps one
-subscription. A scenario allows further logs it explains in
-`BattleScenario.FrameLogAllowances`, as `SetupLogAllowances` does for the build;
-`battles.allowedFrameLogs` counts the allowed logs by reason. A frame in which the game sets its time scale to 0, which pauses
+subscription. While a battle builds its units, a blueprint whose body puts a
+second weapon into a hand slot the game's rules refuse (a dretch's claws) makes
+`UnitBody.TryInsertItem` log "can't insert item ... to slot 'HandSlot'" and put the
+item in the unit's inventory, as in every spawn of that unit. A scenario allows
+further logs it explains in `BattleScenario.FrameLogAllowances`, as
+`SetupLogAllowances` does for the build; `battles.allowedSetupLogs` and
+`battles.allowedFrameLogs` count the allowed logs by reason. A frame in which the game sets its time scale to 0, which pauses
 the game (`PlayerTimeScale` 0, for example), fails the call with
 `InvalidOperationException` instead of running forever. Limits count frame time:
 the `TimeController.DeltaTime` each frame advances the game's controllers by. In

@@ -21,6 +21,14 @@ using Xunit;
 
 namespace WotR.Testing.BattleTests
 {
+    /// <summary>Every command the game gives a unit to run, with its AI action if the game's AI gave it.</summary>
+    internal sealed class GivenCommands : IUnitRunCommandHandler
+    {
+        public readonly System.Collections.Generic.List<UnitCommand> Given = new();
+
+        public void HandleUnitRunCommand(UnitCommand command) => Given.Add(command);
+    }
+
     [CollectionDefinition("battles")]
     public sealed class BattleCollection : ICollectionFixture<BattleGame> { }
 
@@ -135,7 +143,7 @@ namespace WotR.Testing.BattleTests
             RuleScope.Run("fighter attacks cultist", () =>
                 attack = Rulebook.Trigger(new RuleAttackWithWeapon(fighter, cultist, fighter.Body.PrimaryHand.Weapon, 0)));
             Assert.Same(fighter.Body.PrimaryHand.Weapon, attack.Weapon);
-            Assert.InRange(attack.AttackRoll.Roll, 1, 20);
+            Assert.InRange((int)attack.AttackRoll.D20, 1, 20);
             if (attack.AttackRoll.IsHit) Assert.True(cultist.HPLeft < before, "A hit with a longsword dealt no damage.");
             else Assert.Equal(before, cultist.HPLeft);
         }
@@ -202,14 +210,16 @@ namespace WotR.Testing.BattleTests
         }
 
         [Fact]
-        public void AnotherSeedChangesOnlyTheRandomStateOfAnUnrolledBuild()
+        public void AnotherSeedChangesOnlyTheRandomStateAndTheVariationsTheGameSelects()
         {
             game.RequireGame();
             using var battle = OfflineBattle.Start(Duel(), seed: 1);
             var first = battle.InitialState;
             battle.Reset(seed: 2);
             Assert.Contains(battle.InitialState.Lines, line => line.StartsWith("game-random seed 2 calls ", StringComparison.Ordinal));
-            Assert.All(first.Difference(battle.InitialState), line => Assert.Contains("game-random seed", line));
+            // The guard's customization preset lists it, so it spawns as a variation the game selects at random, with the
+            // variation's race and its racial stat bonuses; the fighter and the cultist roll nothing while they are built.
+            Assert.All(first.Difference(battle.InitialState), line => Assert.True(line.Contains("game-random seed") || line.Contains("unit guard "), line));
             battle.Reset(seed: 1);
             Assert.Equal(first, battle.InitialState);
         }
@@ -760,13 +770,17 @@ namespace WotR.Testing.BattleTests
             var fighter = battle.Unit("fighter");
             var recorder = new CommandRecorder();
             battle.Subscribe(recorder);
+            var given = new GivenCommands();
+            battle.Subscribe(given);
 
             // Nobody commands anyone: the enemies see the fighter, join combat and attack it with the game's AI, which
-            // never decides for the controlled fighter.
+            // never decides for the controlled fighter. The guard comes from behind the cultist; whether it gets past to
+            // strike depends on the path, so the test checks that the game's AI gave it its commands.
             battle.Run(TimeSpan.FromSeconds(12));
             Assert.Contains(recorder.Acted, a => a.ByAi && a.Executor == battle.Unit("cultist"));
-            Assert.Contains(recorder.Acted, a => a.ByAi && a.Executor == battle.Unit("guard"));
+            Assert.Contains(given.Given, c => c.AiAction != null && c.Executor == battle.Unit("guard"));
             Assert.DoesNotContain(recorder.Acted, a => a.Executor == fighter);
+            Assert.DoesNotContain(given.Given, c => c.Executor == fighter);
             Assert.True(fighter.IsInCombat);
 
             battle.Reset();

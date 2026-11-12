@@ -93,6 +93,15 @@ namespace WotR.Testing.Offline
         }
 
         private static readonly SortedDictionary<string, int> AllowedFrameLogs = new(StringComparer.Ordinal);
+        private static readonly SortedDictionary<string, int> AllowedSetupLogs = new(StringComparer.Ordinal);
+
+        /// <summary>Errors the game logged while a battle built its units that a known game log or the scenario allowed, by reason.</summary>
+        internal static void NoteAllowedSetupLogs(IReadOnlyList<AllowedRuleLog> allowed)
+        {
+            lock (Gate)
+                foreach (var log in allowed)
+                    AllowedSetupLogs[log.Reason] = (AllowedSetupLogs.TryGetValue(log.Reason, out var count) ? count : 0) + 1;
+        }
 
         /// <summary>Errors the game logged during battle frames that a known game log or the scenario allowed, by reason.</summary>
         internal static void NoteAllowedFrameLogs(IReadOnlyList<AllowedRuleLog> allowed)
@@ -197,6 +206,7 @@ namespace WotR.Testing.Offline
                     cleanups,
                     failedCleanups,
                     environment = episodes == 0 ? null : new { episodes, steps = episodeSteps, ended = endedEpisodes, failed = failedEpisodes },
+                    allowedSetupLogs = AllowedSetupLogs.Select(pair => new { reason = pair.Key, count = pair.Value }).ToArray(),
                     allowedFrameLogs = AllowedFrameLogs.Select(pair => new { reason = pair.Key, count = pair.Value }).ToArray(),
                     playerContext = PlayerContext.Select(pair => new { name = pair.Key, prepared = pair.Value }).ToArray(),
                     navigation = Navigation.Values.ToArray(),

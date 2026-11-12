@@ -111,6 +111,40 @@ namespace WotR.Testing.BattleTests
             Assert.Contains("has no action bar slot for MagicMissile", error.ToString());
         }
 
+        // KenabresMansion_Dretch: a CR2 demon whose blueprint body puts a claw in each hand.
+        private const string Dretch = "71be6e442f8afbb4bbf6a5af6ecf4e4c";
+
+        [Fact]
+        public void ADretchGetsTheBodyTheGameGivesItWithTheRefusedClawInItsInventory()
+        {
+            game.RequireGame();
+            using var battle = OfflineBattle.Start(OneOnOne("dretch", Guids.Fighter, Dretch), seed: 1);
+            var dretch = battle.Unit("foe");
+
+            // UnitBody.Initialize refuses the off-hand claw, logs it (a known game log) and puts the claw in the inventory.
+            Assert.Equal("Claw1d4", dretch.Body.PrimaryHand.MaybeWeapon?.Blueprint.name);
+            Assert.Null(dretch.Body.SecondaryHand.MaybeItem);
+            Assert.Contains(dretch.Inventory, item => item.Blueprint.name == "Claw1d4");
+            battle.Run(TimeSpan.FromSeconds(3));
+        }
+
+        // CR5_ZombieLordFighterLevel2: its blueprint's own prefab is in no bundle; it spawns as a variation of its preset.
+        private const string ZombieLord = "6fb0daac7b491914999525b426369d4f";
+
+        [Fact]
+        public void AUnitWithACustomizationPresetSpawnsAsOneOfItsVariations()
+        {
+            game.RequireGame();
+            using var battle = OfflineBattle.Start(OneOnOne("variation", Guids.Fighter, ZombieLord), seed: 1);
+            var zombie = battle.Unit("foe");
+            var preset = zombie.Blueprint.CustomizationPreset;
+
+            Assert.NotNull(preset);
+            Assert.False(string.IsNullOrEmpty(zombie.Descriptor.CustomPrefabGuid));
+            Assert.Contains(preset.UnitVariations.SelectMany(v => v.Variations), v => v.Prefab.AssetId == zombie.Descriptor.CustomPrefabGuid && v.Race == zombie.Progression.Race);
+            battle.Run(TimeSpan.FromSeconds(3));
+        }
+
         [Fact]
         public void AnEnchantedWeaponKeepsItsEnchantmentWithoutItsGlow()
         {

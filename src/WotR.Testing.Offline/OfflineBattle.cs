@@ -276,7 +276,7 @@ namespace WotR.Testing.Offline
                 UnitViewPrefab.Configure(Scenario.CorpulenceOverrideBySize, Scenario.CorpulenceFallbackBySize);
                 // Cleanup restores the game time from before the build.
                 if (Scenario.StartTime is { } startTime) Game.Instance.Player.GameTime = startTime;
-                RuleScope.Run("battle setup " + Scenario.Name, () =>
+                var setup = RuleScope.Run("battle setup " + Scenario.Name, () =>
                 {
                     // The difficulty comes first: the game reads it when it builds units and while they fight.
                     if (Scenario.Difficulty != null || Scenario.LimitedAI != null) SetDifficulty();
@@ -290,7 +290,8 @@ namespace WotR.Testing.Offline
                         loop = new BattleLoop(navigation);
                         loop.Activate();
                     }
-                }, Scenario.SetupLogAllowances.ToArray());
+                }, KnownGameLogs.Setup.Concat(Scenario.SetupLogAllowances).ToArray());
+                BattleWorker.NoteAllowedSetupLogs(setup.Allowed);
                 BattleControl.Set(units.Where(u => Scenario.ControlledSides.Contains(u.Side)).Select(u => u.Unit));
                 Paths = Scenario.Paths.Select(path => new BattlePath(path, Find(path.From), Find(path.To))).ToList().AsReadOnly();
                 InitialState = BattleState.Capture(this);
@@ -379,7 +380,22 @@ namespace WotR.Testing.Offline
         private void BuildUnit(BattleUnitSpec spec)
         {
             var blueprint = OfflineGame.Blueprint<BlueprintUnit>(spec.Blueprint);
-            var unit = new UnitEntityData(UniqueIdPrefix + Scenario.Name + ":" + spec.Id, isInGame: false, blueprint);
+            // A blueprint with a customization preset spawns as one of its variations: EntityCreationController.SpawnUnit
+            // selects it, then the voice and left-handedness, and the unit takes the variation's prefab, race and gender
+            // from the spawning data while it is created. A preset that does not list the blueprint selects none; the game
+            // then logs "Failed to select customization variation" and spawns the unit with its blueprint's prefab, as here.
+            Kingmaker.View.Spawners.UnitSpawningData spawning = null;
+            if (blueprint.CustomizationPreset is { } preset && preset.SelectVariation(blueprint, null) is { } variation)
+                spawning = variation.CreateSpawningData(preset.SelectVoice(variation.Gender), preset.SelectLeftHanded());
+            UnitEntityData unit;
+            try
+            {
+                unit = new UnitEntityData(UniqueIdPrefix + Scenario.Name + ":" + spec.Id, isInGame: false, blueprint);
+            }
+            finally
+            {
+                spawning?.Dispose();
+            }
             units.Add(new BattleUnit(spec, unit));
             if (spec.Faction != null)
             {

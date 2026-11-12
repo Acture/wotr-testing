@@ -93,6 +93,15 @@
   ability with a right click on its action bar slot, as the player does. The game's
   AI acts for party units in real time while their AI is on (the default); in
   turn-based combat it never acts for units the player controls.
+- Units whose blueprint body puts a second weapon into a hand slot the game refuses
+  (a dretch's claws) build as in the game: `UnitBody.TryInsertItem` logs it and
+  puts the item in the inventory; the log is a known game log for battle setup,
+  counted in `battles.allowedSetupLogs`.
+- Battle units of blueprints whose customization preset lists them (zombie lords,
+  for example) spawn as one of its variations, as the game's `SpawnUnit` selects it:
+  the variation's prefab, race and gender. Before, they kept the blueprint's own
+  prefab, which for some is in no bundle. Blueprints their preset does not list keep
+  their own prefab, as in the game.
 - `BattleScenario.Difficulty` chooses the game's difficulty level for a battle as a
   player chooses it in the options (the game fills in the level's preset), and
   `BattleScenario.LimitedAI` sets the limited-AI option; cleanup restores both and

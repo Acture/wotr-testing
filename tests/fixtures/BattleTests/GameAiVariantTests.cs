@@ -111,6 +111,36 @@ namespace WotR.Testing.BattleTests
             Assert.Contains("has no action bar slot for MagicMissile", error.ToString());
         }
 
+        [Fact]
+        public void ThePartysAiButtonInTurnBasedModeIsASettingTheGameDoesNotActOn()
+        {
+            game.RequireGame();
+            var scenario = new BattleScenario("ai-button") { MainCharacter = "p0", Area = Guids.KenabresBurning, StartTime = new TimeSpan(12, 0, 30), TurnBased = true };
+            scenario.Unit("p0", "party", Barbarian).At(47.2f, 40, -65.2f).WithAI(true);
+            scenario.Unit("p1", "party", Guids.Fighter).At(46.5f, 40, -67f).WithAI(true);
+            scenario.Companions.Add("p1");
+            scenario.Unit("e0", "enemies", Guids.Cultist).WithFaction(Guids.MobsFaction).At(52f, 40, -68f);
+            var given = new GivenCommands();
+            using (var battle = OfflineBattle.Start(scenario, seed: 1))
+            {
+                var party = new[] { battle.Unit("p0"), battle.Unit("p1") };
+                Assert.All(party, u => Assert.True(u.IsAIEnabled));
+                battle.Subscribe(given);
+                battle.Run(TimeSpan.FromSeconds(30));
+                // The first party turn waits for the player, as every turn of a unit the player controls does in 2.7.0.
+                var turn = Kingmaker.Game.Instance.TurnBasedCombatController.CurrentTurn;
+                Assert.NotNull(turn);
+                Assert.Contains(turn.Rider, party);
+                Assert.True(turn.Rider.IsDirectlyControllable);
+                Assert.Equal(TurnBased.Controllers.TurnController.TurnStatus.Preparing, turn.Status);
+                Assert.DoesNotContain(given.Given, c => party.Contains(c.Executor));
+            }
+
+            scenario.ControlledSides.Add("party");
+            var controlled = Assert.Throws<ArgumentException>(() => OfflineBattle.Start(scenario, seed: 1));
+            Assert.Contains("switches its AI on, but its side party is controlled", controlled.Message);
+        }
+
         // KenabresMansion_Dretch: a CR2 demon whose blueprint body puts a claw in each hand.
         private const string Dretch = "71be6e442f8afbb4bbf6a5af6ecf4e4c";
 

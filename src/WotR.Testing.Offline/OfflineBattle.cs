@@ -285,6 +285,8 @@ namespace WotR.Testing.Offline
                     if (Scenario.MainCharacter != null) SetMainCharacter(units.First(u => u.Id == Scenario.MainCharacter));
                     foreach (var entry in units.Where(u => Scenario.Companions.Contains(u.Id))) AddCompanion(entry);
                     if (Scenario.TurnBased) SwitchTurnBased();
+                    // The AI button writes the setting of the current mode, so it is switched after the turn-based setting.
+                    foreach (var entry in units.Where(u => u.Spec.AI != null)) SwitchAI(entry);
                     if (navigation != null)
                     {
                         loop = new BattleLoop(navigation);
@@ -350,6 +352,18 @@ namespace WotR.Testing.Offline
             setting.SetValueAndConfirm(true);
             if (!Game.Instance.Player.IsTurnBasedModeOn())
                 throw new InvalidOperationException("The game's turn-based setting is on, but Player.IsTurnBasedModeOn() is false: the player's turn-based state is mandatory and off (Player.IsTurnBasedStateMandatory).");
+        }
+
+        /// <summary>Switches the party unit's AI button as the player does: the action bar's AI button sets UnitEntityData.IsAIEnabled.</summary>
+        private static void SwitchAI(BattleUnit entry)
+        {
+            var unit = entry.Unit;
+            var enabled = entry.Spec.AI.Value;
+            Require(entry.Spec, unit.IsDirectlyControllable, "has no AI button to switch: the player controls only party members (UnitEntityData.IsDirectlyControllable)");
+            unit.IsAIEnabled = enabled;
+            // The game's AI acts for party units only while BlueprintRoot.CompanionsAI is on; IsAIEnabled includes it.
+            var expected = enabled && Game.Instance.BlueprintRoot.CompanionsAI;
+            Require(entry.Spec, unit.IsAIEnabled == expected, $"AI is {(unit.IsAIEnabled ? "on" : "off")} after the player switched it {(enabled ? "on" : "off")}");
         }
 
         private void SetMainCharacter(BattleUnit entry)

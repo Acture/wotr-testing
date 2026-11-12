@@ -160,6 +160,8 @@ namespace WotR.Testing.Offline
             foreach (var side in ControlledSides)
                 if (!Units.Any(u => u.Side == side))
                     throw new ArgumentException($"Controlled side {side} has no unit in scenario {Name}.");
+            if (Units.FirstOrDefault(u => u.AI == true && ControlledSides.Contains(u.Side)) is { } aiControlled)
+                throw new ArgumentException($"Unit {aiControlled.Id} of scenario {Name} switches its AI on, but its side {aiControlled.Side} is controlled: the game's AI never decides for units of controlled sides.");
             foreach (var path in Paths)
             {
                 path.Validate();
@@ -246,6 +248,16 @@ namespace WotR.Testing.Offline
         /// </summary>
         public string AutoUseAbility { get; set; }
 
+        /// <summary>
+        /// The party unit's AI button, switched as the player switches it: the action bar's AI button and the party
+        /// portraits set <c>UnitEntityData.IsAIEnabled</c>. The game keeps one setting for real time and one for
+        /// turn-based mode and writes the one of the current mode, so a turn-based battle sets it after switching to
+        /// turn-based mode. In real time the AI is on by default and the game's AI acts for the unit while it is on. In
+        /// turn-based mode it is off by default, and in the unmodded game nothing acts on it: the game's AI never plays
+        /// the turn of a unit the player controls. Mods can act on it. Without a value the unit keeps the game's default.
+        /// </summary>
+        public bool? AI { get; set; }
+
         public BattleUnitSpec WithFaction(string faction)
         {
             Faction = faction;
@@ -291,6 +303,12 @@ namespace WotR.Testing.Offline
         public BattleUnitSpec WithBrain(string brain)
         {
             Brain = brain;
+            return this;
+        }
+
+        public BattleUnitSpec WithAI(bool enabled)
+        {
+            AI = enabled;
             return this;
         }
 

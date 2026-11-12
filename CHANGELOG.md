@@ -93,6 +93,11 @@
   ability with a right click on its action bar slot, as the player does. The game's
   AI acts for party units in real time while their AI is on (the default); in
   turn-based combat it never acts for units the player controls.
+- `BattleUnitSpec.WithAI` switches a party unit's AI button as the player does
+  (`UnitEntityData.IsAIEnabled`), after a turn-based battle switches to turn-based
+  mode. The game keeps that setting separately for turn-based mode and, unmodded,
+  never acts on it there; a mod that plays those turns with the game's AI is loaded
+  like any other.
 - Units whose blueprint body puts a second weapon into a hand slot the game refuses
   (a dretch's claws) build as in the game: `UnitBody.TryInsertItem` logs it and
   puts the item in the inventory; the log is a known game log for battle setup,

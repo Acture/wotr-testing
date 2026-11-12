@@ -69,6 +69,51 @@
   environment failures with the episode and step, never outcomes; a turn-based
   surprise round in which the game's own code starts no turn fails the step at once
   with `TurnBasedStallException`.
+- `BattleScenario.Companions` puts player-faction units into the player's party with the
+  game's `Player.AddCompanion`; the player commands them as party members.
+  `BattleScenario.StartTime` sets the game time at which the battle starts. New
+  boundary `occlusion-clipping`. The training scenarios use both: their turn-based
+  battles had ended in the surprise-round dead end in every episode, because battles
+  start at game time zero and the second fighter was not in the party.
+- A battle unit that stands up from prone, for example when a potion wakes it, no
+  longer fails the step on the view's missing weapon models (new boundary
+  `unit-get-up-visuals`); the get-up time the rules read is kept.
+- Battles run ranged weapon attacks and rays, effects that buffs and actions spawn
+  (for example a barbarian's rage) and the "crippled" notice of a player unit at
+  death's door: projectile hit effects and `ContextActionSpawnFx` load prefabs from
+  asset bundles a battle does not load, and are skipped (boundaries
+  `unit-hit-effects`, `fx`); the notice goes to a bark player that shows nothing
+  (new boundary `bark`). Summoned creatures (`ContextActionSpawnMonster`) are not
+  supported yet.
+- `BattleScenario.Difficulty` chooses the game's difficulty level for a battle as a
+  player chooses it in the options (the game fills in the level's preset), and
+  `BattleScenario.LimitedAI` sets the limited-AI option; cleanup restores both and
+  the baseline compares them. Battles without them keep the session's settings,
+  the game's default preset Normal (enemy damage to the party ×0.8, weakened enemy
+  stats). The training scenarios fight on Unfair (enemy damage ×2, strongly
+  improved enemy stats, the AI's additional behaviours) without limited AI.
+- Battle observations report the difficulty settings (`BattleObservation.Difficulty`,
+  server field `difficulty`), `BattleEnvironment.Reset(seed, difficulty)` and the
+  server's `reset` can switch the level between episodes, and episode records keep
+  it for `Replay`. The PPO example takes the difficulty as input and mixes levels
+  (`--difficulties`).
+- Training examples: an episode cut off at the step limit now counts as lost with
+  every own unit downed (`rewards.step_reward`); before, a hopeless battle paid more
+  for being dragged out than for being fought.
+- `BattleEnvironment.Step(actions, randomSeed)` restarts the game's random numbers
+  from a seed before the step (server: `randomSeed`); the record keeps it and
+  `Replay` repeats it. The examples' rollouts use it: a rollout rebuilds a state by
+  replaying the episode, which reaches the episode's random state, so before this it
+  rolled exactly the dice the episode's next step would, and the rollout planner and
+  the on-policy distillation teacher chose with that knowledge. Rollouts now draw
+  from fixed seeds per decision, shared by all candidates (`seeds.branch`). Training
+  and held-out evaluation episodes use separate seeds (`seeds.train`,
+  `seeds.evaluation`); the PPO example had evaluated on seeds it also trained on.
+  Rollouts default to 8 per candidate.
+- Training examples: `demos.py` collects demonstrations (the episodes on training
+  seeds in the best tenth by return that won, from a random policy or the rollout
+  planner) and `--warm` in `reinforce.py`, `opd.py` and `ppo.py` starts the policy
+  from them by behavior cloning.
 - `BattleEnvironmentServer` serves the battle environment to a training program in
   another process (one client on a local TCP port, JSON lines);
   `examples/training` has Python clients (REINFORCE, rollout planning, on-policy

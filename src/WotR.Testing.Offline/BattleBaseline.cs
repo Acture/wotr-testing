@@ -48,6 +48,7 @@ namespace WotR.Testing.Offline
         private object levelUpController;
         private object currentTurn;
         private bool turnBasedSetting;
+        private string difficulty;
         private bool turnBasedInitialized;
         private bool paused;
         private object loadingProcess;
@@ -65,6 +66,7 @@ namespace WotR.Testing.Offline
         private object[] selectedUnits;
         private object selectedUnit;
         private object selectionManager;
+        private object barkPlayer;
         private object clickEvents;
         private int detachedStandIns;
         private int ruleStack;
@@ -147,6 +149,7 @@ namespace WotR.Testing.Offline
                 levelUpController = Game.Instance.LevelUpController,
                 currentTurn = Game.Instance.TurnBasedCombatController?.CurrentTurn,
                 turnBasedSetting = Kingmaker.Settings.SettingsRoot.Game.TurnBased.EnableTurnBasedMode.GetValue(),
+                difficulty = BattleDifficulty.Describe(),
                 turnBasedInitialized = Game.Instance.TurnBasedCombatController?.Initialized ?? false,
                 paused = Game.Instance.IsPaused,
                 loadingProcess = LoadingProcessStandIn.Current,
@@ -156,6 +159,7 @@ namespace WotR.Testing.Offline
                 selectedUnits = Game.Instance.SelectionCharacter.SelectedUnits.Cast<object>().ToArray(),
                 selectedUnit = SelectedUnit(),
                 selectionManager = SelectionManagerStandIn.Current,
+                barkPlayer = BarkPlayerStandIn.Current,
                 clickEvents = Game.Instance.ClickEventsController,
                 detachedStandIns = OfflineUnitView.DetachedCount,
                 ruleStack = Rulebook.CurrentContext.StackSize,
@@ -219,6 +223,7 @@ namespace WotR.Testing.Offline
             if (!ReferenceEquals(levelUpController, after.levelUpController)) residue.Add("Game.Instance.LevelUpController changed");
             if (!ReferenceEquals(currentTurn, after.currentTurn)) residue.Add("the turn-based combat controller's current turn changed");
             Value(residue, "the game's turn-based setting", turnBasedSetting, after.turnBasedSetting);
+            Value(residue, "the game's difficulty settings", difficulty, after.difficulty);
             Value(residue, "turn-based combat initialized", turnBasedInitialized, after.turnBasedInitialized);
             Value(residue, "game paused", paused, after.paused);
             if (!ReferenceEquals(loadingProcess, after.loadingProcess)) residue.Add("LoadingProcess.Instance changed");
@@ -228,6 +233,7 @@ namespace WotR.Testing.Offline
             if (!selectedUnits.SequenceEqual(after.selectedUnits) || !ReferenceEquals(selectedUnit, after.selectedUnit))
                 residue.Add($"the player's selection holds other units ({after.selectedUnits.Length} selected)");
             if (!ReferenceEquals(selectionManager, after.selectionManager)) residue.Add("SelectionManagerBase.Instance changed");
+            if (!ReferenceEquals(barkPlayer, after.barkPlayer)) residue.Add("Game.UI.BarkManager changed");
             if (!ReferenceEquals(clickEvents, after.clickEvents)) residue.Add("Game.ClickEventsController changed");
             Value(residue, "presentation stand-ins", detachedStandIns, after.detachedStandIns);
             Value(residue, "rulebook event stack", ruleStack, after.ruleStack);

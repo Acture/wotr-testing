@@ -42,6 +42,26 @@ namespace WotR.Testing.Offline
         public string MainCharacter { get; set; }
 
         /// <summary>
+        /// Ids of player-faction units that join the player's party next to the <see cref="MainCharacter"/> with the game's
+        /// <c>Player.AddCompanion</c>, and leave it with <c>Player.RemoveCompanion</c> at cleanup. The game lets the player
+        /// command only party members (<c>UnitEntityData.IsDirectlyControllable</c>): on a controlled side they get their
+        /// commands as the player gives them, through the action bar and the pointer. The game's turn-based surprise round
+        /// also counts only party members as the party. Other player-faction units fight as the player's allies, and on a
+        /// controlled side they get commands as the game's AI would give them.
+        /// </summary>
+        public ISet<string> Companions { get; } = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Game time (<c>Player.GameTime</c>) at which the battle starts; cleanup restores the time from before the build.
+        /// Without it the battle starts at the session's game time, which is zero. The time matters to the game's
+        /// turn-based surprise round: <c>CombatController.HandleCombatStart</c> counts a party member as attacking by
+        /// surprise when the seconds part (<c>TimeSpan.Seconds</c>, 0 to 59) of the time since its last offensive action
+        /// out of combat is below 6. A unit that never made one counts from game time zero, so in a fight that starts in
+        /// the first six seconds of a game minute every such party member surprises the enemies, whoever saw whom first.
+        /// </summary>
+        public TimeSpan? StartTime { get; set; }
+
+        /// <summary>
         /// Guid of the <c>BlueprintArea</c> the battle loads as the game's current area, with the game's own
         /// <c>AreaPersistentState</c>. Units that are not in the party are kept in its main state. Game frames need it:
         /// unit speed and vision read the loaded area's settings. No scene is loaded.
@@ -58,6 +78,23 @@ namespace WotR.Testing.Offline
         /// <see cref="MainCharacter"/>.
         /// </summary>
         public bool TurnBased { get; set; }
+
+        /// <summary>
+        /// The game's difficulty level for the battle, chosen as a player chooses it in the game's options: the game's
+        /// <c>DifficultyPresetsController</c> fills in that level's preset and the values are confirmed. The rules read
+        /// them: the damage enemies deal to the party, the enemies' stat adjustments and critical hits, the AI actions
+        /// kept for higher difficulties and its additional behaviours, death's door and more. They favor the enemies of
+        /// the player's party; <c>Unfair</c> is the hardest. Cleanup restores the previous settings. Unset keeps the
+        /// session's settings, which start as the game's default preset.
+        /// </summary>
+        public Kingmaker.Settings.GameDifficultyOption? Difficulty { get; set; }
+
+        /// <summary>
+        /// The game's "limited AI" setting for the battle (<c>SettingsRoot.Difficulty.LimitedAI</c>), set as a player sets
+        /// it and restored at cleanup. When on, the game's AI acting for a directly controllable party unit uses only the
+        /// actions marked for limited AI; it does not change the enemies' AI. Unset keeps the session's setting.
+        /// </summary>
+        public bool? LimitedAI { get; set; }
 
         /// <summary>
         /// Corpulence in meters that replaces the view prefab's, by a unit's original size (for a polymorph's view, the
@@ -107,6 +144,15 @@ namespace WotR.Testing.Offline
             var ids = new HashSet<string>(Units.Select(u => u.Id), StringComparer.Ordinal);
             if (MainCharacter != null && !ids.Contains(MainCharacter))
                 throw new ArgumentException($"Main character {MainCharacter} is not a unit of scenario {Name}.");
+            foreach (var companion in Companions)
+            {
+                if (!ids.Contains(companion)) throw new ArgumentException($"Companion {companion} is not a unit of scenario {Name}.");
+                if (MainCharacter == null) throw new ArgumentException($"Scenario {Name} has companions without a MainCharacter; the party forms around the main character.");
+                if (companion == MainCharacter) throw new ArgumentException($"Main character {MainCharacter} of scenario {Name} is already in the party; it is not also a companion.");
+            }
+            if (StartTime < TimeSpan.Zero) throw new ArgumentException($"Scenario {Name} starts at game time {StartTime}; game time is not negative.");
+            if (Difficulty == Kingmaker.Settings.GameDifficultyOption.Custom)
+                throw new ArgumentException($"Scenario {Name} asks for the Custom difficulty; choose a level, as Custom is what the game shows after individual settings change.");
             if (TurnBased && Area == null)
                 throw new ArgumentException($"Scenario {Name} is turn-based without an Area; the game's turns run in game frames on the area's navigation grid.");
             if (TurnBased && MainCharacter == null)

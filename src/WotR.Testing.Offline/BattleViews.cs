@@ -802,6 +802,18 @@ namespace WotR.Testing.Offline
         }
 
         /// <summary>
+        /// The component that cuts away scenery hiding a party member or an attacking enemy from the camera, which
+        /// <c>Player.AddCompanion</c> and <c>RemoveCompanion</c> switch on and off; the stand-in has no GameObject to add it to.
+        /// </summary>
+        [HarmonyPatch(nameof(UnitEntityView.HandleOccludedObjectDepthClipper)), HarmonyPrefix]
+        private static bool HandleOccludedObjectDepthClipper(UnitEntityView __instance)
+        {
+            if (!OfflineUnitView.IsStandIn(__instance)) return true;
+            Boundaries.Hit("occlusion-clipping");
+            return false;
+        }
+
+        /// <summary>
         /// The view's side of a death: the blood and dismemberment effect, the fade, occlusion clipping, a swarm's health
         /// display, death effects of the prefab and the click collider that follows the torso. The stand-in has none of these.
         /// </summary>
@@ -810,6 +822,29 @@ namespace WotR.Testing.Offline
         {
             if (!OfflineUnitView.IsStandIn(__instance)) return true;
             Boundaries.Hit("unit-death-visuals");
+            return false;
+        }
+
+        private static readonly FieldInfo StartGetUpTime = AccessTools.Field(typeof(UnitEntityView), "m_StartGetUpTime");
+        private static readonly MethodInfo SetIsProne = AccessTools.PropertySetter(typeof(UnitEntityView), nameof(UnitEntityView.IsProne));
+
+        /// <summary>
+        /// A unit stands up, for example when healing wakes it: <c>UnitProneController</c> calls this. The view's side is the
+        /// ragdoll's return to its animation, the weapon models in the hands and moving the click collider; the stand-in has
+        /// none of these. The rest runs as the game's method does: the get-up time (for half a second <c>IsGetUp</c> counts
+        /// the unit as prone for its AC and holds back its commands), <c>IsProne</c> and the unit's obstacle groups.
+        /// </summary>
+        [HarmonyPatch(nameof(UnitEntityView.LeaveProneState)), HarmonyPrefix]
+        private static bool LeaveProneState(UnitEntityView __instance)
+        {
+            if (!OfflineUnitView.IsStandIn(__instance)) return true;
+            if (__instance.IsProne)
+            {
+                StartGetUpTime.SetValue(__instance, Kingmaker.Game.Instance.TimeController.GameTime);
+                SetIsProne.Invoke(__instance, new object[] { false });
+                if ((bool)__instance.AgentASP) ObstaclesHelper.ConnectToGroups(__instance.AgentASP);
+            }
+            Boundaries.Hit("unit-get-up-visuals");
             return false;
         }
     }
@@ -824,6 +859,22 @@ namespace WotR.Testing.Offline
         private static bool Prefix(Kingmaker.RuleSystem.Rules.Damage.RuleDealDamage damageRule)
         {
             if (!OfflineUnitView.IsStandIn(damageRule.Target?.View) && !OfflineUnitView.IsStandIn(damageRule.Initiator?.View)) return true;
+            Boundaries.Hit("unit-hit-effects");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The hit, miss and decal effects of a projectile that reaches its target (<c>HitPlayer.PlayProjectileHit</c>, which
+    /// <c>Projectile.OnHit</c> calls before the projectile's rules run). They are prefabs from the game's asset bundles,
+    /// which a battle does not load, played on the target's model, which a stand-in does not have.
+    /// </summary>
+    [HarmonyPatch(typeof(Kingmaker.Visual.HitSystem.HitPlayer), nameof(Kingmaker.Visual.HitSystem.HitPlayer.PlayProjectileHit))]
+    internal static class ProjectileHitPatch
+    {
+        private static bool Prefix()
+        {
+            if (!BattleLoop.Running) return true;
             Boundaries.Hit("unit-hit-effects");
             return false;
         }

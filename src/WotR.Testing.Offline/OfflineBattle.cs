@@ -44,7 +44,9 @@ namespace WotR.Testing.Offline
         private BattleLoop loop;
         private GameRandomState outerRandom;
         private bool mainCharacterSet;
+        private readonly List<BattleUnit> companions = new List<BattleUnit>();
         private bool? previousTurnBased;
+        private BattleDifficulty previousDifficulty;
         private bool disposed;
 
         private OfflineBattle(BattleScenario scenario, int seed)
@@ -268,11 +270,16 @@ namespace WotR.Testing.Offline
                         if (!(pair.Value > 0f) || float.IsInfinity(pair.Value))
                             throw new ArgumentException($"BattleScenario.{name}[Size.{pair.Key}] is {pair.Value}; a corpulence is a positive radius in meters.");
                 UnitViewPrefab.Configure(Scenario.CorpulenceOverrideBySize, Scenario.CorpulenceFallbackBySize);
+                // Cleanup restores the game time from before the build.
+                if (Scenario.StartTime is { } startTime) Game.Instance.Player.GameTime = startTime;
                 RuleScope.Run("battle setup " + Scenario.Name, () =>
                 {
+                    // The difficulty comes first: the game reads it when it builds units and while they fight.
+                    if (Scenario.Difficulty != null || Scenario.LimitedAI != null) SetDifficulty();
                     LoadArea();
                     foreach (var spec in Scenario.Units) BuildUnit(spec);
                     if (Scenario.MainCharacter != null) SetMainCharacter(units.First(u => u.Id == Scenario.MainCharacter));
+                    foreach (var entry in units.Where(u => Scenario.Companions.Contains(u.Id))) AddCompanion(entry);
                     if (Scenario.TurnBased) SwitchTurnBased();
                     if (navigation != null)
                     {
@@ -323,6 +330,14 @@ namespace WotR.Testing.Offline
         /// Turns on the game's turn-based setting as a player does, before the battle's game mode starts: the game's
         /// CombatController reads it when the mode activates.
         /// </summary>
+        /// <summary>Sets the scenario's difficulty settings as a player does in the game's options; cleanup restores them.</summary>
+        private void SetDifficulty()
+        {
+            previousDifficulty = BattleDifficulty.Capture();
+            if (Scenario.Difficulty is { } level) BattleDifficulty.Choose(level);
+            if (Scenario.LimitedAI is { } limited) BattleDifficulty.SetLimitedAI(limited);
+        }
+
         private void SwitchTurnBased()
         {
             var setting = Kingmaker.Settings.SettingsRoot.Game.TurnBased.EnableTurnBasedMode;
@@ -345,6 +360,16 @@ namespace WotR.Testing.Offline
             mainCharacterSet = true;
             Require(entry.Spec, Kingmaker.Designers.GameHelper.GetPlayerCharacter() == unit, "is not the player character after Player.SetMainCharacter");
             Require(entry.Spec, ReferenceEquals(player.Inventory, inventory), "changed the player's inventory when it became the main character");
+        }
+
+        private void AddCompanion(BattleUnit entry)
+        {
+            var unit = entry.Unit;
+            Require(entry.Spec, unit.Descriptor.IsPlayerFaction, "cannot join the party: it is not in the player faction");
+            Game.Instance.Player.AddCompanion(unit);
+            companions.Add(entry);
+            Require(entry.Spec, Game.Instance.Player.Party.Contains(unit), "is not in the party after Player.AddCompanion");
+            Require(entry.Spec, unit.IsDirectlyControllable, "is in the party, but the game does not let the player control it (UnitEntityData.IsDirectlyControllable)");
         }
 
         private void BuildUnit(BattleUnitSpec spec)
@@ -513,6 +538,11 @@ namespace WotR.Testing.Offline
                 Step("move the pointer off the battle's units", BattlePointer.Leave);
                 Step("clear the player's selection as an unloading area does", ClearSelection);
             }
+            // While the units are still whole, as the game's Player.RemoveCompanion expects; they stay in the game until
+            // they are destroyed below.
+            foreach (var companion in companions)
+                Step("remove " + companion.Id + " from the party", () => Game.Instance.Player.RemoveCompanion(companion.Unit, stayInGame: true));
+            companions.Clear();
             for (var i = units.Count - 1; i >= 0; i--)
             {
                 var unit = units[i].Unit;
@@ -547,6 +577,11 @@ namespace WotR.Testing.Offline
             {
                 Step("restore the game's turn-based setting", () => Kingmaker.Settings.SettingsRoot.Game.TurnBased.EnableTurnBasedMode.SetValueAndConfirm(turnBased));
                 previousTurnBased = null;
+            }
+            if (previousDifficulty != null)
+            {
+                Step("restore the game's difficulty settings", previousDifficulty.Restore);
+                previousDifficulty = null;
             }
             if (navigation != null)
             {

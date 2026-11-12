@@ -126,6 +126,7 @@ namespace WotR.Testing.Offline
             BattlePointer.Install();
             SelectionManagerStandIn.Install();
             PathVisualizerStandIn.Install();
+            BarkPlayerStandIn.Install();
             Boundaries.Hit("game-mode");
             HandleGameModeChanged.Invoke(game, new object[] { GameModeType.None, GameModeType.Default });
         }
@@ -176,6 +177,7 @@ namespace WotR.Testing.Offline
             Step(() => SetHandsEquipmentController.Invoke(game, new object[] { previousHands }));
             Step(() => SetCombatEngagementController.Invoke(game, new object[] { previousEngagement }));
             Step(() => SetCameraController.Invoke(game, new object[] { previousCamera }));
+            Step(BarkPlayerStandIn.Remove);
             Step(PathVisualizerStandIn.Remove);
             Step(SelectionManagerStandIn.Remove);
             Step(BattlePointer.Remove);

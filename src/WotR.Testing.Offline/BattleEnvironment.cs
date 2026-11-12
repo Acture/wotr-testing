@@ -94,13 +94,17 @@ namespace WotR.Testing.Offline
         public BattleEpisodeRecord Record => record;
 
         /// <summary>
-        /// Cleans up the episode and builds the scenario again, with the same seed unless another is given. A cleanup
-        /// that leaves state behind throws <see cref="BattleCleanupException"/>; the process is then dirty and the
-        /// environment cannot continue: start a new worker instead of trusting the reset.
+        /// Cleans up the episode and builds the scenario again, with the same seed unless another is given, and with
+        /// another difficulty level (<see cref="BattleScenario.Difficulty"/>) when one is given, which the following episodes
+        /// keep. A cleanup that leaves state behind throws <see cref="BattleCleanupException"/>; the process is then dirty
+        /// and the environment cannot continue: start a new worker instead of trusting the reset.
         /// </summary>
-        public BattleObservation Reset(int? seed = null)
+        public BattleObservation Reset(int? seed = null, Kingmaker.Settings.GameDifficultyOption? difficulty = null)
         {
             ThrowIfDisposed();
+            if (difficulty == Kingmaker.Settings.GameDifficultyOption.Custom)
+                throw new ArgumentException("Choose a difficulty level; Custom is what the game shows after individual settings change.", nameof(difficulty));
+            if (difficulty != null) battle.Scenario.Difficulty = difficulty;
             try
             {
                 battle.Reset(seed);
@@ -135,10 +139,21 @@ namespace WotR.Testing.Offline
         /// (<see cref="BattleActionRejectedException"/>). An error while the step runs throws
         /// <see cref="BattleEnvironmentException"/>.
         /// </summary>
-        public BattleStepResult Step(IEnumerable<BattleAction> actions)
+        public BattleStepResult Step(IEnumerable<BattleAction> actions) => Step(actions, null);
+
+        /// <summary>
+        /// <see cref="Step(IEnumerable{BattleAction})"/> on a new random stream when <paramref name="randomSeed"/> has a
+        /// value: before the actions are given, the game's random numbers restart from that seed, so this step's dice, the
+        /// game's AI and every later draw of the episode come from it instead of continuing the episode's own stream. A
+        /// rollout rebuilds a state by replaying the episode, which reaches the same random state as the episode itself;
+        /// without a new stream it would roll exactly the dice the episode's own next step rolls. The step record keeps the
+        /// seed and <see cref="Replay"/> restarts the stream at the same step. The seed must not be negative.
+        /// </summary>
+        public BattleStepResult Step(IEnumerable<BattleAction> actions, int? randomSeed)
         {
             ThrowIfDisposed();
             if (actions == null) throw new ArgumentNullException(nameof(actions));
+            if (randomSeed < 0) throw new ArgumentOutOfRangeException(nameof(randomSeed), randomSeed, "A random seed must not be negative.");
             if (failure != null)
                 throw new InvalidOperationException($"Episode {Episode} of {battle.Scenario.Name} failed at step {failure.Step}; Reset before the next step.", failure);
             if (outcome != null || truncated)
@@ -168,10 +183,14 @@ namespace WotR.Testing.Offline
             try
             {
                 var start = Game.Instance.Player.GameTime;
+                if (randomSeed is { } seed) GameRandom.Init(seed);
                 var notes = new List<string>();
                 // Toggles first, as the player switches them before giving the command.
                 foreach (var action in list.Where(a => a.Kind == BattleActionKind.Toggle).Concat(list.Where(a => a.Kind != BattleActionKind.Toggle)))
                     if (Issue(action, before, AfterFrame) is { } note) notes.Add(note);
+                // After its clicks the player moves the mouse off the units: until the next decision the pointer hovers
+                // nothing, so the game's predictions for the unit under it do not follow a target that dies there.
+                BattlePointer.Leave();
                 // In real time a unit that waits, or only switches toggles, stays ready and idle until the decision interval;
                 // a busy unit is one that runs a command or was given another action (a click the game refused decides
                 // again after a frame). In turn-based
@@ -231,7 +250,7 @@ namespace WotR.Testing.Offline
             catch (Exception error)
             {
                 failure = new BattleEnvironmentException(battle.Scenario.Name, Episode, number, list, error);
-                record.Fail(number, list, failure.Message);
+                record.Fail(number, list, randomSeed, failure.Message);
                 BattleWorker.NoteEpisodeFailure();
                 throw failure;
             }
@@ -245,15 +264,15 @@ namespace WotR.Testing.Offline
             var reward = Options.Reward?.Invoke(new BattleTransition(before, list, after, effects)) ?? 0.0;
             var result = new BattleStepResult(Episode, step, list, elapsed, decision, effects, walkedDistances, after, outcome,
                 truncated, truncated ? $"the step limit of {Options.MaxSteps} was reached" : null, reward);
-            record.Add(new BattleStepRecord(step, list, elapsed, decision, afterState.Lines));
+            record.Add(new BattleStepRecord(step, list, randomSeed, elapsed, decision, afterState.Lines));
             if (outcome != null || truncated) record.End(outcome, truncated);
             BattleWorker.NoteEpisodeStep(outcome != null || truncated);
             return result;
         }
 
         /// <summary>
-        /// Resets to the record's seed and takes its steps again, comparing the battle's key state after each step. Returns
-        /// the differences; an empty list means the episode was reproduced.
+        /// Resets to the record's seed and takes its steps again, with their random seeds, comparing the battle's key state
+        /// after each step. Returns the differences; an empty list means the episode was reproduced.
         /// </summary>
         public IReadOnlyList<string> Replay(BattleEpisodeRecord episode)
         {
@@ -262,7 +281,7 @@ namespace WotR.Testing.Offline
             if (episode.Scenario != battle.Scenario.Name)
                 throw new ArgumentException($"The record is of scenario {episode.Scenario}, this environment runs {battle.Scenario.Name}.", nameof(episode));
             var differences = new List<string>();
-            Reset(episode.Seed);
+            Reset(episode.Seed, episode.Difficulty);
             differences.AddRange(Compare("initial state", episode.InitialState, record.InitialState));
             foreach (var expected in episode.Steps)
             {
@@ -271,7 +290,7 @@ namespace WotR.Testing.Offline
                 {
                     try
                     {
-                        Step(expected.Actions);
+                        Step(expected.Actions, expected.RandomSeed);
                         differences.Add($"step {expected.Step}: the record failed with {expected.Error}, the replay did not fail");
                     }
                     catch (BattleEnvironmentException) { }
@@ -280,7 +299,7 @@ namespace WotR.Testing.Offline
                 BattleStepResult actual;
                 try
                 {
-                    actual = Step(expected.Actions);
+                    actual = Step(expected.Actions, expected.RandomSeed);
                 }
                 catch (Exception error)
                 {
@@ -315,7 +334,7 @@ namespace WotR.Testing.Offline
             failure = null;
             outcome = Decide(ObserveUnits());
             record = new BattleEpisodeRecord(battle.Scenario.Name, Episode, battle.Seed,
-                OfflineRuntime.Inputs?.Identity?.GameVersion, LibraryVersion, battle.InitialState.Lines);
+                OfflineRuntime.Inputs?.Identity?.GameVersion, LibraryVersion, battle.InitialState.Lines, battle.Scenario.Difficulty);
             if (outcome != null) record.End(outcome, false);
             BattleWorker.NoteEpisode();
         }
@@ -354,7 +373,10 @@ namespace WotR.Testing.Offline
             if (NextUnit.GetValue(combat) is not UnitEntityData next || !combat.IsSurprised(next) || next.GetTimeToNextTurn() <= 0f) return null;
             return $"the game's turn-based combat starts no turn: in the surprise round it skipped every unit and chose {next.CharacterName} ({next.UniqueId}), "
                 + $"which is surprised, so its initiative ({next.GetTimeToNextTurn():0.##} s to its turn) does not count down "
-                + "(CombatController.ChooseNextUnit, UnitCombatCooldownsController). Units acting in the surprise round are skipped without an offensive command.";
+                + "(CombatController.ChooseNextUnit, UnitCombatCooldownsController). Units acting in the surprise round are skipped without an offensive command. "
+                + "The game lets the party surprise the enemies when the seconds part of the time since a party member's last offensive action out of combat is "
+                + "below 6, which for a member that never made one holds in the first six seconds of every game minute (BattleScenario.StartTime); "
+                + "only the main character and BattleScenario.Companions count as the party.";
         }
 
         /// <summary>
@@ -432,7 +454,7 @@ namespace WotR.Testing.Offline
                 }
             }
             return new BattleObservation(battle.Scenario.Name, Episode, step, battle.Seed, Game.Instance.Player.GameTime, units,
-                paths.AsReadOnly(), candidates.AsReadOnly(), outcome, truncated, failure?.Message);
+                paths.AsReadOnly(), candidates.AsReadOnly(), outcome, truncated, failure?.Message, BattleDifficultyObservation.Capture());
         }
 
         /// <summary>
@@ -1078,8 +1100,9 @@ namespace WotR.Testing.Offline
     {
         internal BattleObservation(string scenario, int episode, int step, int seed, TimeSpan gameTime,
             IReadOnlyList<BattleUnitObservation> units, IReadOnlyList<BattlePathObservation> paths, IReadOnlyList<BattleAction> candidates,
-            BattleOutcome outcome, bool truncated, string failure)
+            BattleOutcome outcome, bool truncated, string failure, BattleDifficultyObservation difficulty)
         {
+            Difficulty = difficulty;
             Scenario = scenario;
             Episode = episode;
             Step = step;
@@ -1101,6 +1124,10 @@ namespace WotR.Testing.Offline
 
         public int Seed { get; }
         public TimeSpan GameTime { get; }
+
+        /// <summary>The game's difficulty settings the battle's rules read (<see cref="BattleScenario.Difficulty"/>).</summary>
+        public BattleDifficultyObservation Difficulty { get; }
+
         public IReadOnlyList<BattleUnitObservation> Units { get; }
 
         /// <summary>Scenario paths and the game's paths for ready units, usable or not, each with its source.</summary>
@@ -1123,6 +1150,44 @@ namespace WotR.Testing.Offline
 
         public BattleUnitObservation Unit(string id)
             => Units.FirstOrDefault(u => u.Id == id) ?? throw new KeyNotFoundException($"The observation has no unit {id}.");
+    }
+
+    /// <summary>
+    /// The game's difficulty settings as the rules read them: the level, the multiplier of enemy damage to the party, the
+    /// enemies' stat adjustments and critical hits, whether the AI uses its additional behaviours, and limited AI for
+    /// party units. Names are the game's enum values.
+    /// </summary>
+    public sealed class BattleDifficultyObservation
+    {
+        private BattleDifficultyObservation(string level, float damageToParty, string enemyDifficulty, string enemyCriticalHits,
+            string statsAdjustments, bool additionalAiBehaviors, bool limitedAi)
+        {
+            Level = level;
+            DamageToParty = damageToParty;
+            EnemyDifficulty = enemyDifficulty;
+            EnemyCriticalHits = enemyCriticalHits;
+            StatsAdjustments = statsAdjustments;
+            AdditionalAIBehaviors = additionalAiBehaviors;
+            LimitedAI = limitedAi;
+        }
+
+        internal static BattleDifficultyObservation Capture()
+        {
+            var d = Kingmaker.Settings.SettingsRoot.Difficulty;
+            return new BattleDifficultyObservation(d.GameDifficulty.GetValue().ToString(), d.DamageToParty.GetValue(),
+                d.EnemyDifficulty.GetValue().ToString(), d.EnemyCriticalHits.GetValue().ToString(), d.StatsAdjustments.GetValue().ToString(),
+                d.AdditionalAIBehaviors.GetValue(), d.LimitedAI.GetValue());
+        }
+
+        /// <summary><c>GameDifficultyOption</c>: Story, Casual, Normal, Daring, Core, Hard, Unfair or Custom.</summary>
+        public string Level { get; }
+
+        public float DamageToParty { get; }
+        public string EnemyDifficulty { get; }
+        public string EnemyCriticalHits { get; }
+        public string StatsAdjustments { get; }
+        public bool AdditionalAIBehaviors { get; }
+        public bool LimitedAI { get; }
     }
 
     /// <summary>One unit as the game reports it.</summary>
@@ -1387,11 +1452,13 @@ namespace WotR.Testing.Offline
     {
         private readonly List<BattleStepRecord> steps = new();
 
-        internal BattleEpisodeRecord(string scenario, int episode, int seed, string gameVersion, string libraryVersion, IReadOnlyList<string> initialState)
+        internal BattleEpisodeRecord(string scenario, int episode, int seed, string gameVersion, string libraryVersion, IReadOnlyList<string> initialState,
+            Kingmaker.Settings.GameDifficultyOption? difficulty)
         {
             Scenario = scenario;
             Episode = episode;
             Seed = seed;
+            Difficulty = difficulty;
             GameVersion = gameVersion;
             LibraryVersion = libraryVersion;
             InitialState = initialState;
@@ -1402,6 +1469,9 @@ namespace WotR.Testing.Offline
 
         /// <summary>The seed the episode was built with. A seed alone is not a replay: the actions are needed too.</summary>
         public int Seed { get; }
+
+        /// <summary>The difficulty level the scenario chose for the episode (<see cref="BattleScenario.Difficulty"/>), if any.</summary>
+        public Kingmaker.Settings.GameDifficultyOption? Difficulty { get; }
 
         public string GameVersion { get; }
         public string LibraryVersion { get; }
@@ -1415,9 +1485,9 @@ namespace WotR.Testing.Offline
 
         internal void Add(BattleStepRecord stepRecord) => steps.Add(stepRecord);
 
-        internal void Fail(int step, IReadOnlyList<BattleAction> actions, string error)
+        internal void Fail(int step, IReadOnlyList<BattleAction> actions, int? randomSeed, string error)
         {
-            steps.Add(new BattleStepRecord(step, actions, TimeSpan.Zero, null, Array.Empty<string>(), error));
+            steps.Add(new BattleStepRecord(step, actions, randomSeed, TimeSpan.Zero, null, Array.Empty<string>(), error));
             Error = error;
         }
 
@@ -1430,7 +1500,7 @@ namespace WotR.Testing.Offline
         public override string ToString()
             => string.Join(Environment.NewLine, new[]
                 {
-                    $"scenario {Scenario} episode {Episode} seed {Seed} game {GameVersion ?? "unknown"} library {LibraryVersion ?? "unknown"}",
+                    $"scenario {Scenario} episode {Episode} seed {Seed}{(Difficulty is { } level ? " difficulty " + level : "")} game {GameVersion ?? "unknown"} library {LibraryVersion ?? "unknown"}",
                 }
                 .Concat(steps.Select(s => s.ToString()))
                 .Concat(new[] { Error != null ? "failed: " + Error : Outcome != null ? "outcome: " + Outcome : Truncated ? "truncated" : "running" }));
@@ -1438,10 +1508,11 @@ namespace WotR.Testing.Offline
 
     public sealed class BattleStepRecord
     {
-        internal BattleStepRecord(int step, IReadOnlyList<BattleAction> actions, TimeSpan elapsed, string decision, IReadOnlyList<string> state, string error = null)
+        internal BattleStepRecord(int step, IReadOnlyList<BattleAction> actions, int? randomSeed, TimeSpan elapsed, string decision, IReadOnlyList<string> state, string error = null)
         {
             Step = step;
             Actions = actions;
+            RandomSeed = randomSeed;
             Elapsed = elapsed;
             Decision = decision;
             State = state;
@@ -1450,6 +1521,10 @@ namespace WotR.Testing.Offline
 
         public int Step { get; }
         public IReadOnlyList<BattleAction> Actions { get; }
+
+        /// <summary>The seed the game's random numbers restarted from before the actions, if the step gave one.</summary>
+        public int? RandomSeed { get; }
+
         public TimeSpan Elapsed { get; }
         public string Decision { get; }
 
@@ -1459,7 +1534,7 @@ namespace WotR.Testing.Offline
         public string Error { get; }
 
         public override string ToString()
-            => FormattableString.Invariant($"step {Step}: [{string.Join("; ", Actions)}] {Elapsed.TotalSeconds:0.###} s, ") + (Error ?? Decision);
+            => FormattableString.Invariant($"step {Step}: {(RandomSeed is { } seed ? $"random seed {seed}, " : "")}[{string.Join("; ", Actions)}] {Elapsed.TotalSeconds:0.###} s, ") + (Error ?? Decision);
     }
 
     /// <summary>A step named actions the game does not allow now. Nothing was changed.</summary>

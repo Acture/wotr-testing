@@ -16,10 +16,12 @@ namespace WotR.Testing.Offline
     /// </summary>
     /// <remarks>
     /// Requests (<c>op</c>): <c>start</c> (<c>scenario</c>, <c>seed</c>, <c>maxSteps</c>, <c>turnBased</c>) builds the
-    /// scenario the host names; <c>reset</c> (<c>seed</c>) starts the next episode; <c>observe</c>; <c>step</c> with
+    /// scenario the host names; <c>reset</c> (<c>seed</c>, optionally <c>difficulty</c>, a <c>GameDifficultyOption</c> name)
+    /// starts the next episode; <c>observe</c>; <c>step</c> with
     /// <c>choices</c>, indices into the last observation's candidates, or <c>actions</c>, objects with <c>kind</c>,
     /// <c>unit</c> and as needed <c>target</c>, <c>path</c>, <c>ability</c>, <c>variant</c> and <c>point</c> ([x, y, z],
-    /// for any-point candidates); <c>close</c>. A step answers with the observation, <c>ended</c>, <c>truncated</c>,
+    /// for any-point candidates), and optionally <c>randomSeed</c>, a seed the game's random numbers restart from before
+    /// the actions (<see cref="BattleEnvironment.Step(IEnumerable{BattleAction}, int?)"/>); <c>close</c>. A step answers with the observation, <c>ended</c>, <c>truncated</c>,
     /// <c>winner</c>, <c>reward</c> (the environment's reward hook), <c>elapsed</c> and <c>decision</c>. An error answers
     /// <c>{"error": ...}</c>; after an environment failure, reset. See examples/training for a client.
     /// </remarks>
@@ -59,7 +61,9 @@ namespace WotR.Testing.Offline
                                 response = new JsonObject { ["observation"] = Encode(observation) };
                                 break;
                             case "reset":
-                                observation = Require(environment).Reset((int?)request["seed"]);
+                                var level = (string)request["difficulty"];
+                                observation = Require(environment).Reset((int?)request["seed"],
+                                    level == null ? null : (Kingmaker.Settings.GameDifficultyOption)Enum.Parse(typeof(Kingmaker.Settings.GameDifficultyOption), level));
                                 response = new JsonObject { ["observation"] = Encode(observation) };
                                 break;
                             case "observe":
@@ -70,7 +74,7 @@ namespace WotR.Testing.Offline
                                 var actions = request["choices"] is JsonArray choices
                                     ? choices.Select(n => observation.Candidates[(int)n]).ToList()
                                     : request["actions"].AsArray().Select(Decode).ToList();
-                                var result = Require(environment).Step(actions);
+                                var result = Require(environment).Step(actions, (int?)request["randomSeed"]);
                                 observation = result.Observation;
                                 response = new JsonObject
                                 {
@@ -176,6 +180,16 @@ namespace WotR.Testing.Offline
                 ["episode"] = observation.Episode,
                 ["step"] = observation.Step,
                 ["time"] = observation.GameTime.TotalSeconds,
+                ["difficulty"] = new JsonObject
+                {
+                    ["level"] = observation.Difficulty.Level,
+                    ["damageToParty"] = observation.Difficulty.DamageToParty,
+                    ["enemyDifficulty"] = observation.Difficulty.EnemyDifficulty,
+                    ["enemyCriticalHits"] = observation.Difficulty.EnemyCriticalHits,
+                    ["statsAdjustments"] = observation.Difficulty.StatsAdjustments,
+                    ["additionalAiBehaviors"] = observation.Difficulty.AdditionalAIBehaviors,
+                    ["limitedAi"] = observation.Difficulty.LimitedAI,
+                },
                 ["ready"] = new JsonArray(observation.Ready.Select(r => (JsonNode)r).ToArray()),
                 ["units"] = units,
                 ["candidates"] = candidates,

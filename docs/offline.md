@@ -207,6 +207,10 @@ of this table; changes of one kind in the order they were added:
 | `WithResource` | `Restore` and `Spend` on a resource the unit has | Current amount |
 | `At` | `UnitEntityData.Position` | Nothing else |
 | `MainCharacter` | `Player.SetMainCharacter` for a player-faction unit | `GameHelper.GetPlayerCharacter()` |
+| `Companions` | `Player.AddCompanion` for player-faction units next to the main character; `RemoveCompanion` at cleanup | In `Player.Party` and `IsDirectlyControllable` |
+| `StartTime` | `Player.GameTime` when the battle starts (default: the session's, zero); cleanup restores it | Nothing else |
+| `Difficulty` | The game's difficulty level, chosen as in the game's options: the game fills in the level's preset (damage to the party, enemy stat adjustments and critical hits, the AI's additional behaviours and the actions it keeps for higher levels, death's door). Unset keeps the session's settings, the default preset `Normal`; cleanup restores them | Not `Custom` |
+| `LimitedAI` | The game's limited-AI setting, which limits only the AI acting for directly controllable party units; cleanup restores it | Nothing else |
 | `Area` | `AreaPersistentState` as the loaded area, its navigation graph, the game loop (see below) | The area has a navigation graph |
 | `CorpulenceOverrideBySize` | Corpulence in meters by original size that replaces the view prefab's (see below) | Positive values |
 | `CorpulenceFallbackBySize` | Corpulence in meters by original size, used only when the inputs lack the unit's view prefab (see below) | Positive values |
@@ -341,8 +345,8 @@ provokes an attack of opportunity. Buffs count down and end. A unit whose damage
 reaches its hit points falls unconscious or dies as `UnitLifeController` decides,
 which also takes it out of combat, interrupts its commands, gives experience and
 raises the game's death events. Visual effects, sounds, highlights and the view's
-side of a death are skipped (boundaries `fx`, `sound`, `ability-cast-fx`,
-`unit-highlight`, `unit-death-visuals`). If the game asks to switch to another mode
+side of a death and of standing up are skipped (boundaries `fx`, `sound`,
+`ability-cast-fx`, `unit-highlight`, `unit-death-visuals`, `unit-get-up-visuals`). If the game asks to switch to another mode
 (a dialog, a cutscene, the pause), the frame fails with the mode named.
 
 The presentation controllers a battle leaves out:
@@ -487,12 +491,16 @@ var differences = environment.Replay(record);      // empty when the episode rep
 | Call | Does |
 |---|---|
 | `BattleEnvironment.Start(scenario, seed, options)` | Builds the scenario with `OfflineBattle` as episode 1 |
-| `Reset(seed)` | Cleans up the episode and builds the scenario again, as `OfflineBattle.Reset` does; returns the first observation |
+| `Reset(seed, difficulty)` | Cleans up the episode and builds the scenario again, as `OfflineBattle.Reset` does, on another difficulty level if one is given (later episodes keep it); returns the first observation |
 | `Observe()` | The units, the paths ready units can take and every action the game allows now |
 | `Step(actions)` | Gives each listed ready unit its command, then runs frames until the next decision point |
-| `Replay(record)` | Resets to the record's seed, takes its steps again and lists every difference in the key state |
+| `Step(actions, randomSeed)` | The same step after the game's random numbers restart from `randomSeed` |
+| `Replay(record)` | Resets to the record's seed, takes its steps again (with their random seeds) and lists every difference in the key state |
 
-**Observations.** A `BattleObservation` holds no game objects. Each unit reports
+**Observations.** A `BattleObservation` holds no game objects. It reports the
+game's difficulty settings the rules read (`Difficulty`: the level, the damage
+multiplier for enemies' damage to the party, the enemies' stat adjustments and
+critical hits, the AI's additional behaviours and limited AI). Each unit reports
 its id, side, blueprint, faction, hit points, the game's life state, `CanAct` and
 `CanMove`, whether it is in combat, position, facing, corpulence, speed, the
 command it runs, its standard, move and swift action cooldowns, buffs with their
@@ -594,9 +602,19 @@ a second of frames in which the game's own code can start no turn: in the surpri
 round its `CombatController.ChooseNextUnit` skips surprised units and units acting in
 the surprise round without an offensive command, and when it skips every unit it
 chooses the last one; if that unit is surprised, the game does not count down its
-initiative (`UnitCombatCooldownsController`), so its turn never starts. A unit that
-started combat with a move and a party member that joined combat a moment later can
-lead there. Instead of `Wait`, a ready unit can take
+initiative (`UnitCombatCooldownsController`), so its turn never starts. The game's
+`CombatController.HandleCombatStart` makes the party attack by surprise when a party
+member made an offensive action out of combat less than six seconds ago, but it reads
+the seconds part of the elapsed time (`TimeSpan.Seconds`, 0 to 59). A party member
+that never made one counts from game time zero, so whenever combat starts in the
+first six seconds of a game minute the whole party surprises the enemies, and one
+member acts in the surprise round. If that member has no offensive command and no
+other party member can act, as for a lone main character, the game skips it, and
+every other unit is surprised. Battles start at game time zero unless the scenario
+sets `StartTime`, and only units in `Companions` (and the main character) count as
+the party, so a scenario without either can reach this end whenever its turn-based
+fight starts at once; the training scenarios did in every episode until they set
+both. Instead of `Wait`, a ready unit can take
 `BattleAction.EndTurn(unit)`. A unit the player controls (a party member) acts
 through the player's input. `EndTurn` presses the game's end-turn key (`ForceToEnd`
 when `CanEndTurnAndNoActing`). `Attack` moves the pointer onto the target's view,
@@ -649,18 +667,33 @@ cannot continue; run the next episodes in a new process.
 
 **Training programs in another process.** `BattleEnvironmentServer.Serve(port,
 scenario)` serves the environment to one client on a local TCP port, one JSON object
-per line: `start`, `reset`, `observe`, `step` with candidate indices or action
-objects (with a point for any-point candidates), `close`. The battle runs in the test
+per line: `start`, `reset` (optionally with a difficulty level), `observe`, `step`
+with candidate indices or action
+objects (with a point for any-point candidates) and an optional `randomSeed`,
+`close`. The battle runs in the test
 process inside the offline runtime; the client only sends decisions. The battle
 fixture's `TrainingServer` test serves while `WOTR_TRAIN_PORT` is set, and
 [examples/training](../examples/training/README.md) has Python clients: REINFORCE,
 random-rollout planning, on-policy distillation and MaskablePPO through a Gymnasium
-interface with action masks. The environment has no save and restore; rollouts
+interface with action masks, each of which can start from demonstrations (the
+winning episodes among the best by return, cloned before training). The environment has no save and restore; rollouts
 rebuild a state by replaying from the episode's seed.
 
-**Records.** `environment.Record` has the scenario, episode, seed, game version,
-library version, initial state, and per step the actions, game time, decision and
-the key state afterwards. A seed alone does not reproduce an episode; the actions
+**Branching from a state.** Replaying an episode reaches its random state too, so a
+rollout from the replayed state would roll exactly the dice the episode's own next
+step rolls, and a planner that compares candidates by rollouts would see which
+attack hits. `Step(actions, randomSeed)` restarts the game's random numbers from
+`randomSeed` before the step: the step's dice, the game's AI and every later draw
+come from that seed. A rollout's first step passes one; the episode's real step
+passes none and continues the episode's own stream. One seed at one state draws the
+same numbers every time, so candidates scored with the same seeds are compared on
+the same draws. Held-out evaluation episodes need their own seeds as well: a
+training episode with an evaluation seed starts from exactly the same battle.
+
+**Records.** `environment.Record` has the scenario, episode, seed, difficulty level,
+game version,
+library version, initial state, and per step the actions, random seed (if one was
+given), game time, decision and the key state afterwards. A seed alone does not reproduce an episode; the actions
 do, and `Replay` checks that they do. The game's pathfinding does not make an episode
 depend on how fast or busy the machine is (boundary `pathfinding-clock`), for example
 when many episodes run at once. `environment.json` counts episodes, steps,
@@ -818,20 +851,23 @@ rulebook calculations.
 | `physics-scene` | `PhysicsScene` native queries, the `Physics.defaultPhysicsScene` getter and the entity-bounds scene while a battle runs its game loop | Only during a battle with an area; outside battles they fail as `unity-runtime-required`, as before. The default physics scene is a `PhysicsScene` with no handle. No level colliders exist offline: casts hit nothing and overlaps find nothing. The game's `EntityBoundsController` creates its entity-bounds scene (a scene with no level, valid only during the battle) and keeps each unit's bound sphere at the unit's position with its corpulence as radius; on the unit bounds layer those spheres answer, as the game's entity-bounds physics scene does. Vision range uses them. Heights follow the navigation mesh, not ground colliders |
 | `unit-view-stand-in` | `UnitEntityView` of battle units and the components on its GameObject; the view side of `AttachView`/`DetachView`; `Polymorph.TryReplaceView`/`RestoreView` for stand-ins | A view with no GameObject, model or animator that Unity's checks read as live, with the serialized fields of the unit's real view prefab, read on demand from its `.unit` bundle (`CorpulenceOverrideBySize` replaces only the corpulence; without the bundle, an override or `CorpulenceFallbackBySize` gives the corpulence and the rest keeps class defaults), carrying the game's own `UnitMovementAgent`, seeker and path modifiers. The game's `AttachView` and `DetachView` attach it; `EntityViewBase.AttachToData` and `DetachFromData` set up and release only what the mechanics read. Their transform reads as the unit (its position and orientation); writes to its position or rotation are dropped, because only a model would show them. The bound sphere's transform is moved by the game's `EntityBoundsController`. Enabled flags come from the prefab; enabling or disabling the movement agent runs its own `OnEnable` or `OnDisable`. The stand-in GameObjects keep an active flag: deactivating one runs `OnDisable` of its enabled agent, activating it `OnEnable`, as Unity does, and physics overlaps skip disabled bound spheres. Unity's component lookups on a stand-in GameObject (`GetComponent`, `TryGetComponent`, `GetComponents`, its `transform`) answer from the stand-in's components; presentation components the game's interface code expects (a line renderer, decals) are stand-ins of the same kind, with their enabled flags. The stand-ins are distinct objects under Unity's `==`; `GetInstanceID()` needs native code and fails as `unity-runtime-required`. A polymorph swaps stand-ins (its prefab with size scaling off, then the unit's own); the view replacement record, the command interruption and waking the unit run as in the game, models and the visual fade are skipped. Removed with `DetachView` before the unit is destroyed |
 | `unit-weapon-visuals` | `UnitEntityView.HandleAttackCommandRun`, `HideOffWeapon`, `UnitHandEquipmentController.DidUpdate` for stand-ins | Skipped: weapon models in the hands, occlusion clipping, and waiting for the hand models to match the combat state |
-| `unit-hit-effects` | `HitPlayer.PlayDamageHit` when a stand-in is involved | Skipped: blood, hit effects and sounds. The game takes the same early return for units without a live view; `RuleDealDamage` deals the damage as shipped |
+| `unit-hit-effects` | `HitPlayer.PlayDamageHit` when a stand-in is involved, and `HitPlayer.PlayProjectileHit` while a battle runs | Skipped: blood, hit effects and sounds, and the hit, miss and decal effects of a projectile that reaches its target (prefabs from asset bundles a battle does not load). The game takes the same early return for units without a live view; `RuleDealDamage` deals the damage, and a projectile's rules run in `Projectile.OnHit` after the effects, as shipped |
 | `debug-draw` | `Debug.DrawLine` | Skipped: editor scene-view lines, which a player build does not draw either |
 | `unit-death-visuals` | `UnitEntityView.HandleDeath` for battle units | Skipped: the blood and dismemberment effect, the fade, occlusion clipping, a swarm's health display, the prefab's death effects and moving the click collider with the torso. The death itself is `UnitLifeController`'s and runs as shipped |
-| `fx` | `FxHelper` spawn methods and `AbilitySpawnFx.Spawn` while a battle runs | Skipped: visual effects. Ability effects are skipped as when their execution context disables effects; `FxHelper` returns no handle, which its callers allow for |
+| `unit-get-up-visuals` | `UnitEntityView.LeaveProneState` for battle units | Skipped: the ragdoll's return to its animation, the weapon models in the hands and moving the click collider. The rest of the method runs as the game's: the get-up time (for half a second `IsGetUp` counts the unit as prone for its AC and holds back its commands), `IsProne` and the unit's obstacle groups. When a unit stands up is `UnitProneController`'s and runs as shipped |
+| `fx` | `FxHelper` spawn methods, `AbilitySpawnFx.Spawn` and `ContextActionSpawnFx.RunAction` while a battle runs | Skipped: visual effects. Ability effects and effects that actions spawn (for example a rage buff's) are skipped as when their execution context disables effects; `FxHelper` returns no handle, which its callers allow for |
 | `sound` | `SoundEventsManager.PostEvent` and the action bar's click sound (`MechanicActionBarSlot.PlaySound`) while a battle runs | Skipped: sound events; the game gets no playing id (0). An action bar slot the battle environment clicks plays no click sound |
 | `ability-cast-fx` | `UnitUseAbility.CastAbilityFx` for battle units | Skipped: the ability's spawn effects, the precast effects and the caster's spell voice; the ability is cast and resolved by the game's code |
 | `unit-highlight` | `UnitEntityView.UpdateHighlight` for battle units | Skipped: the highlight of a unit under the mouse, in a drag box or among the objects the player can use |
+| `occlusion-clipping` | `UnitEntityView.HandleOccludedObjectDepthClipper` for battle units | Skipped: the component that cuts away scenery hiding a party member from the camera, which `Player.AddCompanion` adds and `RemoveCompanion` switches off |
 | `camera` | `Game.CameraController`, `TurnController.TryScrollToUnit` and `IslesController.TickCameraRotation` while a battle runs | No camera exists in a battle. `Game.CameraController` is the default mode's own `CameraController` without its `Activate` or `Tick`, which bind the follow key and move the camera rig: code that follows or releases a unit with the camera sets the follower's state, and nothing scrolls. When a turn starts the camera does not scroll to the unit, so the turn is prepared at once, as when the player switches the scroll off. Reading the camera rig's rotation for the Isles is skipped; the isles themselves tick |
 | `external-control` | `AiBrainController.TickBrain` for units of `BattleScenario.ControlledSides` | Skipped for those units only, at the consumer's request: the game's AI does not choose their actions in real time or on their turns, not even the actions it takes for party members with their AI switched off. Units of other sides keep the game's AI. A difference from the game, counted in the report |
 | `asset-names` | `Object.name` of ScriptableObjects mapped from `blueprint.assets` | The asset's serialized `m_Name`, which Unity keeps in native memory; the game reads it, for example, as the key of a keyboard binding. Any other object's name fails as `unity-runtime-required` |
 | `loading-process` | `LoadingProcess.Instance` while a battle runs | A `LoadingProcess` without a GameObject for the battle: a battle loads no scenes and shows no loading screens. The game's code asks it as usual (the turn-based `CombatController` resets the manual loading screen when combat starts); its `Update` and coroutines never run |
 | `main-thread-dispatcher` | UniRx `MainThreadDispatcher` while a battle runs | A dispatcher without a GameObject for the battle. Actions the game posts to the main thread (for example when turn-based combat ends) run in the dispatcher's own `Update` at the end of every battle frame and once when the battle stops, as Unity's next frame would; its coroutines are not started |
-| `pointer` | `Game.ClickEventsController` and the pointer's object, position and clicks while a battle runs | The game's `DefaultPointerController`, set as `SetupPublicControllers` sets it, without its `Tick`: no mouse, camera or level to cast rays into. The battle environment points it at a unit's view or a point of the ground (no object, as no level is loaded) and clicks as `PointerController.Tick` handles a left click: the game picks the handler by its priorities, the current turn may ignore the click, and the handler's `OnClick` runs. Hover changes are announced as the pointer announces them. At cleanup, before the units go, the pointer moves off the unit it is on and the player's selection is cleared as an unloading area clears it (`SelectionCharacterController.OnAreaBeginUnloading`); the reset compares both |
+| `pointer` | `Game.ClickEventsController` and the pointer's object, position and clicks while a battle runs | The game's `DefaultPointerController`, set as `SetupPublicControllers` sets it, without its `Tick`: no mouse, camera or level to cast rays into. The battle environment points it at a unit's view or a point of the ground (no object, as no level is loaded) and clicks as `PointerController.Tick` handles a left click: the game picks the handler by its priorities, the current turn may ignore the click, and the handler's `OnClick` runs. Hover changes are announced as the pointer announces them. After a step's clicks the pointer moves off the units, as the player moves the mouse away, so the game's predictions for the unit under the pointer do not run on a target that died there (a loot prediction on a corpse reads the view's click collider, which a stand-in lacks). At cleanup, before the units go, the pointer moves off the unit it is on and the player's selection is cleared as an unloading area clears it (`SelectionCharacterController.OnAreaBeginUnloading`); the reset compares both |
 | `path-preview` | `PathVisualizer` while a battle runs | The turn-based path preview without a GameObject; its line renderer and decals are stand-ins without native objects. Its `Update` runs every battle frame, the game's predictions ask it for the path of the command under the pointer, and its movement simulation shortens a move to the movement left. Only drawing the line (`DecimateLine`, `SetGradientsToRenderer`: points, colors, materials, decal positions) is skipped |
+| `bark` | `Game.UI.BarkManager` while a battle runs | A bark player that shows nothing and returns no handle, instead of the one the UI's overtips register. `UnitLifeController` calls it directly for the "crippled" notice when a player-faction unit at death's door comes to; code that goes through `UIAccess.Bark` already skips a missing player |
 | `selection-ui` | `SelectionManagerBase.Instance` (`Game.UI.SelectionManager`) while a battle runs | A `SelectionManagerPC` without a GameObject, registered as its `Awake` registers it, for the click handlers that ask which selected unit acts. The selection is the game's `Game.SelectionCharacter` state, which the `TurnController` sets to the unit whose turn it is. Selection marks are never created, and party changes, which it handles with UI coroutines, are not followed |
 | `cursor` | `CursorController.SetCursor` while a battle runs | Skipped: setting the mouse cursor's image. The game's `CursorController` still decides which cursor it would show |
 | `input` | `UnityEngine.Input` keys, buttons, axes and mouse position while a battle runs | No keyboard or mouse: no key or button is held, pressed or released, axes are at rest and the mouse is at the origin, so the game takes its branches for no modifier key held (no Ctrl to force a move) |
@@ -896,7 +932,8 @@ game would ask Unity for the system language.
   not the path the game's AI scores and trims. The surprise-round dead end of the
   game's code (see [Battle environment](#battle-environment)) ends the episode with an
   environment failure; it follows from the decompiled code and was not reproduced in
-  the running game.
+  the running game, where game time is never zero and the player can switch
+  turn-based mode off.
 - **Area parts.** A battle loads its area as the current area part. The game picks
   the part from the main character's position when it loads an area without an
   enter point, and loads that part's navigation graph; battles use the area's own

@@ -1,0 +1,114 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Kingmaker.Controllers.Projectiles;
+using Kingmaker.EntitySystem.Entities;
+using Kingmaker.PubSubSystem;
+using Kingmaker.UnitLogic.Buffs.Blueprints;
+using WotR.Testing.Offline;
+using Xunit;
+
+namespace WotR.Testing.BattleTests
+{
+    /// <summary>One against one with the game's AI on both sides, for builds and enemies whose actions reach more of the game.</summary>
+    [Collection("battles")]
+    public sealed class GameAiVariantTests
+    {
+        // CR2_SkeletalChampionArcher1: Mobs, Undead 2 / Fighter 6, longbow.
+        private const string SkeletonArcher = "4d5fb0b57d1842b48ecb0107735a3cf2";
+        // DLC3_BARBARIAN_TRAILER_LOW: Player faction, Barbarian 2, greataxe; its brain rages.
+        private const string Barbarian = "93b94a70dcf64280887b0aaec91fcaea";
+        private const string RageBuff = "da8ce41ac3cd74742b80984ccc3c9613";
+
+        private readonly BattleGame game;
+
+        public GameAiVariantTests(BattleGame game) => this.game = game;
+
+        /// <summary>A unit of the party and an enemy about 5.6 m apart on the Kenabres mesh; no side is controlled.</summary>
+        private static BattleScenario OneOnOne(string name, string hero, string foe)
+        {
+            var scenario = new BattleScenario(name) { MainCharacter = "hero", Area = Guids.KenabresBurning, StartTime = new TimeSpan(12, 0, 30) };
+            scenario.Unit("hero", "party", hero).At(47.2f, 40, -65.2f);
+            scenario.Unit("foe", "enemies", foe).WithFaction(Guids.MobsFaction).At(52, 40, -68);
+            return scenario;
+        }
+
+        private static long Hits(string boundary) => Boundaries.Snapshot().Single(b => b.Id == boundary).Hits;
+
+        private sealed class ProjectileRecorder : IProjectileHitHandler
+        {
+            public readonly List<(UnitEntityData Launcher, UnitEntityData Target, bool FromWeapon)> Hits = new();
+
+            public void HandleProjectileHit(Projectile projectile)
+                => Hits.Add((projectile.Launcher?.Unit, projectile.Target?.Unit, projectile.IsFromWeapon));
+        }
+
+        [Fact]
+        public void AnArcherOfTheGameAiShootsArrowsThatReachTheirTargetWithoutTheirHitEffects()
+        {
+            game.RequireGame();
+            using var battle = OfflineBattle.Start(OneOnOne("archer", Guids.Fighter, SkeletonArcher), seed: 1);
+            var archer = battle.Unit("foe");
+            var fighter = battle.Unit("hero");
+            var projectiles = new ProjectileRecorder();
+            battle.Subscribe(projectiles);
+            var effects = Hits("unit-hit-effects");
+            var hitPoints = fighter.HPLeft;
+
+            for (var second = 0; second < 30 && !projectiles.Hits.Any(h => h.Launcher == archer); second++)
+                battle.Run(TimeSpan.FromSeconds(1));
+
+            // The arrow flew and reached the fighter: Projectile.OnHit ran its rules after the skipped hit effects.
+            Assert.Contains(projectiles.Hits, h => h.Launcher == archer && h.Target == fighter && h.FromWeapon);
+            Assert.True(Hits("unit-hit-effects") > effects);
+            Assert.True(fighter.HPLeft <= hitPoints);
+        }
+
+        [Fact]
+        public void TheBattlesDifficultyIsTheGamesPresetWhichItsRulesReadAndCleanupRestoresTheSettings()
+        {
+            game.RequireGame();
+            var settings = Kingmaker.Settings.SettingsRoot.Difficulty;
+            var before = (settings.GameDifficulty.GetValue(), settings.DamageToParty.GetValue(), settings.LimitedAI.GetValue(), settings.AdditionalAIBehaviors.GetValue());
+            var damages = new Dictionary<Kingmaker.Settings.GameDifficultyOption, int>();
+            foreach (var level in new[] { Kingmaker.Settings.GameDifficultyOption.Story, Kingmaker.Settings.GameDifficultyOption.Unfair })
+            {
+                var scenario = OfflineBattleTests.Duel();
+                scenario.Difficulty = level;
+                scenario.LimitedAI = false;
+                using var battle = OfflineBattle.Start(scenario, seed: 1);
+                Assert.Equal(level, settings.GameDifficulty.GetValue());
+                Assert.False(settings.LimitedAI.GetValue());
+                // The cultist's fixed 20 points of damage reach the fighter through RuleDealDamage, which multiplies an
+                // enemy's damage to the party by the preset's DamageToParty.
+                var fighter = battle.Unit("fighter");
+                var hitPoints = fighter.HPLeft;
+                RuleScope.Run("cultist hits the fighter", () => Kingmaker.RuleSystem.Rulebook.Trigger(new Kingmaker.RuleSystem.Rules.Damage.RuleDealDamage(battle.Unit("cultist"), fighter,
+                    new Kingmaker.RuleSystem.Rules.Damage.PhysicalDamage(new Kingmaker.RuleSystem.Rules.ModifiableDiceFormula(new Kingmaker.RuleSystem.DiceFormula(0, Kingmaker.RuleSystem.DiceType.Zero)), 20, Kingmaker.Enums.Damage.PhysicalDamageForm.Bludgeoning))));
+                damages[level] = hitPoints - fighter.HPLeft;
+                Assert.Equal((int)(20 * settings.DamageToParty.GetValue()), damages[level]);
+            }
+            Assert.True(damages[Kingmaker.Settings.GameDifficultyOption.Unfair] > damages[Kingmaker.Settings.GameDifficultyOption.Story],
+                $"Story dealt {damages[Kingmaker.Settings.GameDifficultyOption.Story]}, Unfair {damages[Kingmaker.Settings.GameDifficultyOption.Unfair]}");
+            Assert.Equal(before, (settings.GameDifficulty.GetValue(), settings.DamageToParty.GetValue(), settings.LimitedAI.GetValue(), settings.AdditionalAIBehaviors.GetValue()));
+        }
+
+        [Fact]
+        public void ABarbarianOfTheGameAiRagesWithoutTheRagesVisualEffect()
+        {
+            game.RequireGame();
+            using var battle = OfflineBattle.Start(OneOnOne("rage", Barbarian, Guids.Cultist), seed: 1);
+            var barbarian = battle.Unit("hero");
+            var rage = OfflineGame.Blueprint<BlueprintBuff>(RageBuff);
+            var effects = Hits("fx");
+
+            for (var second = 0; second < 20 && barbarian.Buffs.GetBuff(rage) == null; second++)
+                battle.Run(TimeSpan.FromSeconds(1));
+
+            // The game's AI switched rage on; the buff's ContextActionSpawnFx loads a prefab from the asset bundles, which a
+            // battle skips as when effects are disabled.
+            Assert.NotNull(barbarian.Buffs.GetBuff(rage));
+            Assert.True(Hits("fx") > effects);
+        }
+    }
+}

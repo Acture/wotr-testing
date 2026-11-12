@@ -1,7 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Kingmaker.EntitySystem.Entities;
 using Kingmaker.EntitySystem.Stats;
+using Kingmaker.Enums.Damage;
+using Kingmaker.RuleSystem;
+using Kingmaker.RuleSystem.Rules;
+using Kingmaker.RuleSystem.Rules.Damage;
+using Kingmaker.View;
 using WotR.Testing.BattleSupport;
 using WotR.Testing.Offline;
 using Xunit;
@@ -213,6 +219,77 @@ namespace WotR.Testing.BattleTests
             Assert.Equal(record.Steps.Count, environment.Record.Steps.Count);
             Assert.Equal(record.Steps.Last().State, environment.Record.Steps.Last().State);
             Assert.Equal(4, environment.Record.Seed);
+        }
+
+        [Fact]
+        public void TheObservationReportsTheDifficultyAndAResetCanChooseAnotherWhichTheReplayKeeps()
+        {
+            game.RequireGame();
+            var scenario = Skirmish();
+            scenario.Difficulty = Kingmaker.Settings.GameDifficultyOption.Hard;
+            using var environment = BattleEnvironment.Start(scenario, seed: 1);
+            var hard = environment.Observe().Difficulty;
+            Assert.Equal("Hard", hard.Level);
+            Assert.Equal(1f, hard.DamageToParty);
+
+            var observation = environment.Reset(2, Kingmaker.Settings.GameDifficultyOption.Unfair);
+            Assert.Equal("Unfair", observation.Difficulty.Level);
+            Assert.Equal(2f, observation.Difficulty.DamageToParty);
+            Assert.Equal("StrongImprovement", observation.Difficulty.StatsAdjustments);
+            var result = environment.Step(BattleAction.Move("fighter", "game:fighter->cultist"));
+            for (var i = 0; i < 4 && !result.Ended; i++) result = environment.Step(Fight(result.Observation));
+            var record = environment.Record;
+            Assert.Equal(Kingmaker.Settings.GameDifficultyOption.Unfair, record.Difficulty);
+
+            // Another level for the next episode; the replay rebuilds the recorded one on Unfair.
+            Assert.Equal("Story", environment.Reset(3, Kingmaker.Settings.GameDifficultyOption.Story).Difficulty.Level);
+            var differences = environment.Replay(record);
+            Assert.True(differences.Count == 0, string.Join(Environment.NewLine, differences));
+            Assert.Equal("Unfair", environment.Observe().Difficulty.Level);
+        }
+
+        [Fact]
+        public void AStepWithARandomSeedRollsFromThatSeedInsteadOfTheEpisodesOwnStream()
+        {
+            game.RequireGame();
+            using var environment = BattleEnvironment.Start(Skirmish(), seed: 4);
+            var approach = BattleAction.Move("fighter", "game:fighter->cultist");
+
+            // Rebuilds the state after the approach as a rollout does, by resetting and replaying, then fights a few steps
+            // from it: the first of them with the random seed. Returns every Unity random draw of those steps.
+            List<string> Draws(int? randomSeed)
+            {
+                environment.Reset(4);
+                var result = environment.Step(approach);
+                var draws = GameRandom.Record(() =>
+                {
+                    result = environment.Step(Fight(result.Observation), randomSeed);
+                    for (var i = 0; i < 5 && !result.Ended; i++) result = environment.Step(Fight(result.Observation));
+                });
+                return draws.Select(c => c.Method + "(" + c.Arguments + ")=" + c.Result).ToList();
+            }
+
+            var own = Draws(null);
+            Assert.NotEmpty(own);
+            Assert.Equal(own, Draws(null));
+            var seven = Draws(7);
+            // The same seed at the same state draws the same numbers, whatever the episode's stream would have drawn: rollouts
+            // that share a seed compare their candidates on the same dice.
+            Assert.Equal(seven, Draws(7));
+            Assert.NotEqual(own, seven);
+            Assert.NotEqual(seven, Draws(8));
+
+            var record = environment.Record;
+            Assert.Null(record.Steps[0].RandomSeed);
+            Assert.Equal(8, record.Steps[1].RandomSeed);
+            Assert.Contains("random seed 8", record.Steps[1].ToString());
+            var differences = environment.Replay(record);
+            Assert.True(differences.Count == 0, string.Join(Environment.NewLine, differences));
+
+            environment.Reset(4);
+            var steps = environment.StepCount;
+            Assert.Throws<ArgumentOutOfRangeException>(() => environment.Step(new[] { approach }, -1));
+            Assert.Equal(steps, environment.StepCount);
         }
 
         [Fact]
@@ -569,8 +646,10 @@ namespace WotR.Testing.BattleTests
         public void ASurpriseRoundInWhichTheGameStartsNoTurnFailsTheStepAtOnce()
         {
             game.RequireGame();
-            // Two fighters move and attack out of combat; the fighter whose move started combat acts in the surprise round
-            // but has no offensive command, the other joins combat later and is surprised, as are the cultists.
+            // Combat starts at game time zero, so the game's surprise check (the seconds part of the time since a party
+            // member's last offensive action out of combat, below 6) lets the party surprise the enemies. The main character
+            // is the whole party: it acts in the surprise round with a move, not an offensive command, and the game skips
+            // it. fighter2 attacks, but it is not a companion, so it is surprised, as are the cultists.
             var scenario = new BattleScenario("surprise") { MainCharacter = "fighter", Area = Guids.KenabresBurning, TurnBased = true, ControlledSides = { "party" } };
             scenario.Unit("fighter", "party", Guids.Fighter).WithBaseStat(StatType.Strength, 16).Equip(BattleSlot.PrimaryHand, Guids.StandardLongsword).At(47.2f, 40, -65.2f);
             scenario.Unit("fighter2", "party", Guids.Fighter).WithBaseStat(StatType.Strength, 16).Equip(BattleSlot.PrimaryHand, Guids.StandardLongsword).At(46.5f, 40, -67f);
@@ -588,6 +667,112 @@ namespace WotR.Testing.BattleTests
             Assert.Equal(failure.Message, environment.Observe().Failure);
             environment.Reset();
             Assert.True(environment.Battle.LastCleanup.Clean, environment.Battle.LastCleanup.ToString());
+        }
+
+        [Fact]
+        public void CompanionsJoinThePartyForTheBattleAndThePlayerCommandsThem()
+        {
+            game.RequireGame();
+            var player = Kingmaker.Game.Instance.Player;
+            var partyBefore = player.PartyCharacters.Count;
+            UnitEntityData fighter2;
+            using (var environment = BattleEnvironment.Start(TrainingServer.Scenario("2v3", turnBased: true), seed: 1, new BattleEnvironmentOptions { MaxSteps = 40 }))
+            {
+                fighter2 = environment.Battle.Unit("fighter2");
+                Assert.Contains(fighter2, player.Party);
+                Assert.True(fighter2.IsDirectlyControllable);
+                var recorder = new CommandRecorder();
+                environment.Battle.Subscribe(recorder);
+
+                var result = environment.Step(environment.Observe().Ready.Select(BattleAction.Wait).ToArray());
+                while (!result.Ended && !result.Observation.Ready.Contains("fighter2"))
+                    result = environment.Step(FightInTurns(result.Observation));
+                Assert.False(result.Ended, environment.Record.ToString());
+                // The game's turn treats the companion as the player's unit: TurnController.CanDelay, which checks
+                // IsDirectlyControllable, lets it delay its turn as the player can.
+                Assert.Contains(result.Observation.Candidates, c => c.Unit == "fighter2" && c.Kind == BattleActionKind.Delay);
+                while (!result.Ended && !recorder.Acted.Any(c => c.Executor == fighter2))
+                    result = environment.Step(FightInTurns(result.Observation));
+                Assert.Contains(recorder.Acted, c => c.Executor == fighter2);
+                Assert.DoesNotContain(recorder.Acted, c => c.Executor == fighter2 && c.ByAi);
+            }
+            Assert.Equal(partyBefore, player.PartyCharacters.Count);
+            Assert.DoesNotContain(fighter2, player.Party);
+        }
+
+        [Fact]
+        public void AUnitHealedOutOfUnconsciousnessGetsUpWithTheGamesGetUpTime()
+        {
+            game.RequireGame();
+            // The decision maker also controls the cultists and keeps them waiting, so nobody but the test hurts the fighters.
+            var scenario = TrainingServer.Scenario("2v3", turnBased: false);
+            scenario.ControlledSides.Add("enemies");
+            using var environment = BattleEnvironment.Start(scenario, seed: 1, new BattleEnvironmentOptions { MaxSteps = 40 });
+            var fighter2 = environment.Battle.Unit("fighter2");
+            // Out of combat the game wakes an unconscious party member whose group knows no living enemy
+            // (UnitReturnToConsciousController), so the knockout comes once the fight is on.
+            var result = environment.Step(environment.Observe().Ready.Select(BattleAction.Wait).ToArray());
+            while (!result.Ended && !Kingmaker.Game.Instance.Player.IsInCombat)
+                result = environment.Step(result.Observation.Ready.Select(BattleAction.Wait).ToArray());
+            Assert.True(Kingmaker.Game.Instance.Player.IsInCombat, environment.Record.ToString());
+            // Just below zero hit points: unconscious, not dead. The game's difficulty multiplies an enemy's damage to the party
+            // (DamageToParty), so the cultist's hit is divided by it, and repeated until the hit points drop below zero.
+            var multiplier = Kingmaker.Settings.SettingsRoot.Difficulty.DamageToParty.GetValue();
+            for (var i = 0; i < 10 && fighter2.HPLeft >= 0; i++)
+                RuleScope.Run("knock fighter2 out", () => Rulebook.Trigger(new RuleDealDamage(environment.Battle.Unit("cultist"), fighter2,
+                    new PhysicalDamage(new ModifiableDiceFormula(new DiceFormula(0, DiceType.Zero)), (int)Math.Ceiling((fighter2.HPLeft + 1) / multiplier), PhysicalDamageForm.Bludgeoning))));
+            result = environment.Step(result.Observation.Ready.Select(BattleAction.Wait).ToArray());
+            Assert.False(fighter2.Descriptor.State.IsConscious, $"hp {fighter2.HPLeft}/{fighter2.MaxHP} {fighter2.Descriptor.State.LifeState}{Environment.NewLine}{environment.Record}");
+            Assert.True(fighter2.View.IsProne);
+
+            // The fighter feeds it a healing potion through the action bar, as the player would.
+            while (!result.Ended && !result.Observation.Ready.Contains("fighter"))
+                result = environment.Step(result.Observation.Ready.Select(BattleAction.Wait).ToArray());
+            var potion = result.Observation.Candidates.First(c => c.Unit == "fighter" && c.Kind == BattleActionKind.UseAbility
+                && c.Target == "fighter2" && c.Ability.StartsWith("item:", StringComparison.Ordinal) && c.Ability.Contains("Cure"));
+            var hits = Boundaries.Snapshot().Single(b => b.Id == "unit-get-up-visuals").Hits;
+            var before = Kingmaker.Game.Instance.TimeController.GameTime;
+            result = environment.Step(new[] { potion }.Concat(result.Observation.Ready.Where(id => id != "fighter").Select(BattleAction.Wait)));
+            for (var i = 0; i < 10 && !result.Ended && fighter2.View.IsProne; i++)
+                result = environment.Step(result.Observation.Ready.Select(BattleAction.Wait).ToArray());
+
+            Assert.True(fighter2.Descriptor.State.IsConscious, environment.Record.ToString());
+            Assert.False(fighter2.Descriptor.State.Prone.Active);
+            Assert.False(fighter2.View.IsProne);
+            // The game's get-up time is when UnitProneController stood the unit up: IsGetUp reads it.
+            var getUp = (TimeSpan)typeof(UnitEntityView).GetField("m_StartGetUpTime", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(fighter2.View);
+            Assert.True(getUp > before, $"get-up time {getUp}, potion step started at {before}");
+            Assert.True(Boundaries.Snapshot().Single(b => b.Id == "unit-get-up-visuals").Hits > hits);
+        }
+
+        [Theory]
+        [InlineData(0, true)]
+        [InlineData(30, false)]
+        public void TheSecondOfTheGameMinuteWhenCombatStartsDecidesWhetherThePartySurprisesTheEnemies(int second, bool partySurprises)
+        {
+            game.RequireGame();
+            // The party waits until the cultists see it; no party member made an offensive action out of combat. The game's
+            // HandleCombatStart still counts the party as surprising when the seconds part of the game time is below 6.
+            var scenario = TrainingServer.Scenario("2v3", turnBased: true);
+            scenario.StartTime = new TimeSpan(12, 0, second);
+            using var environment = BattleEnvironment.Start(scenario, seed: 1, new BattleEnvironmentOptions { MaxSteps = 40 });
+            var combat = Kingmaker.Game.Instance.TurnBasedCombatController;
+
+            var result = environment.Step(environment.Observe().Ready.Select(BattleAction.Wait).ToArray());
+            var first = Assert.Single(result.Observation.Ready);
+            var unit = environment.Battle.Unit(first);
+            if (partySurprises)
+            {
+                // The surprise round (round 0) is the party's: a party member acts in it.
+                Assert.Equal(0, combat.RoundNumber);
+                Assert.True(combat.IsSurprising(unit), environment.Record.ToString());
+            }
+            else
+            {
+                // No party member surprises anyone; the party's first turn comes in the first full round.
+                Assert.True(combat.RoundNumber >= 1, $"round {combat.RoundNumber}");
+                Assert.False(combat.IsSurprising(unit));
+            }
         }
 
         [Fact]

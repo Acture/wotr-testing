@@ -42,6 +42,22 @@ namespace WotR.Testing.Offline
         }
     }
 
+    /// <summary>
+    /// An effect a buff, an ability or another action spawns on a unit or a point (<c>ContextActionSpawnFx</c>): it loads
+    /// the effect's prefab from the game's asset bundles, which a battle does not load, and gives it to FxHelper. The game
+    /// skips the whole action when the context disables effects; a battle takes the same path.
+    /// </summary>
+    [HarmonyPatch(typeof(Kingmaker.UnitLogic.Mechanics.Actions.ContextActionSpawnFx), nameof(Kingmaker.UnitLogic.Mechanics.Actions.ContextActionSpawnFx.RunAction))]
+    internal static class ContextActionSpawnFxPatch
+    {
+        private static bool Prefix()
+        {
+            if (!BattleLoop.Running) return true;
+            Boundaries.Hit("fx");
+            return false;
+        }
+    }
+
     /// <summary>Sound events while a battle runs its game loop: nothing is played, and the game gets no playing id (0).</summary>
     [HarmonyPatch]
     internal static class BattleSoundPatches

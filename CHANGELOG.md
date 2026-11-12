@@ -13,6 +13,180 @@
 - `system-random-observe` counts `System.Random` constructors without replacing
   the game's own instances. `RuleScope` fails an operation when that operation
   logs an error the game caught. `environment.json` records `gameRandom`.
+- ScriptableObjects mapped from `blueprint.assets` now read as alive under Unity's
+  checks (`if (asset)`, `asset != null`), as loaded assets do; before, the game's code
+  treated them as missing (for example an area's bounds). `Bounds` and `LayerMask`
+  values in assets now keep their extents and masks (Unity serializes them as
+  `m_Extent` and `m_Bits`). Their `Object.name` is the asset's name (boundary
+  `asset-names`).
+- Battle fixtures: `BattleScenario` describes units on each side by blueprint, with
+  faction, class levels, base stats, equipment, facts, abilities, buffs, resources,
+  positions, an optional main character and paths that already exist.
+  `OfflineBattle.Start(scenario, seed)` applies each entry through the game's API
+  and checks it; equipment the game refuses and errors logged while building fail
+  the build. `Reset()` rebuilds the same initial state in the same process and
+  compares game-wide state (EventBus and Rulebook subscriptions, entities, party
+  inventory, main character, game time, game RNG and more) with the state before
+  the build. A cleanup that leaves anything, or logs an error the game caught,
+  marks the process dirty: it refuses further battles and the run fails. A battle
+  never disposed fails the run as well. `environment.json` records `battles`.
+- Battle game loop: with `BattleScenario.Area` set, a battle loads the area and its
+  real navigation graph (read from the game's `.nav` bundle as `NavMeshManager`
+  does) and runs part of the game's default mode on its units:
+  `battle.RunUntilIdle(limit)` and `battle.Run(duration)` run the game's default
+  mode as `Game.StartMode` starts it, with every controller except presentation
+  (input, pause, camera, fog of war, effects, animation, UI windows, game over):
+  the game's AI, initiative, abilities, projectiles, area effects, buffs and life
+  and death among them. `BattleScenario.ControlledSides` names sides the game's AI
+  never decides for, so their units act only on the commands given to them. Units walk A* paths with the
+  game's own `UnitMovementAgent`, see and remember each other, join combat, and
+  provoke attacks of opportunity when they leave an enemy's reach. Frames follow
+  the game's time scales and fail when those pause the game. Units have a
+  view stand-in without a model. Fog of war, animations, level colliders and sight
+  blockers are not supported (see the known limits). A* takes the settings of the area's own `AstarPath`
+  from its mechanics scene bundle, read on demand. Snapshots do not copy the scene
+  bundles: `New-WotrSnapshot.ps1` writes the `AstarPath` settings of every mechanics
+  scene to `navigation-settings.json` (with `src/WotR.Testing.Snapshot`, which needs
+  the .NET SDK), and battles read them from there. Without either, A* keeps its class
+  defaults and the report warns.
+- `BattleEnvironment` runs a battle as a decision loop for an external decision
+  maker such as a training program: `Reset(seed)`, `Observe()` (units, the game's
+  paths to other units and every action the game allows), `Step(actions)` (the
+  game's attack and move commands for units of controlled sides, then frames until
+  the next decision point while the game's AI fights for the other sides),
+  self-play by controlling every side, turn-based combat through the game's own
+  turns and the player's input (`BattleScenario.TurnBased`, `BattleAction.EndTurn`),
+  every entry of a unit's action bar (`BattleAction.UseAbility` for spells with their
+  spontaneous conversions and metamagic, abilities and their variants, and usable
+  items in quick slots; `BattleAction.Toggle` for toggles), moves to and abilities at
+  points on the ground the decision maker gives (`MoveToAnyPoint`, `UseAbilityAtAnyPoint`,
+  checked by the game), the turn-based smart cursor's variants and movement limits
+  (`BattleAction.Attack(unit, target, variant)`, `Move(unit, path, limit)`) and
+  delaying a turn (`BattleAction.Delay`), spell slots, item uses and toggles in the
+  observation,
+  configurable outcome and reward, a step
+  limit, records per episode and `Replay(record)`. Errors during a step are
+  environment failures with the episode and step, never outcomes; a turn-based
+  surprise round in which the game's own code starts no turn fails the step at once
+  with `TurnBasedStallException`.
+- `BattleScenario.Companions` puts player-faction units into the player's party with the
+  game's `Player.AddCompanion`; the player commands them as party members.
+  `BattleScenario.StartTime` sets the game time at which the battle starts. New
+  boundary `occlusion-clipping`. The training scenarios use both: their turn-based
+  battles had ended in the surprise-round dead end in every episode, because battles
+  start at game time zero and the second fighter was not in the party.
+- A battle unit that stands up from prone, for example when a potion wakes it, no
+  longer fails the step on the view's missing weapon models (new boundary
+  `unit-get-up-visuals`); the get-up time the rules read is kept.
+- Battles run ranged weapon attacks and rays, effects that buffs and actions spawn
+  (for example a barbarian's rage) and the "crippled" notice of a player unit at
+  death's door: projectile hit effects and `ContextActionSpawnFx` load prefabs from
+  asset bundles a battle does not load, and are skipped (boundaries
+  `unit-hit-effects`, `fx`); the notice goes to a bark player that shows nothing
+  (new boundary `bark`). Summoned creatures (`ContextActionSpawnMonster`) are not
+  supported yet.
+- Battle units can wield enchanted weapons: the enchantment's glow
+  (`ItemEnchantment.RespawnFx`, which loads a prefab from the asset bundles while
+  the unit is built) is skipped under the `fx` boundary; the enchantment applies.
+- `BattleUnitSpec.WithBrain` gives a unit another game brain as the game's
+  `ChangeBrain` does, and `WithAutoUseAbility` chooses a party unit's auto-use
+  ability with a right click on its action bar slot, as the player does. The game's
+  AI acts for party units in real time while their AI is on (the default); in
+  turn-based combat it never acts for units the player controls.
+- `BattleUnitSpec.WithAI` switches a party unit's AI button as the player does
+  (`UnitEntityData.IsAIEnabled`), after a turn-based battle switches to turn-based
+  mode. The game keeps that setting separately for turn-based mode and, unmodded,
+  never acts on it there; a mod that plays those turns with the game's AI is loaded
+  like any other.
+- Units whose blueprint body puts a second weapon into a hand slot the game refuses
+  (a dretch's claws) build as in the game: `UnitBody.TryInsertItem` logs it and
+  puts the item in the inventory; the log is a known game log for battle setup,
+  counted in `battles.allowedSetupLogs`.
+- Battle units of blueprints whose customization preset lists them (zombie lords,
+  for example) spawn as one of its variations, as the game's `SpawnUnit` selects it:
+  the variation's prefab, race and gender. Before, they kept the blueprint's own
+  prefab, which for some is in no bundle. Blueprints their preset does not list keep
+  their own prefab, as in the game.
+- A position the game writes to a battle unit's view transform is read back until the
+  unit's position changes, as in the game, where the two are separate values the
+  game sets together. Before, the write was dropped: a turn-based unit snapped onto
+  its path's end still read its position from before the snap, and could stop on a
+  node an ally occupies ("TBM: Stop: stopping in a bad state (ally blocked)").
+- `BattleScenario.Difficulty` chooses the game's difficulty level for a battle as a
+  player chooses it in the options (the game fills in the level's preset), and
+  `BattleScenario.LimitedAI` sets the limited-AI option; cleanup restores both and
+  the baseline compares them. Battles without them keep the session's settings,
+  the game's default preset Normal (enemy damage to the party ×0.8, weakened enemy
+  stats). The training scenarios fight on Unfair (enemy damage ×2, strongly
+  improved enemy stats, the AI's additional behaviours) without limited AI.
+- Battle observations report the difficulty settings (`BattleObservation.Difficulty`,
+  server field `difficulty`), `BattleEnvironment.Reset(seed, difficulty)` and the
+  server's `reset` can switch the level between episodes, and episode records keep
+  it for `Replay`. The PPO example takes the difficulty as input and mixes levels
+  (`--difficulties`).
+- Training examples: an episode cut off at the step limit now counts as lost with
+  every own unit downed (`rewards.step_reward`); before, a hopeless battle paid more
+  for being dragged out than for being fought.
+- `BattleEnvironment.Step(actions, randomSeed)` restarts the game's random numbers
+  from a seed before the step (server: `randomSeed`); the record keeps it and
+  `Replay` repeats it. The examples' rollouts use it: a rollout rebuilds a state by
+  replaying the episode, which reaches the episode's random state, so before this it
+  rolled exactly the dice the episode's next step would, and the rollout planner and
+  the on-policy distillation teacher chose with that knowledge. Rollouts now draw
+  from fixed seeds per decision, shared by all candidates (`seeds.branch`). Training
+  and held-out evaluation episodes use separate seeds (`seeds.train`,
+  `seeds.evaluation`); the PPO example had evaluated on seeds it also trained on.
+  Rollouts default to 8 per candidate.
+- Training examples: `demos.py` collects demonstrations (the episodes on training
+  seeds in the best tenth by return that won, from a random policy or the rollout
+  planner) and `--warm` in `reinforce.py`, `opd.py` and `ppo.py` starts the policy
+  from them by behavior cloning.
+- `BattleEnvironmentServer` serves the battle environment to a training program in
+  another process (one client on a local TCP port, JSON lines);
+  `examples/training` has Python clients (REINFORCE, rollout planning, on-policy
+  distillation, MaskablePPO through a Gymnasium interface).
+- `BattleSlot.QuickSlot1` to `QuickSlot5` put usable items in a battle unit's quick
+  slots. `BattleScenario.FrameLogAllowances` allows errors the game logs during
+  battle frames that the scenario explains; the game's own known logs (a touch
+  spell's duplicate EventBus subscription) are allowed with their reason and counted
+  in `battles.allowedFrameLogs`.
+- Battle units take their view's serialized fields from their real view prefab,
+  read on demand from the game's `.unit` bundle as `Instantiate` does: corpulence
+  (used by reach, engagement, attacks of opportunity, spacing and vision), the size
+  override and the movement agent's acceleration, speeds and avoidance. New
+  `BattleScenario.CorpulenceOverrideBySize` replaces only the corpulence of units
+  of a size; `CorpulenceFallbackBySize` gives a corpulence used only when the
+  inputs lack a unit's bundle. A unit whose bundle is missing and whose size has
+  neither fails the build as environment-missing. The game's `AttachView` attaches
+  the view, so fact, part and view-attached hooks run. A polymorph swaps the view
+  for one of its own prefab and back, as the game's `Polymorph` does. The game's
+  `EntityBoundsController` keeps the units' bound spheres, and its
+  `GarbageEntityController` disposes items left without an owner. Units with doll
+  data from character creation need a corpulence override or fallback.
+- Snapshots now include `Bundles/locationlist.json` and the `.nav` bundles (about
+  95 MB) for battle navigation; make a new snapshot to use battles with an area.
+  Unit view prefabs (`.unit`, about 7.5 GB) are not copied; with a snapshot, set a
+  corpulence override or fallback for each size a battle uses.
+- New boundaries `navigation-graph`, `physics-scene`, `unit-view-stand-in`,
+  `unit-weapon-visuals`, `unit-hit-effects`, `unit-death-visuals`, `unit-highlight`,
+  `ability-cast-fx`, `fx`, `sound`, `camera`, `debug-draw`, `move-target-marker`,
+  `game-mode`, `external-control`, `frame-clock`, `pathfinding-clock`, `projectile-view`, `asset-names`,
+  `loading-process`, `main-thread-dispatcher`, `pointer`, `path-preview`,
+  `selection-ui`, `cursor` and `input` for battles. With `pathfinding-clock`, a battle
+  frame does all of A*'s path work instead of stopping at its limits on the
+  computer's clock, so episodes do not depend on the machine's speed or load.
+- New boundary `unity-math`: managed versions of Unity's native quaternion, matrix
+  and vector math. Code that reached these functions failed as
+  `unity-runtime-required` before and now runs, also outside battles; the results
+  are the same computation, not an assumed scene. `Debug.DrawLine` is skipped
+  everywhere, as a player build draws nothing. Physics queries, `Time.frameCount`
+  and `Time.realtimeSinceStartup` are answered only while a battle runs its game
+  loop; outside battles they still fail as `unity-runtime-required`.
+- New boundary `profiling-counters`: Owlcat profiling counters no longer reach
+  Unity's native `Time.frameCount`, so setting a unit's `Position` works offline.
+- Documented why character-creation pregens such as `MC_Human_M_Cavalier_Base`
+  have character level 0, Angel mythic levels and no starting gear equipped
+  offline.
 
 ## 0.1.0-preview.3 - 2026-10-18
 

@@ -9,6 +9,7 @@
 | `WotR.Testing.Build/` | MSBuild tasks merging runsettings and validating native VSTest results and environment reports |
 | `WotR.Testing.VSTest/` | Unity Mono runtime provider, SDK host dependency isolation and result logger |
 | `WotR.Testing.VSTestBootstrap/` | Registers the runtime provider before entering the installed SDK's unmodified VSTest CLI |
+| `WotR.Testing.Snapshot/` | `wotr-snapshot`: writes a snapshot's `navigation-settings.json`, the A* settings of the mechanics scenes, for `scripts/New-WotrSnapshot.ps1` ([why](../docs/offline.md#inputs)); not packed |
 
 Planned: `WotR.Testing.InGame/` for tests that need the Unity engine, added to the
 `WotR.Testing` meta-package, and a shared library both use once they need one. The test runner and snapshot scripts live in

@@ -136,6 +136,20 @@ prepares the runtime folder. If your project already defines
 `WotrGenerateModuleInitializer=false` and call `OfflineRuntime.InstallResolver()`
 from your own module initializer.
 
+For battles, describe both sides in a `BattleScenario` and build it with
+`OfflineBattle.Start(scenario, seed)`. Every change is applied through the game's
+API and checked. With an area (`BattleScenario.Area`), give units commands with the
+game's API and run them with `battle.RunUntilIdle(limit)`: the game's own
+controllers move units along the area's navigation mesh, start combat and resolve
+engagement and attacks of opportunity.
+`Reset()` rebuilds the same initial state and verifies that the previous build left
+no game state behind. See
+[Battles](https://github.com/Acture/wotr-testing/blob/main/docs/offline.md#battles).
+`BattleEnvironment` runs a battle as a decision loop: `Reset`, `Observe` and `Step`
+with the game's player commands, in real time or in turn-based combat
+(`BattleScenario.TurnBased`); see the
+[battle environment](https://github.com/Acture/wotr-testing/blob/main/docs/offline.md#battle-environment).
+
 Catch `UnityNative.IsUnavailable(error)` and skip with `UnityNative.SkipReason(...)`
 when a path reaches Unity engine code; such results are reported as
 `unity-runtime-required`, never as passed.
@@ -166,6 +180,10 @@ when a path reaches Unity engine code; such results are reported as
 | `WotrGameFixture` | Boots the session once; `RequireGame()`, `Observations`, `Session`; writes `environment.json` on dispose |
 | `GameSession` | Startup stages, loaded `Mods` in load order, mod under test's log, entry path and assembly |
 | `OfflineGame` | `Blueprint<T>(guid)`, `CreateUnit(guid)`, `StatSnapshot(unit)` |
+| `BattleScenario` | Units per side from blueprints, with faction, class levels, base stats, equipment, facts, abilities, buffs, resources, positions and main character; the area; corpulence overrides and fallbacks by size; paths that already exist |
+| `OfflineBattle` | `Start(scenario, seed)`, `Unit(id)`, `Paths`, `InitialState`, `Observe()`, `Subscribe`, `AddBlueprint`, `AdvanceGameTime`, `RunUntilIdle(limit)` and `Run(duration)` (game frames that run unit commands), `Reset()`; cleanup is checked for leftover game state |
+| `BattleEnvironment` | `Start(scenario, seed, options)`, `Reset(seed)`, `Observe()` (units, paths, candidate actions), `Step(actions)` (game commands, then frames to the next decision point), `Record`, `Replay(record)`; failures carry the episode and step |
+| `BattleWorker` | Whether this process is dirty after a cleanup left state behind; a dirty process refuses battles and fails the run, as does a battle never disposed |
 | `GameRandom` | The game's `System.Random`: `Init`, `Save`, `Restore`, `Record`. Seed `1` at startup. Not Unity's player sequence |
 | `ActionSampleRandom` | A caller's own `System.Random`. Does not read or write `GameRandom` |
 | `RuleScope` | Fails a named operation when that operation logs an error the game caught. `RuleLogAllowance` needs a reason |

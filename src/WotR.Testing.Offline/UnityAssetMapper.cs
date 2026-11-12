@@ -38,6 +38,64 @@ namespace WotR.Testing.Offline
             return new UnityAssetMapper(manager, manager.LoadAssetsFileFromBundle(bundle, 0, false));
         }
 
+        /// <summary>
+        /// A mapper for type trees already read from a bundle that is no longer open. References to other assets
+        /// cannot be followed and stay null; each one is recorded as a gap.
+        /// </summary>
+        internal static UnityAssetMapper Detached() => new(null, null);
+
+        /// <summary>
+        /// The MonoBehaviours on the GameObject the bundle's container lists under <paramref name="assetId"/>, as
+        /// (script class, type tree) in component order, with the GameObject's name: what the game's bundle loader returns
+        /// as the prefab. Null when the container has no GameObject under that id.
+        /// </summary>
+        internal static (string Name, List<(string ClassName, AssetTypeValueField Field)> Components)? ReadPrefabComponents(string bundlePath, string assetId)
+        {
+            var manager = new AssetsManager();
+            try
+            {
+                var file = manager.LoadAssetsFileFromBundle(manager.LoadBundleFile(bundlePath, true), 0, false);
+                foreach (var info in file.file.GetAssetsOfType(AssetClassID.AssetBundle))
+                {
+                    foreach (var entry in manager.GetBaseField(file, info)["m_Container"]["Array"].Children)
+                    {
+                        if (!string.Equals(entry["first"].AsString, assetId, StringComparison.OrdinalIgnoreCase)) continue;
+                        var asset = entry["second"]["asset"];
+                        if (asset["m_FileID"].AsInt != 0) continue;
+                        var gameObject = file.file.GetAssetInfo(asset["m_PathID"].AsLong);
+                        if (gameObject == null || gameObject.TypeId != (int)AssetClassID.GameObject) continue;
+                        var components = new List<(string, AssetTypeValueField)>();
+                        var gameObjectField = manager.GetBaseField(file, gameObject);
+                        foreach (var component in gameObjectField["m_Component"]["Array"].Children)
+                        {
+                            var pointer = component["component"];
+                            if (pointer["m_FileID"].AsInt != 0) continue;
+                            var componentInfo = file.file.GetAssetInfo(pointer["m_PathID"].AsLong);
+                            if (componentInfo == null || componentInfo.TypeId != (int)AssetClassID.MonoBehaviour) continue;
+                            var field = manager.GetBaseField(file, componentInfo);
+                            var className = manager.GetExtAsset(file, field["m_Script"]).baseField?["m_ClassName"].AsString;
+                            components.Add((className, field));
+                        }
+                        return (gameObjectField["m_Name"].AsString, components);
+                    }
+                }
+                return null;
+            }
+            finally
+            {
+                manager.UnloadAll(true);
+            }
+        }
+
+        /// <summary>
+        /// Copies the serialized fields of <paramref name="field"/> onto an existing object, as Unity's Instantiate copies
+        /// a prefab's serialized fields onto the new component.
+        /// </summary>
+        internal void MapInto(AssetTypeValueField field, object instance)
+        {
+            lock (gate) MapFields(field, instance.GetType(), instance);
+        }
+
         /// <summary>Maps the single MonoBehaviour whose script class is <paramref name="className"/>.</summary>
         public object MapByScriptClass(string className, Type type)
         {
@@ -142,10 +200,29 @@ namespace WotR.Testing.Offline
             if (pathId != 0 && byPathId.TryGetValue(pathId, out var cached)) return cached;
             var instance = Create(type);
             if (pathId != 0) byPathId[pathId] = instance;
+            if (instance is UnityEngine.Object asset)
+            {
+                // A loaded asset is alive in Unity: the game's `if (asset)` and `asset != null` checks see it.
+                OfflineUnitView.MarkLive(asset);
+                if (!field["m_Name"].IsDummy) AssetNames.Record(asset, field["m_Name"].AsString);
+            }
+            MapFields(field, type, instance);
+            return instance;
+        }
+
+        /// <summary>Fields Unity serializes under another name than the managed field of its own structs.</summary>
+        private static readonly Dictionary<(Type, string), string> UnitySerializedNames = new()
+        {
+            [(typeof(UnityEngine.Bounds), "m_Extent")] = "m_Extents",
+            [(typeof(UnityEngine.LayerMask), "m_Bits")] = "m_Mask",
+        };
+
+        private void MapFields(AssetTypeValueField field, Type type, object instance)
+        {
             foreach (var child in field.Children)
             {
                 if (child.FieldName is "m_GameObject" or "m_Enabled" or "m_Script" or "m_Name" or "m_EditorHideFlags" or "m_EditorClassIdentifier") continue;
-                var target = FindField(type, child.FieldName);
+                var target = FindField(type, UnitySerializedNames.TryGetValue((type, child.FieldName), out var managed) ? managed : child.FieldName);
                 if (target == null)
                 {
                     Gap($"{type.Name}.{child.FieldName}: no managed field");
@@ -160,7 +237,6 @@ namespace WotR.Testing.Offline
                     Gap($"{type.Name}.{target.Name}: {error.GetType().Name}");
                 }
             }
-            return instance;
         }
 
         private object MapValue(AssetTypeValueField field, Type type, string path)
@@ -172,8 +248,18 @@ namespace WotR.Testing.Offline
             if (field.TypeName.StartsWith("PPtr<"))
             {
                 if (field["m_PathID"].AsLong == 0) return null;
+                if (!typeof(UnityEngine.ScriptableObject).IsAssignableFrom(type))
+                {
+                    Gap($"{path}: {field.TypeName} native Unity asset left null");
+                    return null;
+                }
+                if (manager == null)
+                {
+                    Gap($"{path}: {field.TypeName} outside the mapped object, left null");
+                    return null;
+                }
                 var external = manager.GetExtAsset(file, field);
-                if (external.baseField == null || external.info.TypeId != (int)AssetClassID.MonoBehaviour || !typeof(UnityEngine.ScriptableObject).IsAssignableFrom(type))
+                if (external.baseField == null || external.info.TypeId != (int)AssetClassID.MonoBehaviour)
                 {
                     Gap($"{path}: {field.TypeName} native Unity asset left null");
                     return null;
@@ -233,6 +319,35 @@ namespace WotR.Testing.Offline
                 if (field != null) return field;
             }
             return null;
+        }
+    }
+
+    /// <summary>
+    /// The serialized names (<c>m_Name</c>) of the objects mapped from the game's assets. Unity keeps an object's name in
+    /// native memory; <see cref="AssetNamePatch"/> answers <c>Object.name</c> for these objects from here.
+    /// </summary>
+    internal static class AssetNames
+    {
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<UnityEngine.Object, string> Names = new();
+
+        internal static void Record(UnityEngine.Object asset, string name)
+        {
+            Names.Remove(asset);
+            Names.Add(asset, name ?? "");
+        }
+
+        internal static bool TryGet(UnityEngine.Object asset, out string name) => Names.TryGetValue(asset, out name);
+    }
+
+    [HarmonyLib.HarmonyPatch(typeof(UnityEngine.Object), nameof(UnityEngine.Object.name), HarmonyLib.MethodType.Getter)]
+    internal static class AssetNamePatch
+    {
+        private static bool Prefix(UnityEngine.Object __instance, ref string __result)
+        {
+            if (__instance is null || !AssetNames.TryGet(__instance, out var name)) return true;
+            Boundaries.Hit("asset-names");
+            __result = name;
+            return false;
         }
     }
 }

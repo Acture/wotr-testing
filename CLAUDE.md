@@ -17,12 +17,16 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   runtime (the default test runtime) from the inputs.
   `src/WotR.Testing.VSTest/`, `src/WotR.Testing.VSTestBootstrap/` and
   `src/WotR.Testing.Build/` integrate it with `dotnet test`, isolate SDK host
-  dependencies and validate reports. These tools contain no game files.
+  dependencies and validate reports. `src/WotR.Testing.Snapshot/` (`wotr-snapshot`)
+  reads the A* settings of the mechanics scenes for `New-WotrSnapshot.ps1`. These
+  tools contain no game files.
   Planned: `src/WotR.Testing.InGame/` for in-game testing (added to the meta-package),
   and a shared library both use once they need one.
 - `scripts/`: `Invoke-WotrOfflineTests.ps1` (generic runner) and
   `New-WotrSnapshot.ps1` (game-file snapshot). Consumers call these paths through
   the submodule; moving them is a breaking change.
+- `examples/training/`: Python training programs for the battle environment, which
+  connect to `BattleEnvironmentServer` in a battle fixture test; no game files.
 - `tests/`: repository checks, CLI integration tests and small synthetic fixtures
   (`tests/fixtures/`) for the native runtime and FsCheck.
 - `docs/`: public documentation. `data/`: no datasets; game files never go there.
@@ -62,8 +66,8 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   ```powershell
   python tests/check_repository.py
   python -m unittest discover -s tests -p 'test_*.py'
-  uvx ruff==0.16.10 check --config .ruff.toml tests
-  uvx ruff==0.16.10 format --check --config .ruff.toml tests
+  uvx ruff==0.16.10 check --config .ruff.toml tests examples
+  uvx ruff==0.16.10 format --check --config .ruff.toml tests examples
   uvx ty==0.0.82 check tests
   ```
 - Opt-in runner integration tests: restore `tests/fixtures/MonoTests/MonoTests.csproj`,

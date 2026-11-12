@@ -24,3 +24,8 @@ __pycache__/
 *.py[cod]
 .ruff_cache/
 .ty_cache/
+
+# Python caches and the training examples' outputs (logs, saved models)
+__pycache__/
+/examples/training/*.csv
+/examples/training/*.zip

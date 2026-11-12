@@ -48,7 +48,7 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Lint and format repository checks
         run: |
-          uvx ruff==0.16.10 check --config .ruff.toml tests
-          uvx ruff==0.16.10 format --check --config .ruff.toml tests
+          uvx ruff==0.16.10 check --config .ruff.toml tests examples
+          uvx ruff==0.16.10 format --check --config .ruff.toml tests examples
       - name: Typecheck repository checks
         run: uvx ty==0.0.82 check tests

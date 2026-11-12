@@ -166,6 +166,7 @@ namespace WotR.Testing.Offline
                 stages = Session.Stages,
                 boundaries = Boundaries.Snapshot(),
                 gameRandom = GameRandom.Report(),
+                battles = BattleWorker.Report(),
                 assetGaps = HarnessState.Assets?.Gaps,
                 mappedScriptableObjects = HarnessState.Assets?.MappedObjects,
                 logSummary = logs.GroupBy(l => $"{l.Source}:{l.Severity}").ToDictionary(g => g.Key, g => g.Count()),

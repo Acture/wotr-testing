@@ -26,6 +26,36 @@ NAMES = (
 )
 SIZE = len(NAMES)
 
+LEVELS = ["Story", "Casual", "Normal", "Daring", "Core", "Hard", "Unfair"]
+STATS = [
+	"ExtraDecline",
+	"StrongDecline",
+	"Decline",
+	"SlightDecline",
+	"None",
+	"Improvement",
+	"StrongImprovement",
+]
+CRITS = ["Off", "Weak", "Normal"]
+DIFFICULTY_NAMES = ["level", "damage-to-party", "enemy-stats", "enemy-crits", "additional-ai"]
+DIFFICULTY_SIZE = len(DIFFICULTY_NAMES)
+
+
+def difficulty(obs: dict) -> np.ndarray:
+	"""The game's difficulty settings the battle runs on, each scaled to about [0, 1]."""
+	d = obs["difficulty"]
+	level = LEVELS.index(d["level"]) / (len(LEVELS) - 1) if d["level"] in LEVELS else 0.5
+	return np.array(
+		[
+			level,
+			d["damageToParty"] / 2,
+			STATS.index(d["statsAdjustments"]) / (len(STATS) - 1),
+			CRITS.index(d["enemyCriticalHits"]) / (len(CRITS) - 1),
+			float(d["additionalAiBehaviors"]),
+		],
+		dtype=np.float32,
+	)
+
 
 def candidate(obs: dict, cand: dict) -> np.ndarray:
 	"""One candidate's features, relative to the unit that takes it."""

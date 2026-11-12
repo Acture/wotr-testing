@@ -5,7 +5,10 @@ the teacher's softmax with a cross-entropy step. Rollouts continue with the stud
 The teacher's score is "dense", the discounted sum of per-step rewards over a short horizon
 (rewards.step_reward), or "win", the win-based value at the rollout's end (rewards.win_value). The
 environment is deterministic, so a rollout rebuilds the state by replaying the episode's choices
-from its seed; its cost grows with the episode's length.
+from its seed; its cost grows with the episode's length. Each rollout then rolls its own dice
+(seeds.branch): the k-th rollouts of all candidates share a seed and the student's sampled actions,
+and the episode's real step rolls from none of them. Training and evaluation episodes use separate
+seeds (seeds.train, seeds.evaluation). --warm starts the student from demonstrations (demos.py).
 """
 
 from __future__ import annotations
@@ -16,6 +19,8 @@ import statistics
 import time
 
 import numpy as np
+import seeds
+import warm
 from client import BattleClient, by_unit
 from policy import LinearPolicy, softmax
 from rewards import SIDE, balance, step_reward, win_value
@@ -23,13 +28,9 @@ from rewards import SIDE, balance, step_reward, win_value
 
 class Teacher:
 	def __init__(
-		self,
-		client: BattleClient,
-		student: LinearPolicy,
-		args: argparse.Namespace,
-		rng: np.random.Generator,
+		self, client: BattleClient, student: LinearPolicy, args: argparse.Namespace
 	) -> None:
-		self.client, self.student, self.args, self.rng = client, student, args, rng
+		self.client, self.student, self.args = client, student, args
 
 	def replay(self, seed: int, history: list[list[int]]) -> dict:
 		obs = self.client.reset(seed)
@@ -37,7 +38,12 @@ class Teacher:
 			obs = self.client.step(choices)["observation"]
 		return obs
 
-	def rollout(self, seed: int, history: list[list[int]], unit: str, candidate: int) -> float:
+	def rollout(
+		self, seed: int, history: list[list[int]], unit: str, candidate: int, k: int
+	) -> float:
+		"""The k-th rollout of a candidate, on the k-th rollout's dice and sampled actions."""
+		rng = seeds.rollout_rng(seed, len(history), k)
+		random_seed: int | None = seeds.branch(seed, len(history), k)
 		obs = self.replay(seed, history)
 		choices = []
 		for index in by_unit(obs).values():
@@ -45,17 +51,18 @@ class Teacher:
 				choices.append(candidate)
 			else:
 				_, p = self.student.probs(obs, index)
-				choices.append(index[int(self.rng.choice(len(index), p=p))])
+				choices.append(index[int(rng.choice(len(index), p=p))])
 		total, discount = 0.0, 1.0
 		for _ in range(self.args.horizon):
-			result = self.client.step(choices)
+			result = self.client.step(choices, random_seed)
+			random_seed = None
 			after = result["observation"]
 			total += discount * step_reward(obs, after, result)
 			discount *= self.args.gamma
 			obs = after
 			if result["ended"]:
 				return total if self.args.teacher == "dense" else win_value(result, obs)
-			choices = self.student.choose(obs, self.rng)
+			choices = self.student.choose(obs, rng)
 		return total if self.args.teacher == "dense" else win_value(None, obs)
 
 	def scores(
@@ -64,7 +71,7 @@ class Teacher:
 		return np.array(
 			[
 				statistics.mean(
-					self.rollout(seed, history, unit, i) for _ in range(self.args.rollouts)
+					self.rollout(seed, history, unit, i, k) for k in range(self.args.rollouts)
 				)
 				for i in subset
 			]
@@ -98,7 +105,7 @@ def main() -> None:
 	parser.add_argument("--scenario", default="1v3")
 	parser.add_argument("--episodes", type=int, default=12)
 	parser.add_argument("--teacher", choices=["dense", "win"], default="dense")
-	parser.add_argument("--rollouts", type=int, default=2)
+	parser.add_argument("--rollouts", type=int, default=8, help="rollouts per candidate")
 	parser.add_argument("--horizon", type=int, default=8)
 	parser.add_argument("--gamma", type=float, default=0.95)
 	parser.add_argument(
@@ -110,6 +117,7 @@ def main() -> None:
 	parser.add_argument("--temperature", type=float, default=0.3)
 	parser.add_argument("--lr", type=float, default=0.3)
 	parser.add_argument("--eval-seeds", type=int, default=20)
+	parser.add_argument("--warm", help="demonstrations to start from (demos.py)")
 	parser.add_argument("--log", default="opd.csv")
 	args = parser.parse_args()
 
@@ -117,14 +125,18 @@ def main() -> None:
 	client.start(args.scenario)
 	rng = np.random.default_rng(0)
 	student = LinearPolicy()
-	teacher = Teacher(client, student, args, np.random.default_rng(1))
-	eval_seeds = range(500, 500 + args.eval_seeds)
+	teacher = Teacher(client, student, args)
+	eval_seeds = seeds.evaluation(args.eval_seeds)
 	evaluate(client, student, eval_seeds, rng, "before")
+	if args.warm:
+		accuracy = warm.clone_linear(student, warm.load(args.warm))
+		print(f"warm start: agrees with {accuracy:.0%} of the demonstrations' choices", flush=True)
+		evaluate(client, student, eval_seeds, rng, "warm")
 	with open(args.log, "w", newline="", encoding="utf-8") as handle:
 		log = csv.writer(handle)
 		log.writerow(["episode", "seed", "winner", "steps", "teacher_scores", "wall_s"])
 		for episode in range(args.episodes):
-			seed = 300 + episode
+			seed = seeds.train(episode)
 			t0, queries = time.time(), 0
 			history: list[list[int]] = []
 			obs = client.reset(seed)

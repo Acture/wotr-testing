@@ -29,7 +29,8 @@ def step_reward(before: dict, after: dict, result: dict, side: str = SIDE) -> fl
 	"""
 	The reward of one step: damage dealt and own health lost (as fractions of maximum hit points),
 	0.5 for each unit downed on either side, 0.1 for each resource spent, and +1 or -1 for the
-	outcome. An episode cut off at the step limit counts as lost, so stalling gains nothing.
+	outcome. An episode cut off at the step limit counts as lost with every own unit downed, so
+	dragging a battle out (fleeing, stalling) never pays better than fighting it to the end.
 	"""
 	b = {u["id"]: u for u in before["units"]}
 	a = {u["id"]: u for u in after["units"]}
@@ -45,7 +46,8 @@ def step_reward(before: dict, after: dict, result: dict, side: str = SIDE) -> fl
 	if result["ended"] and result["winner"]:
 		r += 1.0 if result["winner"] == side else -1.0
 	elif result["ended"] and result.get("truncated"):
-		r -= 1.0
+		own = [u for u in a.values() if u["side"] == side]
+		r -= 1.0 + sum(health(u) + 0.5 * float(u["conscious"]) for u in own)
 	return r
 
 

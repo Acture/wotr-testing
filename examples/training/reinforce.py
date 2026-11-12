@@ -1,7 +1,8 @@
 """
 REINFORCE with a linear softmax policy over candidate features (policy.LinearPolicy) and the per-
 step reward (rewards.step_reward). Weights start at zero, so the first episodes are a uniform random
-policy; the last episodes are played greedily on unseen seeds.
+policy, or the policy warm-started from demonstrations (--warm, see demos.py); the last episodes
+are played greedily on held-out seeds (seeds.evaluation).
 """
 
 from __future__ import annotations
@@ -11,6 +12,8 @@ import csv
 import time
 
 import numpy as np
+import seeds
+import warm
 from client import BattleClient, by_unit
 from policy import LinearPolicy
 from rewards import SIDE, step_reward
@@ -43,13 +46,20 @@ def main() -> None:
 	parser.add_argument("--lr", type=float, default=0.05)
 	parser.add_argument("--gamma", type=float, default=0.98)
 	parser.add_argument("--turn-based", action="store_true")
+	parser.add_argument("--warm", help="demonstrations to start from (demos.py)")
 	parser.add_argument("--log", default="reinforce.csv")
 	args = parser.parse_args()
 
 	client = BattleClient(args.port)
-	obs = client.start(args.scenario, max_steps=300, turn_based=args.turn_based)
+	obs = client.start(
+		args.scenario, seed=seeds.train(0), max_steps=300, turn_based=args.turn_based
+	)
+	held_out = seeds.evaluation(args.evaluate)
 	rng = np.random.default_rng(0)
 	policy = LinearPolicy()
+	if args.warm:
+		accuracy = warm.clone_linear(policy, warm.load(args.warm))
+		print(f"warm start: agrees with {accuracy:.0%} of the demonstrations' choices", flush=True)
 	baseline = 0.0
 	with open(args.log, "w", newline="", encoding="utf-8") as handle:
 		log = csv.writer(handle)
@@ -57,7 +67,7 @@ def main() -> None:
 		for n in range(args.episodes + args.evaluate):
 			greedy = n >= args.episodes
 			if n > 0:
-				obs = client.reset(1 + n)
+				obs = client.reset(held_out[n - args.episodes] if greedy else seeds.train(n))
 			t0 = time.time()
 			steps, result = episode(client, obs, policy, rng, greedy)
 			returns, g = [], 0.0

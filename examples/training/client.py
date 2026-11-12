@@ -41,11 +41,17 @@ class BattleClient:
 			op="start", scenario=scenario, seed=seed, maxSteps=max_steps, turnBased=turn_based
 		)["observation"]
 
-	def reset(self, seed: int | None = None) -> dict:
-		return self.call(op="reset", seed=seed)["observation"]
+	def reset(self, seed: int | None = None, difficulty: str | None = None) -> dict:
+		"""Starts the next episode; a difficulty level given here stays for later episodes."""
+		if difficulty is None:
+			return self.call(op="reset", seed=seed)["observation"]
+		return self.call(op="reset", seed=seed, difficulty=difficulty)["observation"]
 
-	def step(self, choices: list[int]) -> dict:
-		return self.call(op="step", choices=choices)
+	def step(self, choices: list[int], random_seed: int | None = None) -> dict:
+		"""Takes a step; with random_seed, the game's random numbers restart from it first."""
+		if random_seed is None:
+			return self.call(op="step", choices=choices)
+		return self.call(op="step", choices=choices, randomSeed=random_seed)
 
 	def close(self) -> None:
 		self.call(op="close")

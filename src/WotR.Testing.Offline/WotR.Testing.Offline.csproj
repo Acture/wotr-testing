@@ -37,9 +37,13 @@
 
   <ItemGroup>
     <ProjectReference Include="../WotR.Testing.Fuzzing/WotR.Testing.Fuzzing.csproj" />
+    <!-- Compile-time only, for battle navigation, the empty physics scene and the absent input devices; never copied or packaged. -->
+    <Reference Include="$(WotrManaged)/AstarPathfindingProject.dll" Private="false" />
+    <Reference Include="$(WotrManaged)/UnityEngine.PhysicsModule.dll" Private="false" />
+    <Reference Include="$(WotrManaged)/UnityEngine.InputLegacyModule.dll" Private="false" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
     <PackageReference Include="Mono.Cecil" Version="0.11.6" />
-    <PackageReference Include="AssetsTools.NET" Version="3.0.5" />
+    <PackageReference Include="AssetsTools.NET" Version="$(AssetsToolsNetVersion)" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
     <!--
       Downloaded for Invoke-WotrOfflineTests.ps1 -Runtime mono and never referenced: package consumers get it as a

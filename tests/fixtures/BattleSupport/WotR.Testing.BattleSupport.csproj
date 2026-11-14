@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Game-derived test types for BattleTests. On netfx, xUnit enumerates the test assembly's types before the generated
+    game assembly resolver runs, so types implementing game interfaces live here and load when a test first uses them.
+  -->
+  <Import Project="../../../GamePath.props" Condition="Exists('../../../GamePath.props')" />
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <WotrIsLibrary>true</WotrIsLibrary>
+  </PropertyGroup>
+  <Import Project="../../../src/WotR.Testing.Offline/build/WotR.Testing.Offline.targets" />
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

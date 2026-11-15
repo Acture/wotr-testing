@@ -21,9 +21,13 @@ namespace WotR.Testing.Offline
     /// </summary>
     /// <remarks>
     /// The decision maker controls the units of the scenario's <see cref="BattleScenario.ControlledSides"/>; the game's
-    /// AI decides for every other unit. A controlled unit is ready when it is conscious, the game lets it act and it has
-    /// no command left. A step ends after the first frame in which a controlled unit that was busy becomes ready, after
-    /// the frame that decides the battle, or after
+    /// AI decides for every other unit. The decision maker takes the place of the game's AI for its units and has what the
+    /// game exposes to the player for them: their commands, and switches (<see cref="BattleAction.IsSwitch"/>): the action
+    /// bar's toggles, the hold, stop and stealth buttons of a party member, the auto-use ability, the weapon sets and their
+    /// grip. A controlled unit is ready when it is conscious, the game lets it act and it has no command left; in real
+    /// time a busy unit also takes a command, which replaces its running one as a click does. A step ends after the
+    /// first frame in which a controlled unit that was busy becomes ready, after the frame that decides the battle, or
+    /// after
     /// <see cref="BattleEnvironmentOptions.DecisionInterval"/>. An error during a step (the game logged an error, a
     /// frame failed) is an environment failure with the episode and step attached, never an outcome: the episode
     /// stops until <see cref="Reset"/>.
@@ -185,23 +189,23 @@ namespace WotR.Testing.Offline
                 var start = Game.Instance.Player.GameTime;
                 if (randomSeed is { } seed) GameRandom.Init(seed);
                 var notes = new List<string>();
-                // Toggles first, as the player switches them before giving the command.
-                foreach (var action in list.Where(a => a.Kind == BattleActionKind.Toggle).Concat(list.Where(a => a.Kind != BattleActionKind.Toggle)))
+                // Switches first, as the player sets them before giving the command; the grip belongs to the set the
+                // observation showed, so it comes before a change of weapon set.
+                foreach (var action in list.Where(a => a.IsSwitch).OrderBy(a => SwitchOrder(a.Kind)).Concat(list.Where(a => !a.IsSwitch)))
                     if (Issue(action, before, AfterFrame) is { } note) notes.Add(note);
                 // After its clicks the player moves the mouse off the units: until the next decision the pointer hovers
                 // nothing, so the game's predictions for the unit under it do not follow a target that dies there.
                 BattlePointer.Leave();
-                // In real time a unit that waits, or only switches toggles, stays ready and idle until the decision interval;
-                // a busy unit is one that runs a command or was given another action (a click the game refused decides
-                // again after a frame). In turn-based
-                // combat a unit given an action is busy until the game waits for it again, even when the game ignored it;
-                // a unit that ends its turn waits for its next turn (one the player does not control stays idle until the
-                // game ends its turn).
+                // In real time a unit that waits, or only sets switches, stays as it was until the decision interval; a
+                // busy unit is one that runs a command or was given another (a click the game refused decides again after a
+                // frame). In turn-based combat a unit given an action is busy until the game waits for it again, even when
+                // the game ignored it; a unit that ends its turn waits for its next turn (one the player does not control
+                // stays idle until the game ends its turn); a waiting unit given nothing decides again after a frame.
                 var turnAtStart = InTurnBasedCombat ? Game.Instance.TurnBasedCombatController.CurrentTurn : null;
                 var busy = battle.Units.Where(u => u.Controlled && u.Unit.Descriptor.State.IsConscious
                     && (turnAtStart == null
-                        ? !IsReady(u.Unit) || list.Any(a => a.Unit == u.Id && a.Kind != BattleActionKind.Wait && a.Kind != BattleActionKind.Toggle)
-                        : list.Any(a => a.Unit == u.Id && a.Kind != BattleActionKind.EndTurn))).ToList();
+                        ? !IsReady(u.Unit) || list.Any(a => a.Unit == u.Id && a.Kind != BattleActionKind.Wait && !a.IsSwitch)
+                        : list.Any(a => a.Unit == u.Id && a.Kind != BattleActionKind.EndTurn) || list.All(a => a.Unit != u.Id))).ToList();
                 var realTime = TimeSpan.Zero;
                 var stalled = TimeSpan.Zero;
                 battle.RunFrames(battle.Scenario.TurnBased ? Options.TurnBasedStepLimit : Options.DecisionInterval, () =>
@@ -394,8 +398,17 @@ namespace WotR.Testing.Offline
                 && !turn.HasRunningCommands;
         }
 
+        /// <summary>
+        /// Whether a controlled unit takes a command now: in real time every conscious unit the game lets act, idle or busy
+        /// (a new command replaces the running one, as the player's click does); in turn-based combat the unit whose turn
+        /// waits for a command (<see cref="IsReady"/>).
+        /// </summary>
+        private static bool CanCommand(UnitEntityData unit)
+            => InTurnBasedCombat ? IsReady(unit) : unit.Descriptor.State.IsConscious && unit.Descriptor.State.CanAct;
+
         private IReadOnlyList<BattleUnitObservation> ObserveUnits()
-            => battle.Units.Select(entry => ObserveUnit(entry, entry.Controlled && IsReady(entry.Unit))).ToList().AsReadOnly();
+            => battle.Units.Select(entry => ObserveUnit(entry, entry.Controlled && IsReady(entry.Unit), entry.Controlled && CanCommand(entry.Unit)))
+                .ToList().AsReadOnly();
 
         private BattleObservation Capture()
         {
@@ -407,9 +420,16 @@ namespace WotR.Testing.Offline
             if (!ended)
             {
                 var turnBased = InTurnBasedCombat;
-                foreach (var entry in battle.Units.Where(u => u.Controlled && IsReady(u.Unit)))
+                foreach (var entry in battle.Units.Where(u => u.Controlled))
                 {
                     var unit = entry.Unit;
+                    var commandable = CanCommand(unit);
+                    if (!commandable && !unit.IsDirectlyControllable) continue;
+                    // The character's buttons and keys, its auto use, weapon sets and grip: switches, also for busy units.
+                    var slots = BattleAbilities.Collect(unit);
+                    candidates.AddRange(BattleCharacterControls.Candidates(entry.Id, unit, slots, commandable, turnBased));
+                    if (!commandable) continue;
+                    // In real time a busy unit keeps its command unless it gets another.
                     if (!turnBased) candidates.Add(BattleAction.Wait(entry.Id));
                     // The player ends a turn with the game's end-turn key when the turn allows it; a unit the player does not
                     // control ends its turn by giving no command.
@@ -425,7 +445,7 @@ namespace WotR.Testing.Offline
                             foreach (var variant in BattleSmartCursor.AttackCandidates(cursor, unit, WithinReach(unit, target.Unit)))
                                 candidates.Add(BattleAction.Attack(entry.Id, target.Id, variant));
                     }
-                    candidates.AddRange(AbilityCandidates(entry, turnBased));
+                    candidates.AddRange(AbilityCandidates(entry, slots, turnBased));
                     if (cursor != null && cursor.CanDelay())
                     {
                         var tracker = Game.Instance.TurnBasedCombatController.SortedUnits.ToList();
@@ -493,11 +513,11 @@ namespace WotR.Testing.Offline
         /// player does not control, by the slot's own availability. Abilities without target selection act on the caster.
         /// In turn-based combat the command must also be able to start this turn, as for attacks. Toggles switch on or off.
         /// </summary>
-        private IEnumerable<BattleAction> AbilityCandidates(BattleUnit entry, bool turnBased)
+        private IEnumerable<BattleAction> AbilityCandidates(BattleUnit entry, IReadOnlyList<BattleAbilitySlot> slots, bool turnBased)
         {
             var unit = entry.Unit;
             var asPlayer = unit.IsDirectlyControllable || !turnBased;
-            foreach (var slot in BattleAbilities.Collect(unit))
+            foreach (var slot in slots)
             {
                 if (!(asPlayer ? BattleAbilities.PlayerCanUse(slot) : BattleAbilities.AvailableToUnit(slot))) continue;
                 if (slot.Toggle != null)
@@ -530,7 +550,17 @@ namespace WotR.Testing.Offline
             => target != unit && !target.Descriptor.State.IsDead && unit.CanAttack(target)
                 && unit.CanAttack(u => u.GetThreatHand()?.Weapon);
 
-        private static BattleUnitObservation ObserveUnit(BattleUnit entry, bool ready)
+        /// <summary>A controlled unit's action bar, each slot marked usable as <see cref="AbilityCandidates"/> decides it.</summary>
+        private static IReadOnlyList<BattleSlotObservation> ObserveSlots(BattleUnit entry)
+        {
+            if (!entry.Controlled) return Array.Empty<BattleSlotObservation>();
+            var asPlayer = entry.Unit.IsDirectlyControllable || !InTurnBasedCombat;
+            return BattleAbilities.Collect(entry.Unit)
+                .Select(slot => BattleAbilities.Observe(slot, asPlayer ? BattleAbilities.PlayerCanUse(slot) : BattleAbilities.AvailableToUnit(slot)))
+                .ToList().AsReadOnly();
+        }
+
+        private static BattleUnitObservation ObserveUnit(BattleUnit entry, bool ready, bool commandable)
         {
             var unit = entry.Unit;
             var descriptor = unit.Descriptor;
@@ -552,11 +582,19 @@ namespace WotR.Testing.Offline
             var command = unit.Commands.Raw.FirstOrDefault(c => c != null)?.GetType().Name;
             var cooldown = unit.CombatState.Cooldown;
             var position = unit.Position;
+            var body = unit.Body;
+            var weaponSets = body.HandsEquipmentSets
+                .Select((set, index) => new BattleWeaponSetObservation(index, set.PrimaryHand.MaybeItem?.Blueprint.name,
+                    set.SecondaryHand.MaybeItem?.Blueprint.name, set.GripType.ToString()))
+                .ToList().AsReadOnly();
+            var controls = new BattleControlsObservation(unit.Brain?.AutoUseAbility?.Blueprint.name, unit.HoldState, unit.StopState,
+                state.IsInStealth, body.CurrentHandEquipmentSetIndex, weaponSets);
             return new BattleUnitObservation(entry.Id, entry.Side, entry.Controlled, unit.Blueprint.name, unit.Blueprint.AssetGuid.ToString(),
                 descriptor.Faction?.name, unit.HPLeft, descriptor.MaxHP, descriptor.TemporaryHP, state.LifeState.ToString(),
                 state.IsConscious, state.CanAct, state.CanMove, ready, unit.IsInCombat, new BattlePoint(position.x, position.y, position.z),
                 unit.Orientation, unit.Corpulence, unit.CurrentSpeedMps, command, cooldown.StandardAction, cooldown.MoveAction,
-                cooldown.SwiftAction, buffs, resources, abilities, spellSlots, togglesOn, BattleAbilities.ItemUses(unit));
+                cooldown.SwiftAction, buffs, resources, abilities, spellSlots, togglesOn, BattleAbilities.ItemUses(unit), commandable, controls,
+                ObserveSlots(entry));
         }
 
         /// <summary>
@@ -571,7 +609,7 @@ namespace WotR.Testing.Offline
             if (ended) problem = "the episode has ended";
             else if (path.From == null) problem = "the path names no unit at its start";
             else if (!BattleControl.IsControlled(path.From)) problem = $"{path.FromId} is decided by the game's AI";
-            else if (!IsReady(path.From)) problem = $"{path.FromId} is not ready";
+            else if (!CanCommand(path.From)) problem = $"{path.FromId} cannot take a command now";
             else if (!path.From.Descriptor.State.CanMove) problem = $"{path.FromId} cannot move";
             else
             {
@@ -608,13 +646,16 @@ namespace WotR.Testing.Offline
         private static List<string> Reject(IReadOnlyList<BattleAction> actions, BattleObservation observation)
         {
             var problems = new List<string>();
-            // A player switches toggles and gives a command in the same moment: a unit takes one action besides its toggles.
+            // A player sets switches and gives a command in the same moment: a unit takes one command besides its switches,
+            // and each switch once.
             foreach (var group in actions.Where(a => a != null).GroupBy(a => a.Unit, StringComparer.Ordinal))
             {
-                var main = group.Count(a => a.Kind != BattleActionKind.Toggle);
-                if (main > 1) problems.Add($"{group.Key} has {main} actions besides toggles; a step takes at most one per unit");
+                var main = group.Count(a => !a.IsSwitch);
+                if (main > 1) problems.Add($"{group.Key} has {main} actions besides switches; a step takes at most one per unit");
                 foreach (var toggle in group.Where(a => a.Kind == BattleActionKind.Toggle).GroupBy(a => a.Ability, StringComparer.Ordinal).Where(g => g.Count() > 1))
                     problems.Add($"{group.Key} switches {toggle.Key} {toggle.Count()} times in one step");
+                foreach (var kind in group.Where(a => a.IsSwitch && a.Kind != BattleActionKind.Toggle).GroupBy(a => a.Kind).Where(g => g.Count() > 1))
+                    problems.Add($"{group.Key} uses {kind.Key} {kind.Count()} times in one step");
             }
             foreach (var action in actions)
             {
@@ -633,7 +674,7 @@ namespace WotR.Testing.Offline
                 if (unit == null) problems.Add($"{action}: the battle has no unit {action.Unit}");
                 else if (observation.Outcome != null || observation.Truncated) problems.Add($"{action}: the episode has ended");
                 else if (!unit.Controlled) problems.Add($"{action}: side {unit.Side} is not controlled; the game's AI decides for {action.Unit}");
-                else if (!unit.Ready) problems.Add($"{action}: {action.Unit} is not ready ({Describe(unit)})");
+                else if (!action.IsSwitch && !unit.Commandable) problems.Add($"{action}: {action.Unit} cannot take a command now ({Describe(unit)})");
                 else if (action.Kind == BattleActionKind.Move && observation.Paths.FirstOrDefault(p => p.Id == action.Path && p.Unit == action.Unit) is { Usable: false } path)
                     problems.Add($"{action}: path {path.Id} is not usable: {path.Problem}");
                 else problems.Add($"{action}: not among the actions the game allows {action.Unit} now");
@@ -669,6 +710,17 @@ namespace WotR.Testing.Offline
 
         private static UnityEngine.Vector3 ToVector(BattlePoint point) => new(point.X, point.Y, point.Z);
 
+        private static int SwitchOrder(BattleActionKind kind) => kind switch
+        {
+            BattleActionKind.Stop => 0,
+            BattleActionKind.Hold => 1,
+            BattleActionKind.Stealth => 2,
+            BattleActionKind.AutoUse => 3,
+            BattleActionKind.Grip => 4,
+            BattleActionKind.Toggle => 5,
+            _ => 6,
+        };
+
         private static string Describe(BattleUnitObservation unit)
             => !unit.Conscious ? unit.LifeState.ToLowerInvariant()
                 : !unit.CanAct ? "the game does not let it act"
@@ -682,6 +734,12 @@ namespace WotR.Testing.Offline
         private string Issue(BattleAction action, BattleObservation observation, Action afterFrame)
         {
             if (action.Kind is BattleActionKind.UseAbility or BattleActionKind.Toggle) return IssueAbility(action, afterFrame);
+            if (action.IsSwitch)
+            {
+                var unit = battle.Unit(action.Unit);
+                BattleCharacterControls.Issue(unit, action, BattleAbilities.Collect(unit));
+                return null;
+            }
             if (InTurnBasedCombat) return IssueTurnBased(action, observation, afterFrame);
             IssueRealTime(action, observation);
             return null;
@@ -956,6 +1014,34 @@ namespace WotR.Testing.Offline
 
         /// <summary>A move to a point on the ground (<see cref="BattleAction.Point"/>), as a click on the ground gives it.</summary>
         MoveTo,
+
+        /// <summary>
+        /// A right click on an action bar entry (<see cref="BattleAction.Ability"/>, MechanicActionBarSlot.OnRightClick):
+        /// the entry becomes the ability the unit's AI may use on its own and a click on an enemy gives, or stops being it.
+        /// The game accepts entries suitable for auto use (<c>AbilityData.IsSuitableForAutoUse</c>).
+        /// </summary>
+        AutoUse,
+
+        /// <summary>The hold key of a party unit (SelectionManagerBase.SwitchHold): it holds its position, or stops holding it.</summary>
+        Hold,
+
+        /// <summary>
+        /// The stop key of a party unit (SelectionManagerBase.SwitchStop): it drops its commands and stays in the stop state
+        /// until its next player command, or leaves the stop state.
+        /// </summary>
+        Stop,
+
+        /// <summary>The stealth button of a party unit (ControlCharactersVM.OnStealthClick): it tries to enter stealth, or leaves it.</summary>
+        Stealth,
+
+        /// <summary>
+        /// Chooses a weapon set of the unit (<see cref="BattleAction.Variant"/>: its index, 0 to 3), as the action bar's
+        /// weapon set does (ActionBarWeaponSetVM.OnSetCurrentSet). In combat the change takes the game's action for it.
+        /// </summary>
+        WeaponSet,
+
+        /// <summary>The grip button of the current weapon set (WeaponSetGripVM.TryToggleGrip): one hand or two.</summary>
+        Grip,
     }
 
     /// <summary>An action of one unit; equal actions have the same kind, unit, target, path and ability.</summary>
@@ -1041,6 +1127,35 @@ namespace WotR.Testing.Offline
         public static BattleAction Toggle(string unit, string ability)
             => new(BattleActionKind.Toggle, unit, null, null, string.IsNullOrWhiteSpace(ability) ? throw new ArgumentException("An ability id is required.", nameof(ability)) : ability);
 
+        /// <summary>A right click on the action bar entry: it becomes the unit's auto-use ability, or stops being it.</summary>
+        public static BattleAction AutoUse(string unit, string ability)
+            => new(BattleActionKind.AutoUse, unit, null, null, string.IsNullOrWhiteSpace(ability) ? throw new ArgumentException("An ability id is required.", nameof(ability)) : ability);
+
+        public static BattleAction Hold(string unit) => new(BattleActionKind.Hold, unit, null, null);
+
+        public static BattleAction Stop(string unit) => new(BattleActionKind.Stop, unit, null, null);
+
+        public static BattleAction Stealth(string unit) => new(BattleActionKind.Stealth, unit, null, null);
+
+        /// <summary>Chooses the unit's weapon set with the index (0 to 3).</summary>
+        public static BattleAction WeaponSet(string unit, int set)
+            => new(BattleActionKind.WeaponSet, unit, null, null, null,
+                set is >= 0 and < 4 ? set.ToString(CultureInfo.InvariantCulture) : throw new ArgumentOutOfRangeException(nameof(set), set, "A unit has weapon sets 0 to 3."));
+
+        public static BattleAction Grip(string unit) => new(BattleActionKind.Grip, unit, null, null);
+
+        /// <summary>
+        /// Whether the kind switches something of the unit instead of giving it a command: the action bar's toggles, the
+        /// hold, stop and stealth buttons, auto use, the weapon set and its grip. The player sets these in the same moment
+        /// as a command, and on units that are busy.
+        /// </summary>
+        public static bool IsSwitchKind(BattleActionKind kind)
+            => kind is BattleActionKind.Toggle or BattleActionKind.AutoUse or BattleActionKind.Hold
+                or BattleActionKind.Stop or BattleActionKind.Stealth or BattleActionKind.WeaponSet or BattleActionKind.Grip;
+
+        /// <summary>See <see cref="IsSwitchKind"/>.</summary>
+        public bool IsSwitch => IsSwitchKind(Kind);
+
         public BattleActionKind Kind { get; }
         public string Unit { get; }
 
@@ -1051,15 +1166,16 @@ namespace WotR.Testing.Offline
         public string Path { get; }
 
         /// <summary>
-        /// The action bar entry, for <see cref="BattleActionKind.UseAbility"/> and <see cref="BattleActionKind.Toggle"/>:
-        /// spell:BOOK:LEVEL:SPELL[+METAMAGIC], item:QUICKSLOT:ITEM, ability:ABILITY or toggle:TOGGLE (blueprint names), with
-        /// &gt;CONVERTED for a conversion the entry offers.
+        /// The action bar entry, for <see cref="BattleActionKind.UseAbility"/>, <see cref="BattleActionKind.Toggle"/> and
+        /// <see cref="BattleActionKind.AutoUse"/>: spell:BOOK:LEVEL:SPELL[+METAMAGIC], item:QUICKSLOT:ITEM, ability:ABILITY or
+        /// toggle:TOGGLE (blueprint names), with &gt;CONVERTED for a conversion the entry offers.
         /// </summary>
         public string Ability { get; }
 
         /// <summary>
         /// Turn-based combat: the smart cursor variant of an attack (<see cref="AttackVariants"/>) or the movement limit of a
-        /// move (<see cref="MoveLimits"/>); null takes the one the game picks.
+        /// move (<see cref="MoveLimits"/>); null takes the one the game picks. For <see cref="BattleActionKind.WeaponSet"/>,
+        /// the set's index (0 to 3).
         /// </summary>
         public string Variant { get; }
 
@@ -1091,6 +1207,12 @@ namespace WotR.Testing.Offline
             BattleActionKind.UseAbility => Target == null ? $"{Unit} use {Ability}{Where}" : $"{Unit} use {Ability} on {Target}",
             BattleActionKind.MoveTo => $"{Unit} move{Where}" + (Variant == null ? "" : $" ({Variant})"),
             BattleActionKind.Toggle => $"{Unit} toggle {Ability}",
+            BattleActionKind.AutoUse => $"{Unit} auto use {Ability}",
+            BattleActionKind.Hold => $"{Unit} hold",
+            BattleActionKind.Stop => $"{Unit} stop",
+            BattleActionKind.Stealth => $"{Unit} stealth",
+            BattleActionKind.WeaponSet => $"{Unit} weapon set {Variant}",
+            BattleActionKind.Grip => $"{Unit} grip",
             _ => $"{Unit} wait",
         };
     }
@@ -1130,14 +1252,20 @@ namespace WotR.Testing.Offline
 
         public IReadOnlyList<BattleUnitObservation> Units { get; }
 
-        /// <summary>Scenario paths and the game's paths for ready units, usable or not, each with its source.</summary>
+        /// <summary>Scenario paths and the game's paths for units that take a command now, usable or not, each with its source.</summary>
         public IReadOnlyList<BattlePathObservation> Paths { get; }
 
-        /// <summary>Every action the game allows now, by ready unit: wait, attacks and moves along usable paths.</summary>
+        /// <summary>
+        /// Every action the game allows now: the commands of the units that take one (<see cref="Commandable"/>), and the
+        /// switches (<see cref="BattleAction.IsSwitch"/>) of every controlled unit, busy or not.
+        /// </summary>
         public IReadOnlyList<BattleAction> Candidates { get; }
 
-        /// <summary>Ids of the units that can take an action now.</summary>
+        /// <summary>Ids of the ready units: idle, or in turn-based combat the unit whose turn waits for a command.</summary>
         public IEnumerable<string> Ready => Units.Where(u => u.Ready).Select(u => u.Id);
+
+        /// <summary>Ids of the units that take a command now: in real time also busy ones, whose command a new one replaces.</summary>
+        public IEnumerable<string> Commandable => Units.Where(u => u.Commandable).Select(u => u.Id);
 
         /// <summary>Set when the episode was decided.</summary>
         public BattleOutcome Outcome { get; }
@@ -1198,8 +1326,12 @@ namespace WotR.Testing.Offline
             bool inCombat, BattlePoint position, float orientation, float corpulence, float speed, string command,
             float standardActionCooldown, float moveActionCooldown, float swiftActionCooldown, IReadOnlyList<BattleBuffObservation> buffs,
             IReadOnlyDictionary<string, int> resources, IReadOnlyList<string> abilities, IReadOnlyDictionary<string, int> spellSlots,
-            IReadOnlyList<string> togglesOn, IReadOnlyDictionary<string, int> itemUses)
+            IReadOnlyList<string> togglesOn, IReadOnlyDictionary<string, int> itemUses, bool commandable, BattleControlsObservation controls,
+            IReadOnlyList<BattleSlotObservation> slots)
         {
+            Slots = slots;
+            Commandable = commandable;
+            Controls = controls;
             SpellSlots = spellSlots;
             ItemUses = itemUses;
             TogglesOn = togglesOn;
@@ -1258,8 +1390,20 @@ namespace WotR.Testing.Offline
         /// <summary>The game's <c>UnitState.CanMove</c>.</summary>
         public bool CanMove { get; }
 
-        /// <summary>Controlled, conscious, allowed to act and without a command: the unit can take an action now.</summary>
+        /// <summary>
+        /// Controlled, conscious, allowed to act and without a command (in turn-based combat: its turn waits for a command).
+        /// A busy unit becoming ready ends a step.
+        /// </summary>
         public bool Ready { get; }
+
+        /// <summary>
+        /// Controlled and able to take a command now: in real time every conscious unit the game lets act, idle or busy (a
+        /// new command replaces the running one, as the player's click does); in turn-based combat the ready unit.
+        /// </summary>
+        public bool Commandable { get; }
+
+        /// <summary>The character's buttons and equipment controls: its auto use, hold, stop, stealth and weapon sets.</summary>
+        public BattleControlsObservation Controls { get; }
 
         public bool InCombat { get; }
         public BattlePoint Position { get; }
@@ -1302,6 +1446,147 @@ namespace WotR.Testing.Offline
         /// An item used up leaves its slot and this list.
         /// </summary>
         public IReadOnlyDictionary<string, int> ItemUses { get; }
+
+        /// <summary>
+        /// A controlled unit's action bar in its order, each slot with what it does (<see cref="BattleSlotObservation"/>);
+        /// empty for the units the game's AI decides for.
+        /// </summary>
+        public IReadOnlyList<BattleSlotObservation> Slots { get; }
+    }
+
+    /// <summary>
+    /// One slot of a controlled unit's action bar and what it does, as the game's ability tooltip shows it
+    /// (TooltipTemplateAbility). Actions name the slot by <see cref="Id"/>. A toggle has only its blueprint, action, uses,
+    /// whether it can be used and whether it is on.
+    /// </summary>
+    public sealed class BattleSlotObservation
+    {
+        /// <summary>The slot's action bar id (spell:..., item:..., ability:..., toggle:...), as actions name it.</summary>
+        public string Id { get; internal set; }
+
+        /// <summary>Name of the ability's (or toggle's) blueprint.</summary>
+        public string Blueprint { get; internal set; }
+
+        public string BlueprintGuid { get; internal set; }
+
+        /// <summary>The game's <c>AbilityType</c>: Spell, SpellLike, Supernatural, Extraordinary, Special or Physical.</summary>
+        public string Type { get; internal set; }
+
+        /// <summary>The action it takes (<c>UnitCommand.CommandType</c>: Free, Standard, Move or Swift), as the game uses it now.</summary>
+        public string Action { get; internal set; }
+
+        /// <summary>Whether it takes a full round (<c>AbilityData.RequireFullRoundAction</c>).</summary>
+        public bool FullRound { get; internal set; }
+
+        /// <summary>The game's <c>AbilityRange</c>: Personal, Touch, Close, Medium, Long, Unlimited, Weapon, Custom, ...</summary>
+        public string Range { get; internal set; }
+
+        /// <summary>The range in meters (<c>BlueprintAbility.GetRange</c>); 0 for personal, touch and weapon; null when unlimited.</summary>
+        public float? RangeMeters { get; internal set; }
+
+        public bool TargetsEnemies { get; internal set; }
+        public bool TargetsAllies { get; internal set; }
+        public bool TargetsSelf { get; internal set; }
+        public bool TargetsPoint { get; internal set; }
+
+        /// <summary>The blueprint's <c>AbilityEffectOnUnit</c> on enemies: None, Helpful or Harmful.</summary>
+        public string EffectOnEnemy { get; internal set; }
+
+        /// <summary>The blueprint's <c>AbilityEffectOnUnit</c> on allies: None, Helpful or Harmful.</summary>
+        public string EffectOnAlly { get; internal set; }
+
+        /// <summary>Whether it affects an area (<c>AbilityData.IsAOE</c>).</summary>
+        public bool AreaOfEffect { get; internal set; }
+
+        /// <summary>The radius of its area in meters (<c>BlueprintAbility.AoERadius</c>), 0 without one.</summary>
+        public float AreaRadius { get; internal set; }
+
+        public int SpellLevel { get; internal set; }
+
+        /// <summary>The game's <c>SpellSchool</c>.</summary>
+        public string School { get; internal set; }
+
+        /// <summary>The game's spell descriptors (<c>SpellDescriptor</c> flags), such as Cure, Fear or Fire.</summary>
+        public IReadOnlyList<string> Descriptors { get; internal set; }
+
+        /// <summary>The saving throw it calls for (Fortitude, Reflex or Will), or null.</summary>
+        public string SavingThrow { get; internal set; }
+
+        /// <summary>Whether spell resistance applies (<c>BlueprintAbility.SpellResistance</c> of the delivering blueprint).</summary>
+        public bool SpellResistance { get; internal set; }
+
+        /// <summary>The DC and caster level the game calculates for it now (<c>AbilityData.CalculateParams</c>).</summary>
+        public int? DC { get; internal set; }
+
+        public int? CasterLevel { get; internal set; }
+
+        /// <summary>Whether using it provokes attacks of opportunity (<c>AbilityData.ProvokeAttackOfOpportunity</c>).</summary>
+        public bool ProvokesAttackOfOpportunity { get; internal set; }
+
+        /// <summary>The uses the action bar shows (<c>MechanicActionBarSlot.GetResource</c>); -1 when it spends nothing.</summary>
+        public int Uses { get; internal set; }
+
+        /// <summary>Whether the unit can use it now, as its candidates are built.</summary>
+        public bool Usable { get; internal set; }
+
+        /// <summary>Whether a toggle is on.</summary>
+        public bool On { get; internal set; }
+    }
+
+    /// <summary>What a character's buttons and equipment controls are set to.</summary>
+    public sealed class BattleControlsObservation
+    {
+        internal BattleControlsObservation(string autoUseAbility, bool hold, bool stop, bool inStealth, int weaponSet,
+            IReadOnlyList<BattleWeaponSetObservation> weaponSets)
+        {
+            AutoUseAbility = autoUseAbility;
+            Hold = hold;
+            Stop = stop;
+            InStealth = inStealth;
+            WeaponSet = weaponSet;
+            WeaponSets = weaponSets;
+        }
+
+        /// <summary>Blueprint name of the ability the unit's AI may use on its own (<c>UnitBrain.AutoUseAbility</c>), or null.</summary>
+        public string AutoUseAbility { get; }
+
+        /// <summary><c>UnitEntityData.HoldState</c>: the unit holds its position; the game's AI does not move it.</summary>
+        public bool Hold { get; }
+
+        /// <summary><c>UnitEntityData.StopState</c>: the unit was stopped; the game's AI does not move it until its next player command.</summary>
+        public bool Stop { get; }
+
+        /// <summary><c>UnitState.IsInStealth</c>.</summary>
+        public bool InStealth { get; }
+
+        /// <summary>Index of the current weapon set (<c>UnitBody.CurrentHandEquipmentSetIndex</c>).</summary>
+        public int WeaponSet { get; }
+
+        /// <summary>The unit's weapon sets in order.</summary>
+        public IReadOnlyList<BattleWeaponSetObservation> WeaponSets { get; }
+    }
+
+    /// <summary>A weapon set: the items in its hands and its grip.</summary>
+    public sealed class BattleWeaponSetObservation
+    {
+        internal BattleWeaponSetObservation(int index, string primary, string secondary, string grip)
+        {
+            Index = index;
+            Primary = primary;
+            Secondary = secondary;
+            Grip = grip;
+        }
+
+        public int Index { get; }
+
+        /// <summary>Blueprint name of the item in the primary hand, or null.</summary>
+        public string Primary { get; }
+
+        /// <summary>Blueprint name of the item in the secondary hand, or null.</summary>
+        public string Secondary { get; }
+
+        /// <summary>The game's <c>GripType</c> of the set: OneHanded or TwoHanded.</summary>
+        public string Grip { get; }
     }
 
     public sealed class BattleBuffObservation

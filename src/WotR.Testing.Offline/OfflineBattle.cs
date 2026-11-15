@@ -825,6 +825,10 @@ namespace WotR.Testing.Offline
                 lines.Add(prefix + "position " + new BattlePoint(unit.Position.x, unit.Position.y, unit.Position.z));
                 lines.Add(prefix + "commands " + (unit.Commands.Empty ? "none" : "running"));
                 lines.Add(prefix + "combat " + (unit.IsInCombat ? "in" : "out"));
+                lines.Add(prefix + "weapon-set " + unit.Body.CurrentHandEquipmentSetIndex + " grip " + unit.Body.CurrentHandsEquipmentSet.GripType);
+                lines.Add(prefix + "auto-use " + (unit.Brain?.AutoUseAbility?.Blueprint.name ?? "none"));
+                lines.Add(prefix + "hold " + (unit.HoldState ? "on" : "off") + " stop " + (unit.StopState ? "on" : "off")
+                    + " stealth " + (descriptor.State.IsInStealth ? "in" : "out"));
             }
             return new BattleState(lines.AsReadOnly());
         }

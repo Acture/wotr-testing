@@ -9,7 +9,7 @@ import json
 from collections.abc import Iterator
 
 import numpy as np
-from client import by_unit
+from client import by_unit, is_switch
 from policy import LinearPolicy, softmax
 
 
@@ -20,22 +20,20 @@ def load(path: str) -> list[dict]:
 
 def decisions(demos: list[dict]) -> Iterator[tuple[dict, str, list[int], int]]:
 	"""
-	Each decision of the demonstrations as (observation, unit, toggles it switched before in this
-	step, chosen candidate index), in the order the gym environment asks for them: a unit's toggles
-	before its command.
+	Each decision of the demonstrations as (observation, unit, switches it set before in this
+	step, chosen candidate index), in the order the gym environment asks for them: a unit's
+	switches before its command.
 	"""
 	for demo in demos:
 		for step in demo["steps"]:
 			obs = step["obs"]
-			ordered = sorted(
-				step["choices"], key=lambda i: obs["candidates"][i]["kind"] != "Toggle"
-			)
+			ordered = sorted(step["choices"], key=lambda i: not is_switch(obs["candidates"][i]))
 			switched: dict[str, list[int]] = {}
 			for choice in ordered:
 				unit = obs["candidates"][choice]["unit"]
 				before = list(switched.get(unit, []))
 				yield obs, unit, before, choice
-				if obs["candidates"][choice]["kind"] == "Toggle":
+				if is_switch(obs["candidates"][choice]):
 					switched.setdefault(unit, []).append(choice)
 
 

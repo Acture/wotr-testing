@@ -181,6 +181,8 @@ namespace WotR.Testing.BattleTests
                 new[] { BattleAction.Move("fighter", "no-such-path") },
                 new[] { BattleAction.Attack("cultist", "fighter") },
                 new[] { BattleAction.Wait("fighter"), BattleAction.Attack("fighter", "cultist") },
+                new[] { BattleAction.Hold("fighter"), BattleAction.Hold("fighter") },
+                new[] { BattleAction.Stop("cultist") },
                 new[] { BattleAction.Wait("nobody") },
             };
             foreach (var actions in rejections)
@@ -195,13 +197,16 @@ namespace WotR.Testing.BattleTests
             Assert.Empty(environment.Record.Steps);
             Assert.Equal(state, environment.Battle.Observe());
 
-            // A unit that is still running a command is not ready.
+            // In real time a unit still running a command is not ready, but takes another command, which replaces it.
             var attack = environment.Step(BattleAction.Attack("fighter", "cultist"));
             if (!attack.Ended && !attack.Observation.Unit("fighter").Ready)
             {
-                var busy = Assert.Throws<BattleActionRejectedException>(() => environment.Step(BattleAction.Wait("fighter")));
-                Assert.Contains("is not ready", busy.Message);
+                Assert.True(attack.Observation.Unit("fighter").Commandable);
+                Assert.Contains(BattleAction.Wait("fighter"), attack.Observation.Candidates);
             }
+            // A unit that cannot act takes switches only.
+            var twice = Assert.Throws<BattleActionRejectedException>(() => environment.Step(BattleAction.Stop("fighter"), BattleAction.Stop("fighter")));
+            Assert.Contains("uses Stop 2 times in one step", twice.Message);
         }
 
         [Fact]

@@ -399,7 +399,16 @@ with the code path that logs it: a touch spell's held charge, which
 `AbilityEffectStickyTouch` adds as `UnitPartTouch`, is subscribed to EventBus by
 `EntityPart.TurnOn` and again by `UnitPartTouch.Init`, and the game's
 `SubscriptionManager` logs "Can't subscribe on events twice" and keeps one
-subscription. While a battle builds its units, a blueprint whose body puts a
+subscription; a command that waits more than 5 seconds for hands busy with a weapon
+set change (the change holds them until a real-time unit has its move or standard
+action back) makes `UnitCommandController.ShouldStartCommand` log "[REPORT ME]
+HandAnimation waits too long", after which the command keeps waiting; and an
+offensive ability interrupted before it acts (by the stop key or a new command),
+followed by damage its caster deals the same target that no later command accounts
+for (an attack of opportunity), makes `UnitImpatienceController` throw a
+`NullReferenceException` on the ability's missing `ExecutionProcess`, which the
+game's rulebook logs ("Exception occured!" and the exception) before the damage
+stands. While a battle builds its units, a blueprint whose body puts a
 second weapon into a hand slot the game's rules refuse (a dretch's claws) makes
 `UnitBody.TryInsertItem` log "can't insert item ... to slot 'HandSlot'" and put the
 item in the unit's inventory, as in every spawn of that unit. A scenario allows
@@ -499,8 +508,8 @@ var differences = environment.Replay(record);      // empty when the episode rep
 |---|---|
 | `BattleEnvironment.Start(scenario, seed, options)` | Builds the scenario with `OfflineBattle` as episode 1 |
 | `Reset(seed, difficulty)` | Cleans up the episode and builds the scenario again, as `OfflineBattle.Reset` does, on another difficulty level if one is given (later episodes keep it); returns the first observation |
-| `Observe()` | The units, the paths ready units can take and every action the game allows now |
-| `Step(actions)` | Gives each listed ready unit its command, then runs frames until the next decision point |
+| `Observe()` | The units, the paths of the units that take a command now and every action the game allows now |
+| `Step(actions)` | Sets each listed unit's switches and gives it its command, then runs frames until the next decision point |
 | `Step(actions, randomSeed)` | The same step after the game's random numbers restart from `randomSeed` |
 | `Replay(record)` | Resets to the record's seed, takes its steps again (with their random seeds) and lists every difference in the key state |
 
@@ -514,12 +523,27 @@ command it runs, its standard, move and swift action cooldowns, buffs with their
 remaining time, resources and abilities, casts left per spellbook and spell level
 (`SpellSlots`), the uses left of the usable items in its quick slots as the action
 bar shows them (`ItemUses`: a wand's charges, a stack's count), the abilities
-switched on (`TogglesOn`), and whether it is controlled. A controlled unit is ready when it is conscious, the game lets it act
-and it has no command left. `Candidates` lists every action the game allows a ready
-unit: waiting, attacking each unit the game's player attack checks allow
+switched on (`TogglesOn`), whether it is controlled, and what its buttons and
+equipment controls are set to (`Controls`: its auto-use ability, hold, stop, stealth,
+the current weapon set and every set's items and grip). A controlled unit also
+reports its action bar (`Slots`), each slot with what the game's ability tooltip
+shows for it (`TooltipTemplateAbility`): the ability's blueprint, type, school and
+spell level, the action it takes now and whether it takes a full round, its range
+(also in meters), spell descriptors, saving throw, whether spell resistance applies,
+the DC and caster level the game calculates now (`AbilityData.CalculateParams`); with
+the blueprint's targets (enemies, allies, self, a point), its effect on enemies and on
+allies, its area and radius, whether it provokes attacks of opportunity, the uses
+the action bar shows, whether the unit can use it now and, for a toggle, whether it is
+on. Candidates name a slot by its id. The tooltip's damage range, which the game shows
+only for kineticist abilities, is not reported. A controlled unit is ready
+when it is conscious, the game lets it act and it has no command left. It takes a
+command (`Commandable`) when it is ready, and in real time also while it is busy: a
+new command replaces the running one, as the player's click does. `Candidates` lists
+every command the game allows a unit that takes one: waiting (in real time a busy
+unit keeps its command), attacking each unit the game's player attack checks allow
 (`UnitEntityData.CanAttack` and a weapon to attack with), using each entry of its
-action bar on each target the entry accepts, switching its toggles, and moving
-along each usable path. Two candidates stand for every point on the ground
+action bar on each target the entry accepts, and moving along each usable path; and
+the switches of every controlled unit, busy or not (see Actions). Two candidates stand for every point on the ground
 (`AnyPoint`): `BattleAction.MoveToAnyPoint(unit)` and, for an entry that targets a
 point, `BattleAction.UseAbilityAtAnyPoint(unit, ability)`. The decision maker gives
 the point with `At(point)` (or `BattleAction.MoveTo(unit, point)` and
@@ -529,15 +553,15 @@ the ability to accept the point (`AbilityData.CanTarget`) and, in turn-based com
 a command that can start there this turn. A refused point rejects the step with the
 reason; a candidate without a point is not an action.
 
-**Paths.** The observation lists scenario paths as supplied, and for each ready
-unit that can move, the path the game's `UnitMovementAgent.FindPath` finds to every
+**Paths.** The observation lists scenario paths as supplied, and for each unit
+that takes a command and can move, the path the game's `UnitMovementAgent.FindPath` finds to every
 other unit that is not dead (source `game:UnitMovementAgent.FindPath`). The game's
 A* calculates it at once with `AstarPath.BlockUntilCalculated`, as the game's AI
 does; paths other units requested earlier in the queue complete then too. Each path
 has a stable id, its waypoints and destination, and the distance the source gives
 (the game's `Path.GetTotalLength`; the game's interface gives no cost, so `Cost`
 stays null). A scenario path is usable only by the unit at its start, while that
-unit is ready and still stands within its corpulence (at least 0.5 m) of the path's
+unit takes a command and still stands within its corpulence (at least 0.5 m) of the path's
 first point; otherwise `Problem` says why. The environment never computes, repairs
 or measures a path.
 
@@ -580,15 +604,40 @@ the player's turn checks. Usable items go into quick slots with
 real time the game's move command finds its own path to the point
 (`ClickGroundHandler`), in turn-based combat the click goes through the game's
 predictions as for a scenario path, and a controlled unit the player does not
-control gets the move with the path the game's agent finds. A unit given an action other than waiting or
-toggles decides again as soon as it is ready, so a refused click returns at once. A step takes one action per unit besides its toggles: toggles go together with
-the unit's command and are switched first, as the player switches them before
-clicking; a unit given only toggles waits like `Wait`. `BattleAction.Wait(unit)`
-leaves a ready unit idle until the next decision point.
-Units not listed keep running their commands, and units of other sides act on the
-game's AI. A step with an action that is not among the candidates, a unit that is
-not ready or not controlled, or two actions for one unit is rejected with
-`BattleActionRejectedException` before anything changes.
+control gets the move with the path the game's agent finds. A unit given a command other than waiting
+decides again as soon as it is ready, so a refused click returns at once.
+
+**Switches.** Besides its commands, a character exposes controls that set something
+instead of commanding it; the decision maker has them as the player does
+(`BattleAction.IsSwitch`). A party member the player can select
+(`IsDirectlyControllable`) has, at any time: the hold key (`BattleAction.Hold`,
+`SelectionManagerBase.SwitchHold`: the unit holds its position), the stop key
+(`BattleAction.Stop`, `SwitchStop`: the unit drops its commands and stays stopped
+until its next player command), the stealth button (`BattleAction.Stealth`,
+`ControlCharactersVM.OnStealthClick`, which asks the game's stealth controller at
+once), and a right click on each action bar entry the game accepts for auto use
+(`BattleAction.AutoUse(unit, ability)`, `MechanicActionBarSlot.OnRightClick`: the
+entry becomes the ability a click on an enemy gives, `ClickUnitHandler.CreateCommand`,
+or stops being it). Every unit that takes a command has the action bar's toggles,
+the grip of its current weapon set when the set allows the other grip
+(`BattleAction.Grip`, `WeaponSetGripVM.TryToggleGrip`), and its other weapon sets
+when the bar takes a click (`BattleAction.WeaponSet(unit, set)`,
+`ActionBarWeaponSetVM.OnSetCurrentSet`; in turn-based combat on the unit's turn while
+it is not prone, may end its turn and has its move or standard action). In combat a
+weapon set change takes the game's action for it: the move action, or the standard
+action when the move action is used, once a real-time unit has one of them, with the
+unit's hands busy until then (boundary `weapon-set-change`). The AI button is not
+offered: the decision maker takes the place of the game's AI for its units. A step
+takes one command per unit besides its switches, and each switch once; switches go
+together with the unit's command and are set first, as the player sets them before
+clicking. In real time a unit given only switches carries on like `Wait`; in
+turn-based combat it decides again after the frame, as does a waiting unit given
+nothing. `BattleAction.Wait(unit)` leaves a ready unit idle and a busy one running
+its command until the next decision point. Units not listed keep running their
+commands, and units of other sides act on the game's AI. A step with an action that
+is not among the candidates, a command for a unit that does not take one, a unit
+that is not controlled, two commands for one unit or a switch used twice is
+rejected with `BattleActionRejectedException` before anything changes.
 
 **Decision points.** After giving the commands, `Step` runs frames until, after a
 frame, a controlled unit that was busy is ready again, the episode is decided, or
@@ -677,12 +726,15 @@ scenario)` serves the environment to one client on a local TCP port, one JSON ob
 per line: `start`, `reset` (optionally with a difficulty level), `observe`, `step`
 with candidate indices or action
 objects (with a point for any-point candidates) and an optional `randomSeed`,
-`close`. The battle runs in the test
+`describe` (the in-game name and description of ability, toggle and buff blueprints
+by guid, from the loaded localization pack), `close`. The battle runs in the test
 process inside the offline runtime; the client only sends decisions. The battle
 fixture's `TrainingServer` test serves while `WOTR_TRAIN_PORT` is set, and
 [examples/training](../examples/training/README.md) has Python clients: REINFORCE,
-random-rollout planning, on-policy distillation and MaskablePPO through a Gymnasium
-interface with action masks, each of which can start from demonstrations (the
+random-rollout planning, on-policy distillation, MaskablePPO through a Gymnasium
+interface with action masks, and group relative policy optimization with fixed dice (each
+battle step's `randomSeed` drawn from the episode's seed and the step's number), the first
+four of which can start from demonstrations (the
 winning episodes among the best by return, cloned before training). The environment has no save and restore; rollouts
 rebuild a state by replaying from the episode's seed.
 
@@ -861,6 +913,7 @@ rulebook calculations.
 | `unit-hit-effects` | `HitPlayer.PlayDamageHit` when a stand-in is involved, and `HitPlayer.PlayProjectileHit` while a battle runs | Skipped: blood, hit effects and sounds, and the hit, miss and decal effects of a projectile that reaches its target (prefabs from asset bundles a battle does not load). The game takes the same early return for units without a live view; `RuleDealDamage` deals the damage, and a projectile's rules run in `Projectile.OnHit` after the effects, as shipped |
 | `debug-draw` | `Debug.DrawLine` | Skipped: editor scene-view lines, which a player build does not draw either |
 | `unit-death-visuals` | `UnitEntityView.HandleDeath` for battle units | Skipped: the blood and dismemberment effect, the fade, occlusion clipping, a swarm's health display, the prefab's death effects and moving the click collider with the torso. The death itself is `UnitLifeController`'s and runs as shipped |
+| `weapon-set-change` | `UnitEntityView.HandleUnitChangeActiveEquipmentSet` for battle units, which hands a weapon set change to the view's `UnitViewHandsEquipment` | The stand-in has no hands, so the rule part of `UnitViewHandsEquipment`'s change runs instead, without the animation: in combat, while the unit can act, the running standard command is marked to stop as soon as possible and the hands are busy (commands wait, `AreHandsBusyWithAnimation`); from the next battle frame, once a real-time unit has its move or standard action, the move action is spent (the standard action when the move action is used) unless a kinetic blade is drawn or put away, the turn is told (`TurnController.ApplyUnitChangeActiveEquipmentSet`) and the hands are free. A change while one waits goes along with it. Out of combat, or when the unit cannot act, the weapons change at once |
 | `unit-get-up-visuals` | `UnitEntityView.LeaveProneState` for battle units | Skipped: the ragdoll's return to its animation, the weapon models in the hands and moving the click collider. The rest of the method runs as the game's: the get-up time (for half a second `IsGetUp` counts the unit as prone for its AC and holds back its commands), `IsProne` and the unit's obstacle groups. When a unit stands up is `UnitProneController`'s and runs as shipped |
 | `fx` | `FxHelper` spawn methods, `AbilitySpawnFx.Spawn` and `ContextActionSpawnFx.RunAction` while a battle runs, and `ItemEnchantment.RespawnFx` for battle units' weapons | Skipped: visual effects. Ability effects and effects that actions spawn (for example a rage buff's) are skipped as when their execution context disables effects, an enchanted weapon's glow is not loaded or attached; `FxHelper` returns no handle, which its callers allow for |
 | `sound` | `SoundEventsManager.PostEvent` and the action bar's click sound (`MechanicActionBarSlot.PlaySound`) while a battle runs | Skipped: sound events; the game gets no playing id (0). An action bar slot the battle environment clicks plays no click sound |

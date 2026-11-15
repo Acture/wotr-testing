@@ -120,6 +120,24 @@ namespace WotR.Testing.RuleTests
         }
 
         [Fact]
+        public void AnAllowedExceptionAllowsTheHeaderOwlcatLogsBeforeIt()
+        {
+            game.RequireGame();
+            // Owlcat's LogChannel.Exception logs "Exception occured!" without the exception, then the exception itself.
+            void Log(string message) => Kingmaker.PFLog.Default.Exception(new InvalidOperationException(message));
+            var allowance = new RuleLogAllowance("a known failure", log => log.Exception != null && log.Exception.Contains("known failure"));
+
+            var result = RuleScope.Run("known", () => Log("known failure"), allowance);
+            Assert.Equal(2, result.Allowed.Count);
+            Assert.Equal("Exception occured!", result.Allowed[0].Log.Message);
+            Assert.All(result.Allowed, a => Assert.Equal("a known failure", a.Reason));
+
+            var error = Assert.Throws<RuleSettlementException>(() => RuleScope.Run("unknown", () => Log("other failure"), allowance));
+            Assert.Contains("Exception occured!", error.Message);
+            Assert.Contains("other failure", error.Message);
+        }
+
+        [Fact]
         public void BlankAllowanceIsRejected()
         {
             var error = Assert.Throws<ArgumentException>(() => RuleScope.Run("blank", () => { }, new RuleLogAllowance(" ", _ => true)));

@@ -29,3 +29,5 @@ __pycache__/
 __pycache__/
 /examples/training/*.csv
 /examples/training/*.zip
+/examples/training/*.texts.npz
+/examples/training/*.pt

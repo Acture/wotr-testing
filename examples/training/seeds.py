@@ -24,6 +24,15 @@ def evaluation(count: int) -> range:
 	return range(EVALUATION_BASE, EVALUATION_BASE + count)
 
 
+def dice(seed: int, step: int) -> int:
+	"""
+	Random seed of a battle step under fixed dice (gym_env.BattleEnv): the game's random numbers
+	restart from it before the step, so every episode built with `seed` meets the same dice at the
+	same step, whatever its earlier choices drew.
+	"""
+	return int(np.random.SeedSequence([0xD1CE, seed, step]).generate_state(1)[0] & 0x7FFFFFFF)
+
+
 def branch(seed: int, step: int, k: int) -> int:
 	"""
 	Random seed of the k-th rollout from the decision after `step` steps of the episode built with

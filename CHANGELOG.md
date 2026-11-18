@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0-preview.4 - 2026-11-18
+
 - Offline `UnityEngine.Random` now uses one `System.Random` (startup seed 1) with
   `GameRandom.Init`, `Save`, `Restore` and `Record`. Integer results are
   `[min, max)`; float `Range` and `value` are `[min, max)`. This is not the Unity

@@ -26,10 +26,15 @@ namespace WotR.Testing.Offline
             var fresh = HarnessState.Logs.ToArray().Skip(start).ToArray();
             var allowed = new List<AllowedRuleLog>();
             var errors = new List<CapturedLog>();
-            foreach (var log in fresh)
+            for (var i = 0; i < fresh.Length; i++)
             {
+                var log = fresh[i];
                 if (!IsError(log)) continue;
                 var match = allowances.FirstOrDefault(allowance => allowance.Match(log));
+                // Owlcat's LogChannel.Exception logs a header without the exception, then the exception; an allowed
+                // exception allows its header.
+                if (match == null && IsExceptionHeader(log, i + 1 < fresh.Length ? fresh[i + 1] : null))
+                    match = allowances.FirstOrDefault(allowance => allowance.Match(fresh[i + 1]));
                 if (match != null) allowed.Add(new AllowedRuleLog(match.Reason, log));
                 else errors.Add(log);
             }
@@ -38,6 +43,11 @@ namespace WotR.Testing.Offline
         }
 
         internal static bool IsError(CapturedLog log) => log.Severity is "Error" or "Exception" || log.Exception != null;
+
+        /// <summary>The header LogChannel.Exception logs before an exception it has no message for.</summary>
+        private static bool IsExceptionHeader(CapturedLog log, CapturedLog next)
+            => next != null && log.Exception == null && next.Exception != null && log.Source == next.Source && log.Channel == next.Channel
+                && log.Message == "Exception occured!";
     }
 
     public sealed class RuleLogAllowance

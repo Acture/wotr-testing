@@ -107,6 +107,91 @@ namespace WotR.Testing.Offline
             return uses;
         }
 
+        /// <summary>
+        /// What a right click on the slot makes the unit's auto-use ability (OnRightClick of the ability, item, spell and
+        /// converted spell slots); null for slots whose right click does nothing, such as toggles.
+        /// </summary>
+        internal static AbilityData AutoUseData(BattleAbilitySlot slot) => slot.Slot switch
+        {
+            MechanicActionBarSlotAbility ability => ability.Ability,
+            MechanicActionBarSlotItem item => item.Item?.Ability?.Data,
+            MechanicActionBarSlotSpell spell => spell.Spell,
+            MechanicActionBarSlotSpontaneusConvertedSpell converted => converted.Spell,
+            _ => null,
+        };
+
+        /// <summary>
+        /// What the slot is and does, as the game's ability tooltip reads it (TooltipTemplateAbility.Prepare): the ability's
+        /// type, school, spell level, action (UIUtilityTexts.GetAbilityActionText: RuntimeActionType and
+        /// RequireFullRoundAction), range, spell descriptors, spell resistance of the delivering blueprint, and the DC from
+        /// CalculateParams; with the blueprint's targets, its effect on enemies and allies, its area, its saving throw
+        /// (AbilityEffectRunAction), whether it provokes attacks of opportunity, and the uses the action bar shows
+        /// (MechanicActionBarSlot.GetResource). A toggle reports its blueprint, its activation action and whether it is on.
+        /// </summary>
+        internal static BattleSlotObservation Observe(BattleAbilitySlot slot, bool usable)
+        {
+            var uses = slot.Slot.GetResource();
+            if (slot.Ability is not { } data)
+            {
+                var toggle = slot.Toggle?.Blueprint;
+                return new BattleSlotObservation
+                {
+                    Id = slot.Id,
+                    Blueprint = toggle?.name,
+                    BlueprintGuid = toggle?.AssetGuid.ToString(),
+                    Action = toggle == null ? null : toggle.ActivateWithUnitCommand ? toggle.ActivateWithUnitCommandType.ToString() : "Free",
+                    Descriptors = System.Array.Empty<string>(),
+                    Uses = uses,
+                    Usable = usable,
+                    On = slot.Toggle?.IsOn ?? false,
+                };
+            }
+            var blueprint = data.Blueprint;
+            var range = blueprint.GetRange(false, data).Meters;
+            var parameters = data.CalculateParams();
+            var save = data.AbilityEffectRunAction?.SavingThrowType ?? Kingmaker.EntitySystem.Stats.SavingThrowType.Unknown;
+            return new BattleSlotObservation
+            {
+                Id = slot.Id,
+                Blueprint = blueprint.name,
+                BlueprintGuid = blueprint.AssetGuid.ToString(),
+                Type = blueprint.Type.ToString(),
+                Action = data.RuntimeActionType.ToString(),
+                FullRound = data.RequireFullRoundAction,
+                Range = data.Range.ToString(),
+                RangeMeters = float.IsInfinity(range) ? null : range,
+                TargetsEnemies = data.CanTargetEnemies,
+                TargetsAllies = data.CanTargetAlly,
+                TargetsSelf = blueprint.CanTargetSelf,
+                TargetsPoint = data.CanTargetPoint,
+                EffectOnEnemy = blueprint.EffectOnEnemy.ToString(),
+                EffectOnAlly = blueprint.EffectOnAlly.ToString(),
+                AreaOfEffect = data.IsAOE,
+                AreaRadius = blueprint.AoERadius.Meters,
+                SpellLevel = data.SpellLevel,
+                School = data.SpellSchool.ToString(),
+                Descriptors = Descriptors(data.SpellDescriptor),
+                SavingThrow = save == Kingmaker.EntitySystem.Stats.SavingThrowType.Unknown ? null : save.ToString(),
+                SpellResistance = data.GetDeliverBlueprint().SpellResistance,
+                DC = parameters?.DC,
+                CasterLevel = parameters?.CasterLevel,
+                ProvokesAttackOfOpportunity = data.ProvokeAttackOfOpportunity,
+                Uses = uses,
+                Usable = usable,
+            };
+        }
+
+        private static IReadOnlyList<string> Descriptors(Kingmaker.Blueprints.Classes.Spells.SpellDescriptor descriptor)
+        {
+            var names = new List<string>();
+            foreach (Kingmaker.Blueprints.Classes.Spells.SpellDescriptor flag in System.Enum.GetValues(typeof(Kingmaker.Blueprints.Classes.Spells.SpellDescriptor)))
+            {
+                var bits = (long)flag;
+                if (bits != 0 && (bits & (bits - 1)) == 0 && (descriptor & flag) != 0) names.Add(flag.ToString());
+            }
+            return names.AsReadOnly();
+        }
+
         private static string Metamagic(AbilityData spell)
             => spell.MetamagicData is { MetamagicMask: var mask } && mask != 0 ? "+" + mask.ToString().Replace(", ", "+") : "";
 

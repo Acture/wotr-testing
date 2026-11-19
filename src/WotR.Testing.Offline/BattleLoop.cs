@@ -127,14 +127,19 @@ namespace WotR.Testing.Offline
             SelectionManagerStandIn.Install();
             PathVisualizerStandIn.Install();
             BarkPlayerStandIn.Install();
+            BattleWeaponSets.Install();
             Boundaries.Hit("game-mode");
             HandleGameModeChanged.Invoke(game, new object[] { GameModeType.None, GameModeType.Default });
         }
 
-        /// <summary>One frame: Unity's frame clock, A*'s Update, then Game.Tick's scheduled actions, real time, mode and temporary entities.</summary>
+        /// <summary>
+        /// One frame: Unity's frame clock, A*'s Update, then Game.Tick's scheduled actions, real time, mode and temporary
+        /// entities, the stand-ins' updates and the weapon set changes the views' coroutines would continue.
+        /// </summary>
         internal void Frame()
         {
             BattleClock.BeginFrame();
+            BattleWeaponSets.BeginFrame();
             navigation.Update();
             var game = Game.Instance;
             ExecuteBeforeTickActions.Invoke(game, null);
@@ -143,6 +148,8 @@ namespace WotR.Testing.Offline
             Kingmaker.EntitySystem.TemporaryEntityService.Instance?.Tick();
             PathVisualizerStandIn.Update();
             MainThreadDispatcherStandIn.Update();
+            // Coroutines resume after every Update of the frame.
+            BattleWeaponSets.Update();
         }
 
         /// <summary>
@@ -177,6 +184,7 @@ namespace WotR.Testing.Offline
             Step(() => SetHandsEquipmentController.Invoke(game, new object[] { previousHands }));
             Step(() => SetCombatEngagementController.Invoke(game, new object[] { previousEngagement }));
             Step(() => SetCameraController.Invoke(game, new object[] { previousCamera }));
+            Step(BattleWeaponSets.Remove);
             Step(BarkPlayerStandIn.Remove);
             Step(PathVisualizerStandIn.Remove);
             Step(SelectionManagerStandIn.Remove);

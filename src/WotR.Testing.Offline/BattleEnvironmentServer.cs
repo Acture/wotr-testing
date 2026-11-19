@@ -21,7 +21,10 @@ namespace WotR.Testing.Offline
     /// <c>choices</c>, indices into the last observation's candidates, or <c>actions</c>, objects with <c>kind</c>,
     /// <c>unit</c> and as needed <c>target</c>, <c>path</c>, <c>ability</c>, <c>variant</c> and <c>point</c> ([x, y, z],
     /// for any-point candidates), and optionally <c>randomSeed</c>, a seed the game's random numbers restart from before
-    /// the actions (<see cref="BattleEnvironment.Step(IEnumerable{BattleAction}, int?)"/>); <c>close</c>. A step answers with the observation, <c>ended</c>, <c>truncated</c>,
+    /// the actions (<see cref="BattleEnvironment.Step(IEnumerable{BattleAction}, int?)"/>); <c>describe</c> with
+    /// <c>guids</c>, blueprint guids of abilities, toggles or buffs from an observation, answers <c>texts</c>, each
+    /// guid's in-game <c>name</c> and <c>description</c> in the loaded localization pack (null for an unknown guid);
+    /// <c>close</c>. A step answers with the observation, <c>ended</c>, <c>truncated</c>,
     /// <c>winner</c>, <c>reward</c> (the environment's reward hook), <c>elapsed</c> and <c>decision</c>. An error answers
     /// <c>{"error": ...}</c>; after an environment failure, reset. See examples/training for a client.
     /// </remarks>
@@ -87,6 +90,15 @@ namespace WotR.Testing.Offline
                                     ["decision"] = result.Decision,
                                 };
                                 break;
+                            case "describe":
+                                var texts = new JsonObject();
+                                foreach (var node in request["guids"].AsArray())
+                                {
+                                    var guid = (string)node;
+                                    texts[guid] = Describe(guid);
+                                }
+                                response = new JsonObject { ["texts"] = texts };
+                                break;
                             case "close":
                                 writer.WriteLine("{\"closed\":true}");
                                 return;
@@ -108,6 +120,18 @@ namespace WotR.Testing.Offline
             }
         }
 
+        /// <summary>
+        /// The in-game name and description of a unit fact blueprint (an ability, toggle or buff) in the loaded
+        /// localization pack, as its tooltip takes them (<c>BlueprintUnitFact.Name</c> and <c>Description</c>); null for
+        /// a guid that names no such blueprint.
+        /// </summary>
+        private static JsonObject Describe(string guid)
+        {
+            var fact = Kingmaker.Blueprints.ResourcesLibrary.TryGetBlueprint(Kingmaker.Blueprints.BlueprintGuid.Parse(guid))
+                as Kingmaker.Blueprints.Facts.BlueprintUnitFact;
+            return fact == null ? null : new JsonObject { ["name"] = fact.Name, ["description"] = fact.Description };
+        }
+
         private static BattleEnvironment Require(BattleEnvironment environment)
             => environment ?? throw new InvalidOperationException("Send start first.");
 
@@ -126,12 +150,49 @@ namespace WotR.Testing.Offline
                 "UseAbility" => point is { } at ? BattleAction.UseAbility(unit, Text("ability"), at) : BattleAction.UseAbility(unit, Text("ability"), Text("target")),
                 "Toggle" => BattleAction.Toggle(unit, Text("ability")),
                 "Delay" => BattleAction.Delay(unit, Text("target")),
+                "AutoUse" => BattleAction.AutoUse(unit, Text("ability")),
+                "Hold" => BattleAction.Hold(unit),
+                "Stop" => BattleAction.Stop(unit),
+                "Stealth" => BattleAction.Stealth(unit),
+                "WeaponSet" => BattleAction.WeaponSet(unit, int.Parse(Text("variant") ?? throw new ArgumentException("WeaponSet needs the set's index as variant."), System.Globalization.CultureInfo.InvariantCulture)),
+                "Grip" => BattleAction.Grip(unit),
                 var kind => throw new ArgumentException($"Unknown action kind {kind}."),
             };
         }
 
         private static JsonObject Counts(IReadOnlyDictionary<string, int> values)
             => new(values.Select(pair => new KeyValuePair<string, JsonNode>(pair.Key, pair.Value)));
+
+        private static JsonObject Encode(BattleSlotObservation s) => new()
+        {
+            ["id"] = s.Id,
+            ["blueprint"] = s.Blueprint,
+            ["guid"] = s.BlueprintGuid,
+            ["type"] = s.Type,
+            ["action"] = s.Action,
+            ["fullRound"] = s.FullRound,
+            ["range"] = s.Range,
+            ["rangeMeters"] = s.RangeMeters,
+            ["targetsEnemies"] = s.TargetsEnemies,
+            ["targetsAllies"] = s.TargetsAllies,
+            ["targetsSelf"] = s.TargetsSelf,
+            ["targetsPoint"] = s.TargetsPoint,
+            ["effectOnEnemy"] = s.EffectOnEnemy,
+            ["effectOnAlly"] = s.EffectOnAlly,
+            ["areaOfEffect"] = s.AreaOfEffect,
+            ["areaRadius"] = s.AreaRadius,
+            ["spellLevel"] = s.SpellLevel,
+            ["school"] = s.School,
+            ["descriptors"] = new JsonArray(s.Descriptors.Select(d => (JsonNode)d).ToArray()),
+            ["savingThrow"] = s.SavingThrow,
+            ["spellResistance"] = s.SpellResistance,
+            ["dc"] = s.DC,
+            ["casterLevel"] = s.CasterLevel,
+            ["provokes"] = s.ProvokesAttackOfOpportunity,
+            ["uses"] = s.Uses,
+            ["usable"] = s.Usable,
+            ["on"] = s.On,
+        };
 
         private static JsonObject Encode(BattleObservation observation)
         {
@@ -147,6 +208,7 @@ namespace WotR.Testing.Offline
                     ["maxHp"] = u.MaxHitPoints,
                     ["conscious"] = u.Conscious,
                     ["ready"] = u.Ready,
+                    ["commandable"] = u.Commandable,
                     ["x"] = u.Position.X,
                     ["y"] = u.Position.Y,
                     ["z"] = u.Position.Z,
@@ -156,6 +218,16 @@ namespace WotR.Testing.Offline
                     ["itemUses"] = Counts(u.ItemUses),
                     ["togglesOn"] = new JsonArray(u.TogglesOn.Select(t => (JsonNode)t).ToArray()),
                     ["buffs"] = new JsonArray(u.Buffs.Select(b => (JsonNode)b.Name).ToArray()),
+                    ["buffGuids"] = new JsonArray(u.Buffs.Select(b => (JsonNode)b.Guid).ToArray()),
+                    ["autoUse"] = u.Controls.AutoUseAbility,
+                    ["hold"] = u.Controls.Hold,
+                    ["stop"] = u.Controls.Stop,
+                    ["stealth"] = u.Controls.InStealth,
+                    ["weaponSet"] = u.Controls.WeaponSet,
+                    ["weaponSets"] = new JsonArray(u.Controls.WeaponSets
+                        .Select(w => (JsonNode)new JsonArray(w.Primary, w.Secondary, w.Grip)).ToArray()),
+                    ["cooldown"] = new JsonArray(u.StandardActionCooldown, u.MoveActionCooldown, u.SwiftActionCooldown),
+                    ["slots"] = new JsonArray(u.Slots.Select(s => (JsonNode)Encode(s)).ToArray()),
                 });
             }
             var candidates = new JsonArray();
@@ -170,6 +242,7 @@ namespace WotR.Testing.Offline
                     ["ability"] = c.Ability,
                     ["variant"] = c.Variant,
                     ["anyPoint"] = c.AnyPoint,
+                    ["switch"] = c.IsSwitch,
                 });
             }
             var paths = new JsonObject();
@@ -191,6 +264,7 @@ namespace WotR.Testing.Offline
                     ["limitedAi"] = observation.Difficulty.LimitedAI,
                 },
                 ["ready"] = new JsonArray(observation.Ready.Select(r => (JsonNode)r).ToArray()),
+                ["commandable"] = new JsonArray(observation.Commandable.Select(r => (JsonNode)r).ToArray()),
                 ["units"] = units,
                 ["candidates"] = candidates,
                 ["paths"] = paths,

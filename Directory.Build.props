@@ -5,7 +5,7 @@
     <BaseIntermediateOutputPath>$(WotrTestingRepositoryRoot)artifacts/obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
     <PackageOutputPath>$(WotrTestingRepositoryRoot)artifacts/packages/</PackageOutputPath>
     <!-- Version of every package built from this repository. -->
-    <Version>0.1.0-preview.3</Version>
+    <Version>0.1.0-preview.4</Version>
     <FsCheckXunitVersion>3.5.0</FsCheckXunitVersion>
     <!-- The offline library and the snapshot tool read the game's bundles with the same version. -->
     <AssetsToolsNetVersion>3.0.5</AssetsToolsNetVersion>

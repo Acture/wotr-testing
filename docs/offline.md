@@ -795,7 +795,9 @@ copy shows those.
 The library's own patches work with Harmony 2.0.4 and later: they do not use
 `__args`, and rewritten internal calls end with an unreachable return (see below),
 because Harmony before 2.1 cannot inject `__args` and emits invalid IL when patching
-a method that ends in `throw`.
+a method that ends in `throw`. A prefix that reads a by-ref struct argument takes
+that argument by ref. Harmony 2.0.4 emits invalid IL (`call 0x00000001`) when the
+prefix takes it by value; later copies accept either.
 
 ## How the game runs without Unity
 

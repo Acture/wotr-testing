@@ -59,10 +59,12 @@ namespace WotR.Testing.Offline
         }
     }
 
+    // By ref: Harmony 2.0.4 emits invalid IL (call 0x00000001) when a prefix takes a
+    // by-ref struct argument by value. The game's copy is 2.0.4; 2.3.6 accepts either.
     [HarmonyPatch(typeof(UnityEngine.Random), "set_state_Injected")]
     internal static class UnityRandomSetStatePatch
     {
-        private static bool Prefix(UnityEngine.Random.State value)
+        private static bool Prefix(ref UnityEngine.Random.State value)
         {
             Boundaries.Hit("unity-random");
             GameRandom.ApplyState(value);

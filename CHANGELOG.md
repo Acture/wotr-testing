@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `-Harmony game` (the game's Harmony 2.0.4) applies the library's patches.
+  `UnityEngine.Random.set_state_Injected` is patched with a by-ref `State`
+  argument. Harmony 2.0.4 emits invalid IL (`call 0x00000001`) when a prefix
+  takes a by-ref struct argument by value, which failed startup as
+  `[INIT_FAILED] harmony`. Later Harmony copies accept either form.
+
+
 ## 0.1.0-preview.4 - 2026-11-18
 
 - Offline `UnityEngine.Random` now uses one `System.Random` (startup seed 1) with

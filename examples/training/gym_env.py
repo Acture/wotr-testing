@@ -17,7 +17,7 @@ import features
 import gymnasium as gym
 import numpy as np
 import seeds
-from client import BattleClient
+from client import BattleClient, winner
 from rewards import SIDE, health, step_reward
 
 MAX_UNITS = 8
@@ -118,8 +118,8 @@ class BattleEnv(gym.Env):
 			self.obs = result["observation"]
 			self.pending, self.toggles = {}, {}
 			if result["ended"]:
-				self.winner = result["winner"] or ""
-				return total, bool(result["winner"]), bool(result["truncated"])
+				self.winner = winner(result)
+				return total, bool(self.winner), bool(result["truncated"])
 			if self._unit() is not None:
 				return total, False, False
 			choices = []

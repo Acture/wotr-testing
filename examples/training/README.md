@@ -40,7 +40,7 @@ uv run --no-project --python 3.12 --with sb3-contrib==2.4.0 --with gymnasium==1.
 
 | File | What it is |
 | --- | --- |
-| `client.py` | The connection: `start`, `reset` (optionally on another difficulty level), `step` with candidate indices and an optional random seed, `close` |
+| `client.py` | The connection: `start`, `reset` (optionally on another difficulty level), `step` with candidate indices and an optional random seed, `record` (the episode's record), `replay` (the differences when the episode is played again), `close` |
 | `seeds.py` | Separate seeds for training and held-out evaluation episodes, and each rollout's own random seed |
 | `rewards.py` | Rewards from observations: per-step reward (damage dealt, health lost, units downed, resources spent: ability resources, spell slots by level, item uses; the outcome; a step-limit cutoff counts as a loss with every own unit downed) and a win-based value |
 | `features.py` | Features of one candidate action relative to the unit that takes it |

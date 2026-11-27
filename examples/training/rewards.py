@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import statistics
 
+from client import winner
+
 SIDE = "party"
 
 
@@ -43,8 +45,8 @@ def step_reward(before: dict, after: dict, result: dict, side: str = SIDE) -> fl
 			r -= lost + 0.5 * downed + 0.1 * spent(ub, ua)
 		else:
 			r += lost + 0.5 * downed
-	if result["ended"] and result["winner"]:
-		r += 1.0 if result["winner"] == side else -1.0
+	if result["ended"] and winner(result):
+		r += 1.0 if winner(result) == side else -1.0
 	elif result["ended"] and result.get("truncated"):
 		own = [u for u in a.values() if u["side"] == side]
 		r -= 1.0 + sum(health(u) + 0.5 * float(u["conscious"]) for u in own)
@@ -64,8 +66,8 @@ def win_value(result: dict | None, obs: dict, side: str = SIDE) -> float:
 	0.25 (enemies closer to defeat is better), an undecided end 0.25 to 0.75 by the balance of
 	health.
 	"""
-	if result is not None and result["ended"] and result["winner"]:
-		if result["winner"] == side:
+	if result is not None and result["ended"] and winner(result):
+		if winner(result) == side:
 			return 0.75 + 0.25 * statistics.mean(
 				health(u) for u in obs["units"] if u["side"] == side
 			)

@@ -140,6 +140,11 @@ namespace WotR.Testing.Offline
         public static OfflineInputs Inputs;
         public static string PersistentDirectory;
         public static UnityAssetMapper Assets;
+
+        /// <summary>The mod under test and its version: an episode's record names them, so a regression says what ran.</summary>
+        public static string ModId;
+        public static string ModVersion;
+
         public static readonly ConcurrentQueue<CapturedLog> Logs = new();
     }
 

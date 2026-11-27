@@ -23,7 +23,7 @@ import time
 
 import numpy as np
 import seeds
-from client import BattleClient
+from client import BattleClient, winner
 from planner import RolloutPlanner, random_choices
 from rewards import SIDE, step_reward
 
@@ -49,8 +49,7 @@ def play(
 		history.append(choices)
 		obs = result["observation"]
 		if result["ended"]:
-			winner = result["winner"] or ""
-			return {"seed": seed, "return": total, "winner": winner, "choices": history}
+			return {"seed": seed, "return": total, "winner": winner(result), "choices": history}
 
 
 def record(client: BattleClient, episode: dict) -> dict:
@@ -61,8 +60,8 @@ def record(client: BattleClient, episode: dict) -> dict:
 		steps.append({"obs": obs, "choices": choices})
 		result = client.step(choices)
 		obs = result["observation"]
-	if (result["winner"] or "") != episode["winner"]:
-		raise RuntimeError(f"seed {episode['seed']} did not reproduce: {result['winner']}")
+	if winner(result) != episode["winner"]:
+		raise RuntimeError(f"seed {episode['seed']} did not reproduce: {winner(result)}")
 	return {k: episode[k] for k in ("seed", "return", "winner")} | {"steps": steps}
 
 

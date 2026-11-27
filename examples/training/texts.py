@@ -23,6 +23,9 @@ CAPACITY = 8192
 # The game's text markup: {g|Encyclopedia:Spell}spell{/g}, {d|...}, <b>...</b> and the like.
 MARKUP = re.compile(r"\{[^{}]*\}|<[^<>]*>")
 
+# The server's describe request: the in-game text of the blueprint guids it is given.
+Describe = Callable[[list[str]], dict]
+
 
 def text(entry: dict | None) -> str:
 	"""A blueprint's name and description as one plain text; empty when the server knew none."""
@@ -45,7 +48,7 @@ class TextTable:
 	def id(self, guid: str | None) -> int:
 		return self.ids.get(guid, 0) if guid else 0
 
-	def ensure(self, guids: Iterable[str | None], describe: Callable[[list[str]], dict]) -> None:
+	def ensure(self, guids: Iterable[str | None], describe: Describe) -> None:
 		"""Adds the guids not in the table: their texts from `describe`, embedded in one batch."""
 		new = sorted({g for g in guids if g and g not in self.ids})
 		if not new:

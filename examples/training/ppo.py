@@ -97,10 +97,13 @@ class RoundDiscountBuffer(MaskableRolloutBuffer):
 	"""
 	Generalized advantage estimation with gamma and lambda per combat round: a step that took r
 	rounds (BattleEnv.last_rounds) is discounted by gamma**r, so steps that take no game time are
-	not discounted. Set `env` before collecting.
+	not discounted. A step that ended the episode at the step limit is bootstrapped by the trainer
+	with the value of the state the battle was cut off in, discounted by one step; the round
+	discount applies to that bootstrap as well. Set `env` and `policy` before collecting.
 	"""
 
 	env: BattleEnv | None = None
+	policy: MaskableActorCriticPolicy | None = None
 
 	def reset(self) -> None:
 		super().reset()
@@ -109,7 +112,21 @@ class RoundDiscountBuffer(MaskableRolloutBuffer):
 	def add(self, *args, **kwargs) -> None:
 		assert self.env is not None
 		self.rounds[self.pos] = self.env.last_rounds
+		terminal = self.env.terminal_observation
+		if terminal is not None:
+			# The episode was cut off at the step limit: the trainer added the value of the final
+			# state with one step's discount, which the round discount replaces.
+			rounds = float(self.rounds[self.pos][0])
+			rewards = args[2]
+			rewards[0] += (self.gamma**rounds - self.gamma) * self.value(terminal)
 		super().add(*args, **kwargs)
+
+	def value(self, observation: np.ndarray) -> float:
+		"""The policy's value of an observation, as the trainer's bootstrap takes it."""
+		assert self.policy is not None
+		with torch.no_grad():
+			x = torch.as_tensor(observation[None], device=self.policy.device)
+			return float(self.policy.predict_values(x)[0])
 
 	def compute_returns_and_advantage(self, last_values: torch.Tensor, dones: np.ndarray) -> None:
 		values = last_values.clone().cpu().numpy().flatten()
@@ -235,7 +252,9 @@ def baselines(env: BattleEnv, seeds: range, difficulty: str | None = None) -> No
 		report(f"baseline{where} {name}", results)
 
 
-def warm_start(model: MaskablePPO, demos: list[dict], epochs: int, lr: float) -> float:
+def warm_start(
+	model: MaskablePPO, demos: list[dict], epochs: int, lr: float, describe: texts.Describe
+) -> float:
 	"""
 	Behavior cloning: cross-entropy of the policy's masked action distribution towards each choice
 	of the demonstrations, as the gym environment would have asked for it. Returns the share of
@@ -249,7 +268,11 @@ def warm_start(model: MaskablePPO, demos: list[dict], epochs: int, lr: float) ->
 			masks.append(mask(count))
 			actions.append(action)
 
-	for obs, unit, switched, choice in warm.decisions(demos):
+	decisions = list(warm.decisions(demos))
+	# The demonstrations' abilities and buffs must be in the text table, as the live observations
+	# are: a guid the table does not know is row 0, and the policy would learn another observation.
+	texts.TABLE.ensure([g for obs, _, _, _ in decisions for g in texts.guids(obs)], describe)
+	for obs, unit, switched, choice in decisions:
 		options = groups(obs, unit, switched)
 		group = next((g for g in options if choice in g), None)
 		if group is None:
@@ -278,7 +301,11 @@ def warm_start(model: MaskablePPO, demos: list[dict], epochs: int, lr: float) ->
 
 
 class Progress(BaseCallback):
-	"""Reports every 100 episodes; with a round budget, stops training once it is played."""
+	"""
+	Reports every 100 episodes; with a round budget, stops training once it is played. The rollout
+	in which the budget is reached is finished and trained: the trainer stops the training after
+	that update, so the budget costs at most one rollout more than it asks for.
+	"""
 
 	def __init__(self, env: BattleEnv, rounds: float | None) -> None:
 		super().__init__()
@@ -286,6 +313,10 @@ class Progress(BaseCallback):
 		self.rounds = rounds
 		self.winners: list[str] = []
 		self.t0 = time.time()
+		# The budget is reached; the rollout in progress still collects.
+		self.finishing = False
+		# That rollout has ended; the trainer updates the policy before the next step.
+		self.rolled = False
 
 	def report(self) -> None:
 		recent = self.winners[-100:]
@@ -303,10 +334,19 @@ class Progress(BaseCallback):
 				self.winners.append(info.get("winner", ""))
 				if len(self.winners) % 100 == 0:
 					self.report()
-		if self.rounds is not None and self.env.rounds >= self.rounds:
-			self.report()
+		if self.finishing and self.rolled:
+			# The rollout that crossed the budget has been trained; stop the training.
 			return False
+		if self.rounds is not None and self.env.rounds >= self.rounds:
+			if not self.finishing:
+				self.report()
+				self.finishing = True
+			return True
 		return True
+
+	def _on_rollout_end(self) -> None:
+		if self.finishing:
+			self.rolled = True
 
 
 def main() -> None:
@@ -358,12 +398,15 @@ def main() -> None:
 		rollout_buffer_class=RoundDiscountBuffer,
 	)
 	model.rollout_buffer.env = env
+	model.rollout_buffer.policy = model.policy
 	eval_seeds = seeds.evaluation(args.eval_seeds)
 	for level in levels:
 		baselines(env, eval_seeds, level)
 		evaluate(model, env, eval_seeds, "before", level)
 	if args.warm:
-		accuracy = warm_start(model, warm.load(args.warm), args.warm_epochs, 1e-3)
+		accuracy = warm_start(
+			model, warm.load(args.warm), args.warm_epochs, 1e-3, env.client.describe
+		)
 		print(f"warm start: ranks {accuracy:.0%} of the demonstrations' choices first", flush=True)
 		for level in levels:
 			evaluate(model, env, eval_seeds, "warm", level)

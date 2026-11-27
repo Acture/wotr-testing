@@ -38,6 +38,8 @@ NAMES = (
 		"path-distance/10",
 		"variant",
 		"conversion",
+		"weapon-set/3",
+		"auto-use-active",
 		"choice-targets/10",
 		"choice-target",
 	]
@@ -141,9 +143,16 @@ def candidate(obs: dict, cand: dict) -> np.ndarray:
 	f[base + 6] = ((paths(obs).get(cand.get("path")) or {}).get("distance") or 0) / 10
 	f[base + 7] = float(cand.get("variant") is not None)
 	f[base + 8] = float(">" in ability)
+	if cand["kind"] == "WeaponSet":
+		# The set the candidate switches to, so the policy tells the sets apart.
+		f[base + 9] = (int(cand["variant"]) if cand.get("variant") is not None else 0) / 3
 	slot = next((s for s in me.get("slots", []) if s["id"] == ability), None) if ability else None
 	if slot is not None:
 		f[SIZE - len(SLOT_NAMES) :] = slot_features(slot)
+	if cand["kind"] == "AutoUse" and slot is not None:
+		# The ability the unit's AI uses on its own: the attack it makes is that ability's cast.
+		if slot.get("blueprint") == me.get("autoUse"):
+			f[base + 10] = 1.0
 	return f
 
 

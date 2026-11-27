@@ -537,7 +537,10 @@ the DC and caster level the game calculates now (`AbilityData.CalculateParams`);
 the blueprint's targets (enemies, allies, self, a point), its effect on enemies and on
 allies, its area and radius, whether it provokes attacks of opportunity, the uses
 the action bar shows, whether the unit can use it now and, for a toggle, whether it is
-on. Candidates name a slot by its id. The tooltip's damage range, which the game shows
+on. A unit the player does not control (an enemy in self-play) can use a slot only
+while the game would give it the command: in turn-based combat on its own turn, and
+while the command can still act it, as the candidates below decide. Candidates name a
+slot by its id. The tooltip's damage range, which the game shows
 only for kineticist abilities, is not reported. A controlled unit is ready
 when it is conscious, the game lets it act and it has no command left. It takes a
 command (`Commandable`) when it is ready, and in real time also while it is busy: a

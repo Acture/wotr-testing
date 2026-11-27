@@ -21,6 +21,8 @@ step restarts the game's random numbers from a seed of the episode's seed and th
 so episodes from one seed meet the same dice at the same step whatever was chosen before.
 Candidates that stand for any point on the ground are left out. With several difficulty levels,
 each episode's level is drawn from its seed; reset(options={"difficulty": level}) chooses one.
+A step that ends the episode at the battle's step limit reports the state it was cut off in
+(`terminal_observation`), whose value the trainer bootstraps the step with.
 """
 
 from __future__ import annotations
@@ -170,6 +172,9 @@ class BattleEnv(gym.Env):
 		# the last gym step took (0 for a decision that did not run the battle, such as a switch).
 		self.rounds = 0.0
 		self.last_rounds = 0.0
+		# The observation of a step that ended the episode at the step limit: the state the battle
+		# was cut off in, whose value the trainer bootstraps the step with.
+		self.terminal_observation: np.ndarray | None = None
 
 	def _unit(self) -> str | None:
 		if self.group is not None:
@@ -237,6 +242,7 @@ class BattleEnv(gym.Env):
 
 	def step(self, action: int):
 		self.last_rounds = 0.0
+		self.terminal_observation = None
 		unit = self._unit()
 		row = self.choices()[int(action)]
 		if self.group is None and len(row) > 1:
@@ -255,7 +261,10 @@ class BattleEnv(gym.Env):
 		)
 		total, terminated, truncated = self._advance(choices)
 		info = {"winner": self.winner} if terminated or truncated else {}
-		return self._encode(), float(total), terminated, truncated, info
+		observation = self._encode()
+		if truncated:
+			self.terminal_observation = observation
+		return observation, float(total), terminated, truncated, info
 
 	def close(self) -> None:
 		self.client.close()

@@ -516,6 +516,45 @@ namespace WotR.Testing.BattleTests
             Assert.True(environment.Battle.LastCleanup.Clean, environment.Battle.LastCleanup.ToString());
         }
 
+        /// <summary>
+        /// A controlled unit the player does not control (an enemy in self-play) reports its action bar slots as
+        /// usable only while the game would give it the command: on its own turn, and while the command can still
+        /// act it. Before, a slot was reported usable whenever the unit had the resources.
+        /// </summary>
+        [Fact]
+        public void AControlledEnemysSlotsAreUsableOnlyWhileItCanUseThem()
+        {
+            game.RequireGame();
+            using var environment = BattleEnvironment.Start(Casters(turnBased: true), seed: 13, new BattleEnvironmentOptions { MaxSteps = 60 });
+            var bless = "spell:ClericSpellbook:1:Bless";
+            // Out of combat the game runs in real time; the units see each other and the fight turns.
+            var result = environment.Step(BattleAction.Wait("fighter"));
+
+            // The fighter's turn: the cultist waits for its own and cannot use its spell.
+            result = WaitForTurn(environment, result, "fighter");
+            var cultist = result.Observation.Unit("cultist");
+            Assert.False(cultist.Commandable);
+            Assert.Contains(cultist.Slots, s => s.Id == bless);
+            Assert.All(cultist.Slots, s => Assert.False(s.Usable, s.Id));
+            Assert.DoesNotContain(result.Observation.Candidates, c => c.Unit == "cultist");
+
+            // The cultist's turn: it can cast the spell, and its slot says so.
+            result = WaitForTurn(environment, result, "cultist");
+            var ready = result.Observation.Unit("cultist");
+            Assert.True(ready.Commandable);
+            Assert.True(ready.Slots.Single(s => s.Id == bless).Usable);
+            Assert.Contains(result.Observation.Candidates, c => c.Kind == BattleActionKind.UseAbility && c.Ability == bless);
+        }
+
+        /// <summary>Steps through the turns until the unit's own turn waits for its command.</summary>
+        private static BattleStepResult WaitForTurn(BattleEnvironment environment, BattleStepResult result, string unit)
+        {
+            for (var i = 0; i < 6 && !result.Observation.Unit(unit).Commandable; i++)
+                result = environment.Step(BattleAction.EndTurn(Assert.Single(result.Observation.Ready)));
+            Assert.True(result.Observation.Unit(unit).Commandable, environment.Record.ToString());
+            return result;
+        }
+
         [Fact]
         public void InTurnBasedCombatThePlayersUnitCastsThroughTheActionBarAndThePointer()
         {

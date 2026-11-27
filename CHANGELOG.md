@@ -53,6 +53,29 @@
   argument. Harmony 2.0.4 emits invalid IL (`call 0x00000001`) when a prefix
   takes a by-ref struct argument by value, which failed startup as
   `[INIT_FAILED] harmony`. Later Harmony copies accept either form.
+- The battle environment's default outcome check reads the sides and the
+  consciousness of the battle's units, without collecting the action bars of
+  every controlled unit after each frame; a consumer's own
+  `BattleEnvironmentOptions.Outcome` still gets the full observation.
+- A controlled unit the player does not control (an enemy in self-play) reports
+  its action bar slots as usable only while the game would give it the command:
+  in turn-based combat on its own turn, and while the command can still act it.
+  Before, a slot was reported usable whenever the unit had the resources, while
+  the offered actions excluded it.
+- Training examples: the features tell the weapon sets apart (the set a
+  candidate switches to) and mark the auto-use ability a unit has chosen, so the
+  policy can tell the states apart. The feature vector grew, so a policy saved
+  before this cannot be loaded into a program of this version.
+- Training examples: the PPO example's warm start registers the demonstrations'
+  abilities and buffs in the text table before it encodes them, so the behavior
+  cloning trains on the observations live play produces.
+- Training examples: the PPO example's round budget finishes the rollout that
+  reached it and trains it; the training stops after that update, so a budget
+  reached within the first rollout still trains once and a larger budget does not
+  lose its last rollout.
+- Training examples: the PPO example discounts the bootstrap of a step that was
+  cut off at the step limit by the combat rounds that step took, as its other
+  transitions are discounted.
 
 
 ## 0.1.0-preview.4 - 2026-11-18

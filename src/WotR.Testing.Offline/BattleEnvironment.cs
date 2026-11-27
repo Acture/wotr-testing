@@ -210,7 +210,7 @@ namespace WotR.Testing.Offline
                 var stalled = TimeSpan.Zero;
                 battle.RunFrames(battle.Scenario.TurnBased ? Options.TurnBasedStepLimit : Options.DecisionInterval, () =>
                 {
-                    var ended = Decide(ObserveUnits());
+                    var ended = Decide();
                     if (ended != null)
                     {
                         outcome = ended;
@@ -336,7 +336,7 @@ namespace WotR.Testing.Offline
             step = 0;
             truncated = false;
             failure = null;
-            outcome = Decide(ObserveUnits());
+            outcome = Decide();
             record = new BattleEpisodeRecord(battle.Scenario.Name, Episode, battle.Seed,
                 OfflineRuntime.Inputs?.Identity?.GameVersion, HarnessState.ModId, HarnessState.ModVersion, LibraryVersion,
                 battle.InitialState.Lines, battle.Scenario.Difficulty);
@@ -348,10 +348,16 @@ namespace WotR.Testing.Offline
             => typeof(BattleEnvironment).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
                 ?? typeof(BattleEnvironment).Assembly.GetName().Version?.ToString();
 
-        private BattleOutcome Decide(IReadOnlyList<BattleUnitObservation> units)
+        /// <summary>
+        /// Decides the episode from the units after each frame; null keeps it running. The custom outcome callback
+        /// gets the full observation; without one, the episode ends when at most one side has a conscious unit,
+        /// which the battle's own units tell without collecting their action bars.
+        /// </summary>
+        private BattleOutcome Decide()
         {
-            if (Options.Outcome != null) return Options.Outcome(units);
-            var standing = units.Where(u => u.Conscious).Select(u => u.Side).Distinct(StringComparer.Ordinal).ToList();
+            if (Options.Outcome != null) return Options.Outcome(ObserveUnits());
+            var standing = battle.Units.Where(u => u.Unit.Descriptor.State.IsConscious).Select(u => u.Side)
+                .Distinct(StringComparer.Ordinal).ToList();
             if (standing.Count > 1) return null;
             return standing.Count == 1
                 ? new BattleOutcome(standing[0], $"only side {standing[0]} has a conscious unit")
@@ -551,17 +557,50 @@ namespace WotR.Testing.Offline
             => target != unit && !target.Descriptor.State.IsDead && unit.CanAttack(target)
                 && unit.CanAttack(u => u.GetThreatHand()?.Weapon);
 
-        /// <summary>A controlled unit's action bar, each slot marked usable as <see cref="AbilityCandidates"/> decides it.</summary>
-        private static IReadOnlyList<BattleSlotObservation> ObserveSlots(BattleUnit entry)
+        /// <summary>
+        /// A controlled unit's action bar, each slot marked usable as <see cref="AbilityCandidates"/> decides it: for a
+        /// unit the player controls, as the action bar does; for a unit the player does not control, by the slot's own
+        /// availability and, in turn-based combat, by the turn the unit is on and the action it has left.
+        /// </summary>
+        private IReadOnlyList<BattleSlotObservation> ObserveSlots(BattleUnit entry, bool commandable)
         {
             if (!entry.Controlled) return Array.Empty<BattleSlotObservation>();
             var asPlayer = entry.Unit.IsDirectlyControllable || !InTurnBasedCombat;
             return BattleAbilities.Collect(entry.Unit)
-                .Select(slot => BattleAbilities.Observe(slot, asPlayer ? BattleAbilities.PlayerCanUse(slot) : BattleAbilities.AvailableToUnit(slot)))
+                .Select(slot => BattleAbilities.Observe(slot, asPlayer
+                    ? BattleAbilities.PlayerCanUse(slot)
+                    : BattleAbilities.AvailableToUnit(slot) && CanUseInTurn(entry, slot, commandable)))
                 .ToList().AsReadOnly();
         }
 
-        private static BattleUnitObservation ObserveUnit(BattleUnit entry, bool ready, bool commandable)
+        /// <summary>
+        /// Whether a unit the player does not control could use the slot in this turn: in real time always; in
+        /// turn-based combat its turn must wait for its command and the command must be able to start it, the rule
+        /// <see cref="CanStartInTurn(UnitEntityData, Kingmaker.UnitLogic.Commands.Base.UnitCommand)"/> applies to the
+        /// commands of <see cref="AbilityCandidates"/>.
+        /// </summary>
+        private bool CanUseInTurn(BattleUnit entry, BattleAbilitySlot slot, bool commandable)
+        {
+            if (!InTurnBasedCombat) return true;
+            if (!commandable) return false;
+            var ability = slot.Ability;
+            if (ability == null) return true;
+            var unit = entry.Unit;
+            if (ability.TargetAnchor == Kingmaker.UnitLogic.Abilities.Blueprints.AbilityTargetAnchor.Owner)
+                return CanStartInTurn(unit, BattleAbilities.CommandFor(ability, unit));
+            // A point ability is checked when the point is given, as the candidates of the point do.
+            if (ability.TargetAnchor == Kingmaker.UnitLogic.Abilities.Blueprints.AbilityTargetAnchor.Point) return true;
+            // An ability on a target: the game offers it when a target it accepts can still be acted on.
+            foreach (var target in battle.Units)
+            {
+                var wrapper = BattleAbilities.TargetOn(ability, target.Unit);
+                if (!ability.CanTarget(wrapper)) continue;
+                if (CanStartInTurn(unit, BattleAbilities.CommandFor(ability, wrapper))) return true;
+            }
+            return false;
+        }
+
+        private BattleUnitObservation ObserveUnit(BattleUnit entry, bool ready, bool commandable)
         {
             var unit = entry.Unit;
             var descriptor = unit.Descriptor;
@@ -595,7 +634,7 @@ namespace WotR.Testing.Offline
                 state.IsConscious, state.CanAct, state.CanMove, ready, unit.IsInCombat, new BattlePoint(position.x, position.y, position.z),
                 unit.Orientation, unit.Corpulence, unit.CurrentSpeedMps, command, cooldown.StandardAction, cooldown.MoveAction,
                 cooldown.SwiftAction, buffs, resources, abilities, spellSlots, togglesOn, BattleAbilities.ItemUses(unit), commandable, controls,
-                ObserveSlots(entry));
+                ObserveSlots(entry, commandable));
         }
 
         /// <summary>

@@ -8,8 +8,18 @@
   v2 and Xunit.SkippableFact), the game path settings, the session fixture, the
   example tests and a GitHub Actions workflow. No dependency is downloaded,
   unzipped or copied by hand. The template is available as a copy from this
-  repository and as `dotnet new install WotR.Testing.Sdk`; the package is not
+  repository and as a locally built package (`dotnet pack
+  src/WotR.Testing.Sdk/WotR.Testing.Sdk.csproj`, then `dotnet new install` of
+  the built `.nupkg` and `dotnet new wotr-test -n MyMod -o
+  tests/MyMod.OfflineTests` with a plain, dot-free name); the package is not
   published to a public feed yet.
+- The template's generated project imports an untracked `GamePath.props` next
+  to itself, so the guide's local game path setup works without copying the
+  setting into the project file; a command-line property still wins. The
+  template's GitHub Actions workflow skips pull requests from forks, so a
+  fork's code never runs on the game-owning self-hosted runner; maintainers
+  test a fork contribution by pushing its commits to a branch of the mod's
+  repository first.
 - New [mod test SDK guide](docs/sdk.md): the supported game, Unity, Mono and
   UnityModManager versions (including the ones this repository does not know),
   the game path configuration, how to write synchronous and time-dependent

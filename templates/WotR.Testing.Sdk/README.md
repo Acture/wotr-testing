@@ -32,7 +32,10 @@ UnityModManager log line. A test that needs the Unity engine is reported as
 ## Continuous integration
 
 `ci/offline-tests.yml` is a workflow for a self-hosted Windows runner with the
-game installed. Copy it to `.github/workflows/` and adapt the paths.
+game installed. Copy it to `.github/workflows/` and adapt the paths. The runner
+is a machine with the game on its disk, so the workflow never runs a fork's
+code: pull requests from forks are skipped, and a maintainer tests a fork
+contribution by pushing its commits to a branch of this repository first.
 
 ## More
 

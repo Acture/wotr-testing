@@ -34,8 +34,10 @@ A mod author starts from the [SDK template](docs/sdk.md): a .NET Framework 4.8
 xUnit v2 project with every dependency pinned as a `PackageReference`, the game
 path settings, the session fixture, the examples and a CI workflow. Copy
 [`templates/WotR.Testing.Sdk/`](templates/WotR.Testing.Sdk/README.md) from this
-repository, or install the template package with
-`dotnet new install WotR.Testing.Sdk --version 0.1.0-preview.4`.
+repository, or build the template package locally (`dotnet pack
+src/WotR.Testing.Sdk/WotR.Testing.Sdk.csproj -o artifacts/packages`, then
+`dotnet new install artifacts/packages/WotR.Testing.Sdk.0.1.0-preview.4.nupkg`;
+the package is not on a public feed).
 
 To follow unreleased changes, use this repository as a Git submodule instead: import
 `external/wotr-testing/src/WotR.Testing.Offline/build/WotR.Testing.Offline.targets`,

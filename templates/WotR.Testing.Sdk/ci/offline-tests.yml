@@ -6,6 +6,12 @@
 # its own installation of the game (a self-hosted Windows runner) or a snapshot from a private artifact store;
 # GitHub's hosted runners have no game files and cannot run these tests.
 #
+# Trust boundary: the runner is a machine you own with the game on its disk, so only code you trust may run here.
+# The job below therefore skips pull requests from forks: their code never executes on this runner, and a read-only
+# GITHUB_TOKEN does not isolate the local disk. To test a fork contribution, a maintainer pushes its commits to a
+# branch of this repository and opens the pull request from there (same-repository pull requests and pushes run);
+# review or approve the contribution first, exactly as you would for any code that runs on your machines.
+#
 # Copy this file to .github/workflows/ in the mod's repository and adapt the paths and the runner labels.
 name: Offline tests
 
@@ -26,6 +32,9 @@ jobs:
   offline:
     # A runner with the game installed. The labels are the runner's own configuration.
     runs-on: [self-hosted, windows, x64]
+    # Never run a fork's code on the game-owning runner (see the trust boundary at the top of this file). Pushes,
+    # manual runs and pull requests whose head branch is in this repository still run.
+    if: github.event.pull_request.head.repo.fork != true
     timeout-minutes: 30
     env:
       # The game directory on the runner. A repository or environment variable works; keep it out of the repository.

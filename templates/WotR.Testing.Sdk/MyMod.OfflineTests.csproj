@@ -13,6 +13,11 @@
 
     The full guide is https://github.com/Acture/wotr-testing/blob/main/docs/sdk.md
   -->
+
+  <!-- An untracked GamePath.props next to this file holds the local game directory (the guide documents the format).
+       A command-line -p:WrathInstallDir=... still wins over the file. -->
+  <Import Project="$(MSBuildThisFileDirectory)GamePath.props" Condition="Exists('$(MSBuildThisFileDirectory)GamePath.props')" />
+
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
     <PlatformTarget>x64</PlatformTarget>

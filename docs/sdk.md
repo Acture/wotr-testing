@@ -52,12 +52,31 @@ Three ways to get the project:
 | Way | How |
 | --- | --- |
 | Copy the template | Take `templates/WotR.Testing.Sdk/` from the [repository](https://github.com/Acture/wotr-testing) or from the `external/wotr-testing` submodule, rename the files and the namespace, and edit the two settings below. |
-| Template package | `dotnet new install WotR.Testing.Sdk --version 0.1.0-preview.4`, then `dotnet new wotr-test -n MyMod`. The package is built from this repository; it is not on a public feed yet (see [distribution boundaries](#distribution-boundaries)). |
+| Template package | Build and install it locally from this repository (see below), then generate the test project. The package is not on a public feed yet (see [distribution boundaries](#distribution-boundaries)). |
 | Your own project | Add the same `PackageReference` lines to an existing .NET Framework 4.8 xUnit v2 test project and add the fixture from the template. |
 
+The template package route, from a clone of this repository:
+
+```powershell
+dotnet pack src/WotR.Testing.Sdk/WotR.Testing.Sdk.csproj -o artifacts/packages
+dotnet new install artifacts/packages/WotR.Testing.Sdk.0.1.0-preview.4.nupkg
+```
+
+Then, from the root of the mod's repository:
+
+```powershell
+dotnet new wotr-test -n MyMod -o tests/MyMod.OfflineTests
+```
+
+The name (`MyMod` here) replaces the mod's name in the namespace, the fixture
+class and the paths, so it must be a plain C# identifier without dots: the
+template itself adds the `.OfflineTests` suffix, and a dotted name would produce
+an invalid class name and doubled suffixes. The output directory is the one the
+commands in this guide expect.
+
 The generated project holds `MyMod.OfflineTests.csproj`, the fixture
-`MyModGame.cs`, the example `ExampleTests.cs` and the CI workflow
-`ci/offline-tests.yml`.
+`MyModGame.cs`, the example `ExampleTests.cs`, the generated `README.md` and the
+CI workflow `ci/offline-tests.yml`.
 
 The template pins the SDK version this repository builds. When a newer preview
 is published, change the `WotR.Testing` version in the test project and read the
@@ -300,14 +319,25 @@ made with `New-WotrSnapshot.ps1` from a private artifact store. Keep the
 environment report on the runner, or upload it as a workflow artifact with an
 action pinned by commit SHA.
 
+A self-hosted runner is a machine you own with the game on its disk, so only
+code you trust may run on it; a read-only `GITHUB_TOKEN` does not isolate the
+local disk. The template's workflow therefore skips pull requests from forks
+(`if: github.event.pull_request.head.repo.fork != true`): pushes, manual runs
+and pull requests from branches of the mod's repository run, a fork's code never
+does. To test a fork contribution, review it first, then push its commits to a
+branch of the mod's repository and open the pull request from there — exactly
+the approval any code that runs on your machines needs.
+
 ## Distribution boundaries
 
 These are open, and none of them has a workaround that hides it:
 
 - **The template package is not published yet.** `WotR.Testing.Sdk` is built
-  from this repository and verified locally, but no public feed carries it.
-  Until the maintainer publishes it, copy `templates/WotR.Testing.Sdk/` from
-  the repository or the submodule.
+  from this repository and verified locally, but no public feed carries it, so
+  `dotnet new install WotR.Testing.Sdk` (without a path) cannot work. Until the
+  maintainer publishes it, build it with `dotnet pack` and install the built
+  `.nupkg` by path as shown in [get the template](#get-the-template), or copy
+  `templates/WotR.Testing.Sdk/` from the repository or the submodule.
 - **The Mono host has no package of its own.** `wotr-mono-host` ships inside
   the `WotR.Testing.Offline` package's `tools/` folder and is started by the
   package's build targets. A standalone host package is unverified and

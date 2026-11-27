@@ -6,6 +6,15 @@
   project that must build and run without the game reports the missing inputs as
   a warning instead of a build error, and leaves out the game references, the
   module initializer and the offline run.
+- `dotnet test` at the repository root now runs every test scope in
+  `WotR.Testing.slnx`: the game-independent fuzzing scope and the offgame scope.
+  The offgame scope runs the fuzz targets and the FsCheck properties on the
+  game's own Unity Mono runtime; without a WotR installation it reports itself
+  as skipped, so the run neither fails nor passes the scope silently.
+- The offgame scope moved from `tests/fixtures/FuzzTests/` to
+  `tests/WotR.Testing.Offline.Tests/`: it is a default scope now, not an opt-in
+  fixture. A failed fuzz run leaves its report, with the seed and the minimized
+  replay case, next to the run report.
 
 ## 0.1.0-preview.3 - 2026-10-18
 

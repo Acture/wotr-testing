@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Text.Json;
 using System.Threading.Tasks;
 using FsCheck.Fluent;
 using WotR.Testing.Fuzzing;
@@ -7,7 +9,7 @@ using Xunit;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 
-namespace FuzzTests
+namespace WotR.Testing.Offline.Tests
 {
     public interface ICounterApi
     {
@@ -79,7 +81,7 @@ namespace FuzzTests
         {
             CounterApi.Created = CounterApi.Disposed = 0;
             var failure = Assert.Throws<FuzzFailureException>(() =>
-                Fuzz.Check<ICounterApi>(() => new CounterApi(broken: true), Options()));
+                FuzzScope.Run<ICounterApi>("stateful-failure", () => new CounterApi(broken: true), Options()));
             Assert.Equal(FuzzStatus.Finding, failure.Report.Status);
             Assert.True(failure.Report.ShrinkAttempts > 0);
             Assert.Contains("stateful counter failure", failure.Report.Failure.Message);
@@ -89,6 +91,15 @@ namespace FuzzTests
             Assert.Equal(failure.Report.Failure.Method, replay.Failure.Method);
             Assert.Equal(failure.Report.Failure.ExceptionType, replay.Failure.ExceptionType);
             Assert.Equal(CounterApi.Created, CounterApi.Disposed);
+            Assert.Equal(12345, failure.Report.Seed);
+            // The failed run leaves the replayable input on disk, next to the run report.
+            var artifact = Path.Combine(FuzzScope.ReportDirectory(), "fuzz-stateful-failure.json");
+            Assert.True(File.Exists(artifact), "the failed fuzz run must leave a replayable artifact.");
+            using var saved = JsonDocument.Parse(File.ReadAllText(artifact));
+            Assert.Equal(12345, saved.RootElement.GetProperty("Seed").GetInt32());
+            var savedCase = saved.RootElement.GetProperty("ReplayCase").GetString();
+            Assert.False(string.IsNullOrEmpty(savedCase));
+            Assert.Equal(FuzzStatus.Finding, Fuzz.Replay<ICounterApi>(() => new CounterApi(broken: true), savedCase, Options()).Status);
         }
 
         [Fact]
@@ -96,7 +107,7 @@ namespace FuzzTests
         {
             var options = Options();
             options.IsUnavailable = error => error.Message.Contains("[synthetic-native-edge]");
-            var failure = Assert.Throws<FuzzFailureException>(() => Fuzz.Check<INativeApi>(() => new NativeApi(), options));
+            var failure = Assert.Throws<FuzzFailureException>(() => FuzzScope.Run<INativeApi>("unavailable", () => new NativeApi(), options));
             Assert.Equal(FuzzStatus.AllSkipped, failure.Report.Status);
             Assert.Equal(0, failure.Report.CasesPassed);
             Assert.Equal(100, failure.Report.CasesSkipped);

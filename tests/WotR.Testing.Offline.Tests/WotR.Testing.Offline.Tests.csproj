@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../GamePath.props" Condition="Exists('../../GamePath.props')" />
+  <PropertyGroup>
+    <TargetFramework Condition="'$(OS)'=='Windows_NT'">net48</TargetFramework>
+    <TargetFramework Condition="'$(OS)'!='Windows_NT'">net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <PlatformTarget Condition="'$(OS)'=='Windows_NT'">x64</PlatformTarget>
+    <!-- The scope runs on the game's own runtime; without the inputs it reports itself as skipped instead of failing. -->
+    <WotrAllowMissingInputs>true</WotrAllowMissingInputs>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <Import Project="../../src/WotR.Testing.Offline/build/WotR.Testing.Offline.targets" />
+  <PropertyGroup>
+    <!-- Known from the inputs: the scope's tests and the offline runtime need the game. -->
+    <WotrScopeAvailable Condition="'$(WotrInputsMissing)'!='true'">true</WotrScopeAvailable>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(WotrScopeAvailable)'=='true'">
+    <!-- No mod is initialized by this scope: the game's own assembly is the compile-time reference. -->
+    <WotrModAssembly>$(WotrInputRoot)/Wrath_Data/Managed/Assembly-CSharp.dll</WotrModAssembly>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(WotrScopeAvailable)'=='true'">
+    <!-- FsCheck and the fuzzing library flow from the meta-project; do not reference them directly here. -->
+    <ProjectReference Include="../../src/WotR.Testing/WotR.Testing.csproj" />
+    <!-- Built first so the offline run has its host, its runner and its build tasks. -->
+    <ProjectReference Include="../../src/WotR.Testing.MonoHost/WotR.Testing.MonoHost.csproj" ReferenceOutputAssembly="false" Private="false" PrivateAssets="all" />
+    <ProjectReference Include="../../src/WotR.Testing.VSTest/WotR.Testing.VSTest.csproj;../../src/WotR.Testing.Build/WotR.Testing.Build.csproj" ReferenceOutputAssembly="false" Private="false" PrivateAssets="all" />
+    <ProjectReference Include="../../src/WotR.Testing.VSTestBootstrap/WotR.Testing.VSTestBootstrap.csproj" ReferenceOutputAssembly="false" Private="false" PrivateAssets="all" SkipGetTargetFrameworkProperties="true" />
+    <Compile Include="Scope/**/*.cs" />
+    <!-- The synthetic report writer is shared with the CLI integration fixture. -->
+    <Compile Include="../fixtures/MonoTests/RuntimeReport.cs" Link="RuntimeReport.cs" />
+  </ItemGroup>
+
+  <!-- Without the game the scope is reported as skipped: never as a failure and never as a silent pass. -->
+  <ItemGroup Condition="'$(WotrScopeAvailable)'!='true'">
+    <Compile Include="ScopeUnavailable.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" Condition="'$(TargetFramework)'=='net48'" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!--
+    The scope's dependencies follow the inputs: the meta-project and the offline library need the game. A restore
+    without the inputs leaves them out, so a later build without a restore cannot compile the scope. Say so
+    instead of failing with missing types.
+  -->
+  <Target Name="EnsureWotrScopeRestore" AfterTargets="ResolveAssemblyReferences" Condition="'$(WotrScopeAvailable)'=='true'">
+    <Error Condition="'@(ReferencePath->WithMetadataValue('Filename','WotR.Testing.Fuzzing'))'==''"
+           Text="[ENV_MISSING] The offgame scope was restored without the game inputs. Run 'dotnet restore' again." />
+  </Target>
+</Project>

@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  fuzzing:
-    name: Interface fuzzing
+  tests:
+    name: Default test scope
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -24,8 +24,10 @@ jobs:
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '8.0.x'
-      - name: Test automatic interface generation, shrinking and replay
-        run: dotnet test tests/WotR.Testing.Fuzzing.Tests/WotR.Testing.Fuzzing.Tests.csproj --configuration Release
+      # The default scope: the game-independent fuzzing tests and the offgame scope, which is reported as
+      # skipped here because this runner has no WotR installation.
+      - name: Run every discovered test scope
+        run: dotnet test --configuration Release
   repository:
     name: Repository checks
     runs-on: ubuntu-latest

@@ -6,4 +6,6 @@
   <Project Path="src/WotR.Testing.VSTestBootstrap/WotR.Testing.VSTestBootstrap.csproj" />
   <Project Path="src/WotR.Testing.Offline/WotR.Testing.Offline.csproj" />
   <Project Path="src/WotR.Testing/WotR.Testing.csproj" />
+  <Project Path="tests/WotR.Testing.Fuzzing.Tests/WotR.Testing.Fuzzing.Tests.csproj" />
+  <Project Path="tests/WotR.Testing.Offline.Tests/WotR.Testing.Offline.Tests.csproj" />
 </Solution>

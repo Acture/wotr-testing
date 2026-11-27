@@ -4,9 +4,10 @@ using FsCheck;
 using FsCheck.Fluent;
 using FsCheck.Xunit;
 using WotR.Testing.Offline;
+using WotR.Testing.IntegrationFixture;
 using Xunit;
 
-namespace WotR.Testing.IntegrationFixture
+namespace WotR.Testing.Offline.Tests
 {
     public sealed class FuzzProperties : IClassFixture<RuntimeReport>
     {

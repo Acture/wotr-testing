@@ -1,0 +1,60 @@
+# WotR offline tests
+
+# Offline tests for a WotR mod.
+#
+# The game files are licensed and must never enter the repository, a package or a public artifact. The runner needs
+# its own installation of the game (a self-hosted Windows runner) or a snapshot from a private artifact store;
+# GitHub's hosted runners have no game files and cannot run these tests.
+#
+# Copy this file to .github/workflows/ in the mod's repository and adapt the paths and the runner labels.
+name: Offline tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: offline-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline:
+    # A runner with the game installed. The labels are the runner's own configuration.
+    runs-on: [self-hosted, windows, x64]
+    timeout-minutes: 30
+    env:
+      # The game directory on the runner. A repository or environment variable works; keep it out of the repository.
+      WOTR_INPUT_ROOT: ${{ vars.WOTR_INPUT_ROOT }}
+      # Which DLCs exist offline: all (default), none, local or a list such as Dlc4,Dlc6.
+      WOTR_DLC: all
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          submodules: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '10.0.x'
+          cache: true
+          cache-dependency-path: '**/*.csproj'
+      - name: Build the mod
+        run: dotnet build src/MyMod/MyMod.csproj --configuration Release
+      - name: Run the offline tests
+        run: dotnet test tests/MyMod.OfflineTests/MyMod.OfflineTests.csproj --configuration Release --logger trx --results-directory artifacts/test-results
+      - name: Show where the environment report was written
+        if: always()
+        run: |
+          $report = Get-ChildItem -Path artifacts/test-results -Filter environment.json -Recurse | Select-Object -First 1
+          if ($report) { Write-Host "Environment report: $($report.FullName)" }
+      # Upload the results as a workflow artifact if the report should leave the runner. Pin the action by commit
+      # SHA, as this repository does for its own workflows.
+
+# Other settings the run understands:
+#   WOTR_ALLOW_UNVERIFIED_VERSION=1  run on a game version the SDK has not verified yet (the report records it)
+#   WotrRuntime=netfx                run on .NET Framework instead of the game's Unity Mono runtime
+#   WOTR_HARMONY=game                load the game's own 0Harmony.dll instead of UnityModManager's copy

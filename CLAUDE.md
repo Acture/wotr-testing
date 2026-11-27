@@ -10,7 +10,10 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
 
 - `src/WotR.Testing/`: `WotR.Testing` meta-package (no code; depends on the
   components). `src/WotR.Testing.Offline/`: offline library, its `build/*.targets`
-  and README.
+  and README. `src/WotR.Testing.Sdk/`: the `WotR.Testing.Sdk` template package.
+- `templates/WotR.Testing.Sdk/`: the SDK template for a mod's test project
+  (pinned `PackageReference` dependencies, game path settings, session fixture,
+  example tests, CI workflow); packed into `src/WotR.Testing.Sdk/`.
 - `src/WotR.Testing.Fuzzing/`: game-independent automatic interface fuzzer;
   `tests/WotR.Testing.Fuzzing.Tests/` runs on .NET 8 without game inputs.
 - `src/WotR.Testing.MonoHost/`: `wotr-mono-host`, starts the game's own Unity Mono
@@ -24,7 +27,9 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   `New-WotrSnapshot.ps1` (game-file snapshot). Consumers call these paths through
   the submodule; moving them is a breaking change.
 - `tests/`: repository checks, CLI integration tests and small synthetic fixtures
-  (`tests/fixtures/`) for the native runtime and FsCheck.
+  (`tests/fixtures/`) for the native runtime and FsCheck. `tests/test_sdk_template.py`
+  keeps the SDK template's pinned versions and the template package's allowlist in
+  step with the repository.
 - `docs/`: public documentation. `data/`: no datasets; game files never go there.
 - `.github/`: CI, pull request template and CODEOWNERS.
 - `notes/`: optional private notes submodule; public builds and checks must not

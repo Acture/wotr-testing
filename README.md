@@ -6,6 +6,7 @@ Test tooling for Pathfinder: Wrath of the Righteous mods.
 |---|---|
 | [`WotR.Testing.Offline`](src/WotR.Testing.Offline/README.md) | Runs UnityModManager mods against the real game assemblies, vanilla blueprint pack and settings on the game's own Unity Mono runtime (or .NET Framework), without starting the game or the Unity player |
 | [`WotR.Testing.Fuzzing`](src/WotR.Testing.Fuzzing/README.md) | Automatically generates method calls and argument values for interfaces selected by a mod author, shrinks failures and replays saved cases |
+| [`WotR.Testing.Sdk`](src/WotR.Testing.Sdk/README.md) | Template for a mod's test project: pinned `PackageReference` dependencies, the game path settings, the session fixture, the examples and a CI workflow |
 | In-game testing | Planned: running tests inside the game for paths that need the Unity engine |
 
 The repository contains no game files. Game assemblies are referenced at compile
@@ -28,6 +29,13 @@ and Mono host, and `WotR.Testing.Fuzzing`); the packages contain no game files.
 ```powershell
 dotnet test tests/MyMod.OfflineTests/MyMod.OfflineTests.csproj
 ```
+
+A mod author starts from the [SDK template](docs/sdk.md): a .NET Framework 4.8
+xUnit v2 project with every dependency pinned as a `PackageReference`, the game
+path settings, the session fixture, the examples and a CI workflow. Copy
+[`templates/WotR.Testing.Sdk/`](templates/WotR.Testing.Sdk/README.md) from this
+repository, or install the template package with
+`dotnet new install WotR.Testing.Sdk --version 0.1.0-preview.3`.
 
 To follow unreleased changes, use this repository as a Git submodule instead: import
 `external/wotr-testing/src/WotR.Testing.Offline/build/WotR.Testing.Offline.targets`,
@@ -81,6 +89,7 @@ fuzzing library's tests; building the offline library needs game files.
 | Path | Owns |
 | --- | --- |
 | `src/` | Libraries and their MSBuild targets ([overview](src/README.md)) |
+| `templates/` | The SDK template for a mod's test project ([WotR.Testing.Sdk](templates/WotR.Testing.Sdk/README.md)) |
 | `scripts/` | Test runner and game-file snapshot scripts, called by consumers through the submodule |
 | `tests/` | Repository checks and synthetic fixtures for native runtime and FsCheck integration |
 | `docs/` | Public documentation ([index](docs/README.md)) |

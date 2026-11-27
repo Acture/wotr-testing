@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- New `WotR.Testing.Sdk` template package and the `templates/WotR.Testing.Sdk/`
+  template it carries: a .NET Framework 4.8 xUnit v2 test project with every
+  dependency pinned as a `PackageReference` (`WotR.Testing`, the test SDK, xUnit
+  v2 and Xunit.SkippableFact), the game path settings, the session fixture, the
+  example tests and a GitHub Actions workflow. No dependency is downloaded,
+  unzipped or copied by hand. The template is available as a copy from this
+  repository and as `dotnet new install WotR.Testing.Sdk`; the package is not
+  published to a public feed yet.
+- New [mod test SDK guide](docs/sdk.md): the supported game, Unity, Mono and
+  UnityModManager versions (including the ones this repository does not know),
+  the game path configuration, how to write synchronous and time-dependent
+  assertions, how to skip paths that need the Unity engine, how to run the
+  tests locally, how to connect GitHub Actions and how to read a failed run's
+  report.
+- The template package holds no game files, and the repository's package check
+  fails the build if it ever does.
+
 ## 0.1.0-preview.3 - 2026-10-18
 
 - New `WotR.Testing.Fuzzing` component: mod authors register an interface and an

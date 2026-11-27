@@ -3,6 +3,7 @@
 | Path | Contents |
 | --- | --- |
 | [`WotR.Testing/`](WotR.Testing/README.md) | `WotR.Testing` meta-package: no code, depends on the components below |
+| [`WotR.Testing.Sdk/`](WotR.Testing.Sdk/README.md) | Template package for a mod's test project; the template itself lives in [`templates/WotR.Testing.Sdk/`](../templates/WotR.Testing.Sdk/README.md) |
 | [`WotR.Testing.Offline/`](WotR.Testing.Offline/README.md) | Offline test library and its MSBuild targets (`build/`, `buildTransitive/`) |
 | [`WotR.Testing.Fuzzing/`](WotR.Testing.Fuzzing/README.md) | Automatic interface fuzzing, FsCheck argument generation, shrinking and saved-case replay; independent of game files |
 | `WotR.Testing.MonoHost/` | `wotr-mono-host`: starts the game's own Unity Mono runtime from the inputs to run the tests ([how](../docs/offline.md#runtimes)); packed into the NuGet package's `tools/` |

@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+- New `WotR.Testing.Sdk` template package and the `templates/WotR.Testing.Sdk/`
+  template it carries: a .NET Framework 4.8 xUnit v2 test project with every
+  dependency pinned as a `PackageReference` (`WotR.Testing`, the test SDK, xUnit
+  v2 and Xunit.SkippableFact), the game path settings, the session fixture, the
+  example tests and a GitHub Actions workflow. No dependency is downloaded,
+  unzipped or copied by hand. The template is available as a copy from this
+  repository and as a locally built package (`dotnet pack
+  src/WotR.Testing.Sdk/WotR.Testing.Sdk.csproj`, then `dotnet new install` of
+  the built `.nupkg` and `dotnet new wotr-test -n MyMod -o
+  tests/MyMod.OfflineTests` with a plain, dot-free name); the package is not
+  published to a public feed yet.
+- The template's generated project imports an untracked `GamePath.props` next
+  to itself, so the guide's local game path setup works without copying the
+  setting into the project file; a command-line property still wins. The
+  template's GitHub Actions workflow skips pull requests from forks, so a
+  fork's code never runs on the game-owning self-hosted runner; maintainers
+  test a fork contribution by pushing its commits to a branch of the mod's
+  repository first.
+- New [mod test SDK guide](docs/sdk.md): the supported game, Unity, Mono and
+  UnityModManager versions (including the ones this repository does not know),
+  the game path configuration, how to write synchronous and time-dependent
+  assertions, how to skip paths that need the Unity engine, how to run the
+  tests locally, how to connect GitHub Actions and how to read a failed run's
+  report.
+- The template package holds no game files, and the repository's package check
+  fails the build if it ever does.
 - The battle environment's conversation with a program outside the test process
   is `BattleEnvironmentProtocol`: a JSON request per line in, a JSON answer per
   line out. `BattleEnvironmentServer.Serve` speaks it over a local TCP port; a

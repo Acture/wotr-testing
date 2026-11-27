@@ -10,6 +10,9 @@ It shows that real game rules apply a mod's blueprints to real units. It cannot
 show anything that needs the Unity engine: rendering, scenes, unit views,
 animation, input or the live UI.
 
+A mod author starts from the [SDK guide](sdk.md): the test project template, the
+game path setup, how to write assertions and how to read a failure.
+
 ## What runs
 
 Mod authors can register an interface and a factory with

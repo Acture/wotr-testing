@@ -17,8 +17,10 @@ REQUIRED: tuple[str, ...] = (
 	"CONTRIBUTING.md",
 	"LICENSE",
 	"docs/README.md",
+	"docs/sdk.md",
 	"data/README.md",
 	"src/README.md",
+	"templates/WotR.Testing.Sdk/README.md",
 	"tests/README.md",
 	".github/workflows/ci.yml",
 )

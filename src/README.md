@@ -3,6 +3,7 @@
 | Path | Contents |
 | --- | --- |
 | [`WotR.Testing/`](WotR.Testing/README.md) | `WotR.Testing` meta-package: no code, depends on the components below |
+| [`WotR.Testing.Sdk/`](WotR.Testing.Sdk/README.md) | Template package for a mod's test project; the template itself lives in [`templates/WotR.Testing.Sdk/`](../templates/WotR.Testing.Sdk/README.md) |
 | [`WotR.Testing.Offline/`](WotR.Testing.Offline/README.md) | Offline test library and its MSBuild targets (`build/`, `buildTransitive/`) |
 | [`WotR.Testing.Fuzzing/`](WotR.Testing.Fuzzing/README.md) | Automatic interface fuzzing, FsCheck argument generation, shrinking and saved-case replay; independent of game files |
 | [`WotR.Testing.InGame/`](WotR.Testing.InGame/README.md) | In-game test API (`InGameFixture`, `InGameContext`, main-thread dispatcher) and the `InstallWotrInGameHost` target; packed by `WotR.Testing.InGame.Package/` with the host ([how](../docs/ingame.md)) |
@@ -16,6 +17,7 @@
 | `WotR.Testing.VSTestBootstrap/` | Registers the runtime provider and the planned sources before entering the installed SDK's unmodified VSTest CLI |
 | `WotR.Testing.TestAdapter/` | VSTest adapter for the generated `.wotrtests` source: in-game cases and fuzz targets |
 | `WotR.Testing.Platform/` | `wotr-testing-platform`, the Microsoft.Testing.Platform application `dotnet test` starts when `global.json` selects that runner |
+| `WotR.Testing.Snapshot/` | `wotr-snapshot`: writes a snapshot's `navigation-settings.json`, the A* settings of the mechanics scenes, for `scripts/New-WotrSnapshot.ps1` ([why](../docs/offline.md#inputs)); not packed |
 
 The test runner and snapshot scripts live in the top-level `scripts/`, because
 consumers call them by path through the submodule.

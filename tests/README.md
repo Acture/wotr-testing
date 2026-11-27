@@ -58,6 +58,37 @@ $env:WOTR_TEST_INTEGRATION = '1'
 python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
+`test_rules.py` uses `fixtures/RuleTests/` and `fixtures/RuleMod/` to boot a
+session and run real skill checks, saving throws, unarmed attacks and damage,
+plus the game random boundary. Restore that fixture, then use the same opt-in
+flag:
+
+```powershell
+dotnet restore tests/fixtures/RuleTests/WotR.Testing.RuleTests.csproj
+$env:WOTR_TEST_INTEGRATION = '1'
+python -m unittest discover -s tests -p 'test_rules.py' -v
+```
+
+`test_battles.py` uses `fixtures/BattleTests/` (with game-derived handlers in
+`fixtures/BattleSupport/`) to build battles from vanilla blueprints on both
+runtimes: verified equipment, class levels, factions, buffs and resources, real
+attacks and damage, attack and move commands on a real navigation mesh (including
+a detour around an obstacle), automatic combat join, action cooldowns, attacks of
+opportunity, corpulence from view prefabs (with overrides, fallbacks, size changes
+and polymorph view swaps), the game's time scales, repeated resets with one seed,
+failures in the middle of an effect or a command, stat recalculation, paths and
+the missing-main-character error. It checks that every fixture test ran and
+passed. With `WOTR_TEST_SCENARIO=dirty-battle` it checks that a leaked
+subscription makes the worker dirty and fails the run, and with
+`WOTR_TEST_SCENARIO=undisposed-battle` that a battle never disposed does too.
+Restore that fixture, then use the same opt-in flag:
+
+```powershell
+dotnet restore tests/fixtures/BattleTests/WotR.Testing.BattleTests.csproj
+$env:WOTR_TEST_INTEGRATION = '1'
+python -m unittest discover -s tests -p 'test_battles.py' -v
+```
+
 `test_ingame.py` uses `fixtures/InGameTests/` (offgame, in-game and `both` cases,
 fuzz targets on both sides) for planned runs through VSTest and
 Microsoft.Testing.Platform: offgame-only runs and their run reports, listing,
@@ -81,5 +112,5 @@ texture, a spawned unit's view, a prerequisite, deliberate failures). Run them b
 hand with `dotnet test`; they load the save named in `wotr-test-scenario.json` beside
 the built assembly, for example `{"save": "latest"}`.
 
-Real game behavior is verified through a consumer mod's offline tests (see
+Real game behavior is also verified through a consumer mod's offline tests (see
 [CLAUDE.md](../CLAUDE.md)).

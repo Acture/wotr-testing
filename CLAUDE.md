@@ -10,14 +10,19 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
 
 - `src/WotR.Testing/`: `WotR.Testing` meta-package (no code; depends on the
   components). `src/WotR.Testing.Offline/`: offline library, its `build/*.targets`
-  and README.
+  and README. `src/WotR.Testing.Sdk/`: the `WotR.Testing.Sdk` template package.
+- `templates/WotR.Testing.Sdk/`: the SDK template for a mod's test project
+  (pinned `PackageReference` dependencies, game path settings, session fixture,
+  example tests, CI workflow); packed into `src/WotR.Testing.Sdk/`.
 - `src/WotR.Testing.Fuzzing/`: game-independent automatic interface fuzzer;
   `tests/WotR.Testing.Fuzzing.Tests/` runs on .NET 8 without game inputs.
 - `src/WotR.Testing.MonoHost/`: `wotr-mono-host`, starts the game's own Unity Mono
   runtime (the default test runtime) from the inputs.
   `src/WotR.Testing.VSTest/`, `src/WotR.Testing.VSTestBootstrap/` and
   `src/WotR.Testing.Build/` integrate it with `dotnet test`, isolate SDK host
-  dependencies and validate reports. These tools contain no game files.
+  dependencies and validate reports. `src/WotR.Testing.Snapshot/` (`wotr-snapshot`)
+  reads the A* settings of the mechanics scenes for `New-WotrSnapshot.ps1`. These
+  tools contain no game files.
 - In-game testing: `src/WotR.Testing.InGame/` (test API, host install target;
   packed by `src/WotR.Testing.InGame.Package/`), `src/WotR.Testing.InGame.Host/`
   (the UMM host mod), `src/WotR.Testing.InGame.Protocol/` (messages, framing,
@@ -29,8 +34,12 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
 - `scripts/`: `Invoke-WotrOfflineTests.ps1` (generic runner) and
   `New-WotrSnapshot.ps1` (game-file snapshot). Consumers call these paths through
   the submodule; moving them is a breaking change.
+- `examples/training/`: Python training programs for the battle environment, which
+  connect to `BattleEnvironmentServer` in a battle fixture test; no game files.
 - `tests/`: repository checks, CLI integration tests and small synthetic fixtures
   (`tests/fixtures/`) for the native runtime, FsCheck and in-game runs.
+  `tests/test_sdk_template.py` keeps the SDK template's pinned versions and the
+  template package's allowlist in step with the repository.
 - `docs/`: public documentation. `data/`: no datasets; game files never go there.
 - `.github/`: CI, pull request template and CODEOWNERS.
 - `notes/`: optional private notes submodule; public builds and checks must not
@@ -81,8 +90,8 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   ```powershell
   python tests/check_repository.py
   python -m unittest discover -s tests -p 'test_*.py'
-  uvx ruff==0.16.10 check --config .ruff.toml tests
-  uvx ruff==0.16.10 format --check --config .ruff.toml tests
+  uvx ruff==0.16.10 check --config .ruff.toml tests examples
+  uvx ruff==0.16.10 format --check --config .ruff.toml tests examples
   uvx ty==0.0.82 check tests
   ```
 - Opt-in runner integration tests: restore `tests/fixtures/MonoTests/MonoTests.csproj`,

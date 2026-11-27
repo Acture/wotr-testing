@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Draft release tag containing the four locally built packages
+        description: Draft release tag containing the five locally built packages
         required: true
         type: string
       publish:
@@ -56,10 +56,10 @@ jobs:
           if ($release.targetCommitish -cne $env:GITHUB_SHA) { throw 'Draft release must target the exact workflow commit SHA.' }
           $packageDirectory = Join-Path $env:RUNNER_TEMP 'wotr-release-packages'
           New-Item -ItemType Directory -Path $packageDirectory | Out-Null
-          $packageIds = @('WotR.Testing.Fuzzing', 'WotR.Testing.Offline', 'WotR.Testing.InGame', 'WotR.Testing')
+          $packageIds = @('WotR.Testing.Fuzzing', 'WotR.Testing.Offline', 'WotR.Testing.InGame', 'WotR.Testing', 'WotR.Testing.Sdk')
           $expectedAssets = @($packageIds | ForEach-Object { "$($_).$version.nupkg" })
           $assetDifference = Compare-Object -ReferenceObject $expectedAssets -DifferenceObject @($release.assets.name)
-          if ($assetDifference) { throw 'Draft release must contain exactly the four expected NuGet packages.' }
+          if ($assetDifference) { throw 'Draft release must contain exactly the five expected NuGet packages.' }
           $patterns = @($expectedAssets | ForEach-Object { '--pattern'; $_ })
           gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir $packageDirectory @patterns
           if ($LASTEXITCODE -ne 0) { throw 'Could not download the NuGet packages.' }
@@ -105,13 +105,13 @@ jobs:
         uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
         with:
           user: acture
-      - name: Publish fuzzing, offline, in-game, then meta-package
+      - name: Publish fuzzing, offline, in-game, meta-package, then the SDK template
         if: inputs.publish
         env:
           NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
         run: |
           $ErrorActionPreference = 'Stop'
-          foreach ($packageId in @('WotR.Testing.Fuzzing', 'WotR.Testing.Offline', 'WotR.Testing.InGame', 'WotR.Testing')) {
+          foreach ($packageId in @('WotR.Testing.Fuzzing', 'WotR.Testing.Offline', 'WotR.Testing.InGame', 'WotR.Testing', 'WotR.Testing.Sdk')) {
             $package = Join-Path $env:WOTR_RELEASE_PACKAGES "$packageId.$env:WOTR_RELEASE_VERSION.nupkg"
             dotnet nuget push $package --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json
             if ($LASTEXITCODE -ne 0) { throw "NuGet publication failed: $packageId" }

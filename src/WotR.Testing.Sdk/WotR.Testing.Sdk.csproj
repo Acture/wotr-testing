@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The developer SDK as a template package: `dotnet new install WotR.Testing.Sdk` adds the test project template, and
+    the generated project references the WotR.Testing package with a pinned version. No dependency is downloaded,
+    unzipped or copied by hand.
+
+    The template itself lives in templates/WotR.Testing.Sdk/ and is packed under content/, where the template engine
+    finds it. The package holds no game files; the repository's package check fails the build if it ever does.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!-- NU5128: the package carries the template, not a library, so it has no lib/ folder. -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+    <PackageId>WotR.Testing.Sdk</PackageId>
+    <Authors>Acture</Authors>
+    <Description>Template for the offline test project of a Pathfinder: Wrath of the Righteous mod. The generated project references the WotR.Testing SDK with pinned versions and runs the mod against the real game assemblies on the game's own Unity Mono runtime, without starting the game. Game files come from your own installation and are never part of the package.</Description>
+    <PackageTags>pathfinder;wrath-of-the-righteous;wotr;modding;testing;unitymodmanager;template</PackageTags>
+    <PackageLicenseExpression>AGPL-3.0-only</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/Acture/wotr-testing</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Acture/wotr-testing</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+    <None Include="../../LICENSE-EXCEPTION.md" Pack="true" PackagePath="/" />
+    <!-- The template, with the exact path of every file: the package check below compares them one by one. -->
+    <None Include="../../templates/WotR.Testing.Sdk/MyMod.OfflineTests.csproj" Pack="true" PackagePath="content/WotR.Testing.Sdk/MyMod.OfflineTests.csproj" />
+    <None Include="../../templates/WotR.Testing.Sdk/MyModGame.cs" Pack="true" PackagePath="content/WotR.Testing.Sdk/MyModGame.cs" />
+    <None Include="../../templates/WotR.Testing.Sdk/ExampleTests.cs" Pack="true" PackagePath="content/WotR.Testing.Sdk/ExampleTests.cs" />
+    <None Include="../../templates/WotR.Testing.Sdk/README.md" Pack="true" PackagePath="content/WotR.Testing.Sdk/README.md" />
+    <None Include="../../templates/WotR.Testing.Sdk/ci/offline-tests.yml" Pack="true" PackagePath="content/WotR.Testing.Sdk/ci/offline-tests.yml" />
+    <None Include="../../templates/WotR.Testing.Sdk/.template.config/template.json" Pack="true" PackagePath="content/WotR.Testing.Sdk/.template.config/template.json" />
+  </ItemGroup>
+
+  <!-- The only entries the package may hold besides NuGet's own metadata. -->
+  <ItemGroup>
+    <WotrPackageEntry Include="WotR.Testing.Sdk.nuspec;README.md;LICENSE-EXCEPTION.md" />
+    <WotrPackageEntry Include="content\WotR.Testing.Sdk\MyMod.OfflineTests.csproj;content\WotR.Testing.Sdk\MyModGame.cs;content\WotR.Testing.Sdk\ExampleTests.cs;content\WotR.Testing.Sdk\README.md;content\WotR.Testing.Sdk\ci\offline-tests.yml;content\WotR.Testing.Sdk\.template.config\template.json" />
+  </ItemGroup>
+
+</Project>

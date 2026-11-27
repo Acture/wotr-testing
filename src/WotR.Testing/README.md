@@ -7,9 +7,12 @@ its own; it references the components:
 |---|---|
 | [`WotR.Testing.Offline`](https://www.nuget.org/packages/WotR.Testing.Offline) | Runs UnityModManager mods against the real game assemblies, blueprint pack and settings on the game's own Unity Mono runtime (or .NET Framework), without starting the game |
 | [`WotR.Testing.Fuzzing`](https://www.nuget.org/packages/WotR.Testing.Fuzzing) | Automatically generates calls to selected mod interfaces, shrinks failures and replays saved cases |
+| [`WotR.Testing.Sdk`](https://www.nuget.org/packages/WotR.Testing.Sdk) | Template for a mod's test project: pinned dependencies, game path settings, session fixture, examples and a CI workflow |
+| [`WotR.Testing.InGame`](https://www.nuget.org/packages/WotR.Testing.InGame) | Runs xUnit tests and registered fuzz targets inside the running game, on Unity's main thread, from the same `dotnet test` |
 | [`FsCheck.Xunit`](https://www.nuget.org/packages/FsCheck.Xunit/3.5.0) | Native xUnit v2 `[Property]` tests with generated inputs, shrinking and seed replay |
 
-In-game testing is planned and will be added here.
+See [in-game testing](https://github.com/Acture/wotr-testing/blob/main/docs/ingame.md)
+for the in-game component.
 
 Reference `WotR.Testing` from a .NET Framework 4.8 xUnit v2 test project and follow the
 [WotR.Testing.Offline guide](https://github.com/Acture/wotr-testing/blob/main/src/WotR.Testing.Offline/README.md).

@@ -12,6 +12,10 @@ namespace WotR.Testing.Fuzzing
         public Func<MethodInfo, bool> IncludeMethod { get; set; }
         public Func<Exception, bool> IsUnavailable { get; set; }
         public Func<Exception, bool> IsExpectedException { get; set; }
+        /// <summary>Runs before each case, shrink attempt and replay. Argument generation happens outside this hook.</summary>
+        public Action BeforeExecution { get; set; }
+        /// <summary>Runs after each case, shrink attempt and replay, including when <see cref="BeforeExecution"/> or the factory throws.</summary>
+        public Action AfterExecution { get; set; }
         public FuzzGenerators Generators { get; private set; } = new FuzzGenerators();
 
         /// <summary>Copies configuration and generator registrations without sharing the mutable registry.</summary>

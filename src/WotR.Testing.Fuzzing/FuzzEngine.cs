@@ -150,6 +150,19 @@ namespace WotR.Testing.Fuzzing
 
         private async Task<Execution> ExecuteAsync(Func<Task<object>> factory, List<SavedCall> calls)
         {
+            try
+            {
+                options.BeforeExecution?.Invoke();
+                return await ExecuteCoreAsync(factory, calls);
+            }
+            finally
+            {
+                options.AfterExecution?.Invoke();
+            }
+        }
+
+        private async Task<Execution> ExecuteCoreAsync(Func<Task<object>> factory, List<SavedCall> calls)
+        {
             var result = new Execution();
             object target;
             try

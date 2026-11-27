@@ -130,7 +130,11 @@ public sealed class GameApiTests
 
 `game.Fuzz` calls `RequireGame`, classifies Unity native exceptions and records
 the report in `environment.json.observations` under a `fuzz-` key, including the
-seed, selected methods, case/call counts, failure and replay case. A sequence
+seed, selected methods, case/call counts, failure and replay case. Argument
+generation uses the fuzzer's own random stream. Around each case, shrink attempt
+and replay, `game.Fuzz` saves the game random state and restores it afterwards,
+so those executions do not leave dice consumed for the next one. `FuzzOptions.BeforeExecution`
+and `AfterExecution` run inside that pair. A sequence
 that reaches unavailable Unity code is counted as skipped; it never counts as a
 passing sequence. An all-skipped run fails. A mixed run reports both counts;
 passing sequences do not establish anything about the skipped paths.

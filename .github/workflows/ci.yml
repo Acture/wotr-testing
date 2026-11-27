@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  tests:
-    name: Default test scope
+  fuzzing:
+    name: Interface fuzzing
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -24,10 +24,10 @@ jobs:
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '8.0.x'
-      # The default scope: the game-independent fuzzing tests and the offgame scope, which is reported as
-      # skipped here because this runner has no WotR installation.
-      - name: Run every discovered test scope
-        run: dotnet test --configuration Release
+      # The game-independent fuzzing scope: this runner has no WotR installation, a .NET
+      # Framework SDK that cannot build net48 projects, and an SDK that does not read .slnx.
+      - name: Test automatic interface generation, shrinking and replay
+        run: dotnet test tests/WotR.Testing.Fuzzing.Tests/WotR.Testing.Fuzzing.Tests.csproj --configuration Release
   repository:
     name: Repository checks
     runs-on: ubuntu-latest
@@ -50,7 +50,7 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Lint and format repository checks
         run: |
-          uvx ruff==0.16.10 check --config .ruff.toml tests
-          uvx ruff==0.16.10 format --check --config .ruff.toml tests
+          uvx ruff==0.16.10 check --config .ruff.toml tests examples
+          uvx ruff==0.16.10 format --check --config .ruff.toml tests examples
       - name: Typecheck repository checks
         run: uvx ty==0.0.82 check tests

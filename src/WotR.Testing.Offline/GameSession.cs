@@ -171,6 +171,11 @@ namespace WotR.Testing.Offline
                 ModLoadOrder.CheckRequirements(mod, Mods);
                 LoadMod(mod);
                 Mods.Add(mod);
+                if (mod.UnderTest)
+                {
+                    HarnessState.ModId = mod.Id;
+                    HarnessState.ModVersion = mod.Version;
+                }
             }
         }
 

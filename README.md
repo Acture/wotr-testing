@@ -61,8 +61,9 @@ command controllers on the area's real navigation mesh, and resets it to the sam
 initial state, checking that the previous build left no game state behind.
 `BattleEnvironment` runs such a battle as a reset, observe and step loop for an
 external decision maker, in real time or in the game's own turn-based combat, for
-the party against the game's AI or with every side controlled, and serves it to
-training programs in another process ([examples/training](examples/training/README.md)).
+the party against the game's AI or with every side controlled, and speaks it to
+training programs in another process over a protocol of JSON lines
+(`BattleEnvironmentProtocol`, [examples/training](examples/training/README.md)).
 See [battles](docs/offline.md#battles) and the
 [battle environment](docs/offline.md#battle-environment).
 

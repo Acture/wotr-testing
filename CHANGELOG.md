@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- The battle environment's conversation with a program outside the test process
+  is `BattleEnvironmentProtocol`: a JSON request per line in, a JSON answer per
+  line out. `BattleEnvironmentServer.Serve` speaks it over a local TCP port; a
+  consumer that drives the battle in its own process speaks it without a socket.
+- **Breaking:** the observation reports its paths as a list of records instead of
+  a map of id to distance. Each path has its stable id, its source
+  (`game:UnitMovementAgent.FindPath` for the game's, the scenario's own source
+  otherwise), the unit it starts at, the unit it leads to, its waypoints, its
+  destination, the distance and the cost the source gave with the unit of the
+  distance, and why it cannot be chosen now. What the source gave none of stays
+  null.
+- **Breaking:** a step answers with the outcome as an object (`outcome`: the side
+  that won, or null, and why the episode was decided) instead of a flat `winner`,
+  and adds the reason an episode was cut off (`truncation`), the changes of the
+  battle's key state (`effects`) and the meters each unit actually walked
+  (`walked`). The observation answers with the outcome and the truncation too.
+- The episode's record is available to the client (`record`) and can be replayed
+  by the server (`replay`), which resets to the record's seed, takes its steps
+  again and lists every difference. The record names the mod under test and its
+  version besides the game and library versions.
 - `-Harmony game` (the game's Harmony 2.0.4) applies the library's patches.
   `UnityEngine.Random.set_state_Injected` is patched with a by-ref `State`
   argument. Harmony 2.0.4 emits invalid IL (`call 0x00000001`) when a prefix

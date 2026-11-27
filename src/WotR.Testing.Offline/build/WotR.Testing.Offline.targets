@@ -27,6 +27,10 @@
                              warned. Default: game. WOTR_HARMONY_REFERENCES ('|'-separated) overrides at run time.
       WotrGenerateModuleInitializer  false to skip the generated module initializer (then call
                              OfflineRuntime.InstallResolver() from your own before any game type is touched).
+      WotrAllowMissingInputs  true for a test project that must build and run without the game: the missing inputs
+                             are reported as a warning instead of a build error, and the game references, the module
+                             initializer and the offline run are left out. The project then reports the scope as
+                             skipped. Set WotrInputRoot (or import GamePath.props) before importing these targets.
   -->
 
   <PropertyGroup>
@@ -55,6 +59,8 @@
     <WotrBuildTasksAssembly Condition="'$(WotrBuildTasksAssembly)'==''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../artifacts/bin/WotR.Testing.Build/$(Configuration)/netstandard2.0/WotR.Testing.Build.dll'))</WotrBuildTasksAssembly>
     <WotrMonoHost Condition="'$(WotrMonoHost)'==''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../artifacts/bin/WotR.Testing.MonoHost/$(Configuration)/wotr-mono-host.exe'))</WotrMonoHost>
     <WotrBootstrapDirectory Condition="'$(WotrBootstrapDirectory)'==''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../artifacts/bin/WotR.Testing.VSTestBootstrap/$(Configuration)/net8.0/'))</WotrBootstrapDirectory>
+    <!-- Known at evaluation time, so the game references and the module initializer can be left out when they are missing. -->
+    <WotrInputsMissing Condition="'$(WotrInputRoot)'=='' or !Exists('$(WotrManaged)/Assembly-CSharp.dll')">true</WotrInputsMissing>
   </PropertyGroup>
 
   <UsingTask TaskName="WotR.Testing.Build.PrepareTestRun" AssemblyFile="$(WotrBuildTasksAssembly)" />
@@ -65,7 +71,7 @@
   </Target>
 
   <!-- Keep VSTest's own discovery, adapters, filters, loggers and exit handling. Only its runtime provider changes. -->
-  <Target Name="PrepareWotrDotnetTest" BeforeTargets="_VSTestConsole;_VSTestMSBuild" Condition="'$(WotrIsLibrary)'!='true' and '$(IsTestProject)'=='true' and '$(WotrLegacyRunner)'!='true'">
+  <Target Name="PrepareWotrDotnetTest" BeforeTargets="_VSTestConsole;_VSTestMSBuild" Condition="'$(WotrIsLibrary)'!='true' and '$(IsTestProject)'=='true' and '$(WotrLegacyRunner)'!='true' and '$(WotrInputsMissing)'!='true'">
     <CallTarget Targets="BuildProject" Condition="'$(VSTestNoBuild)'!='true'" />
     <PropertyGroup>
       <_WotrOriginalSettings>$([MSBuild]::ValueOrDefault('$(VSTestSetting)', '$(RunSettingsFilePath)'))</_WotrOriginalSettings>
@@ -85,7 +91,7 @@
   </Target>
 
   <Target Name="ValidateWotrDotnetTest" AfterTargets="_VSTestConsole;_VSTestMSBuild"
-      Condition="'$(WotrIsLibrary)'!='true' and '$(IsTestProject)'=='true' and '$(VSTestListTests)'!='true' and '$(WotrLegacyRunner)'!='true'">
+      Condition="'$(WotrIsLibrary)'!='true' and '$(IsTestProject)'=='true' and '$(VSTestListTests)'!='true' and '$(WotrLegacyRunner)'!='true' and '$(WotrInputsMissing)'!='true'">
     <WotR.Testing.Build.ValidateTestRun RunReport="$(_WotrRunReport)" EnvironmentDirectory="$(_WotrEnvironmentDirectory)" MinimumPassed="$(WotrMinimumPassed)" Runtime="$(WotrRuntime)" />
   </Target>
 
@@ -95,13 +101,18 @@
   </ItemGroup>
 
   <Target Name="EnsureWotrInputs" BeforeTargets="PrepareForBuild">
-    <Error Condition="'$(WotrInputRoot)'=='' or !Exists('$(WotrManaged)/Assembly-CSharp.dll')"
+    <PropertyGroup>
+      <_WotrInputsFound Condition="'$(WotrInputRoot)'!='' and Exists('$(WotrManaged)/Assembly-CSharp.dll')">true</_WotrInputsFound>
+    </PropertyGroup>
+    <Error Condition="'$(_WotrInputsFound)'!='true' and '$(WotrAllowMissingInputs)'!='true'"
            Text="[ENV_MISSING] WotR inputs not found. Set WotrInputRoot or WOTR_INPUT_ROOT, create a snapshot with New-WotrSnapshot.ps1, or set WrathInstallDir." />
-    <Error Condition="'$(WotrIsLibrary)'!='true' and '$(WotrModAssembly)'==''" Text="[ENV_MISSING] Set WotrModAssembly to the built mod DLL." />
+    <Warning Condition="'$(WotrAllowMissingInputs)'=='true' and '$(_WotrInputsFound)'!='true'"
+             Text="[ENV_MISSING] WotR inputs not found: the test scope runs without the game and reports itself as skipped." />
+    <Error Condition="'$(WotrIsLibrary)'!='true' and '$(WotrModAssembly)'=='' and '$(_WotrInputsFound)'=='true'" Text="[ENV_MISSING] Set WotrModAssembly to the built mod DLL." />
   </Target>
 
   <!-- Compile-time only: at run time every game, Harmony and mod assembly comes from the prepared runtime folder. -->
-  <ItemGroup>
+  <ItemGroup Condition="'$(WotrAllowMissingInputs)'!='true' or '$(WotrInputsMissing)'!='true'">
     <Reference Include="$(WotrManaged)/Assembly-CSharp.dll" Private="false" />
     <Reference Include="$(WotrManaged)/Assembly-CSharp-firstpass.dll" Private="false" />
     <Reference Include="$(WotrManaged)/Owlcat.Runtime.Core.dll" Private="false" />
@@ -120,7 +131,7 @@
     </ItemGroup>
   </Target>
 
-  <Target Name="WriteWotrOfflineInputs" BeforeTargets="CoreCompile" Condition="'$(WotrIsLibrary)'!='true'">
+  <Target Name="WriteWotrOfflineInputs" BeforeTargets="CoreCompile" Condition="'$(WotrIsLibrary)'!='true' and '$(WotrInputsMissing)'!='true'">
     <PropertyGroup>
       <WotrReportDirectory Condition="'$(WotrReportDirectory)'==''">$(OutDir)wotr-reports/</WotrReportDirectory>
       <!-- '|'-separated: WriteLinesToFile would split a ';' list into lines. -->
@@ -147,7 +158,7 @@
     classes that use game types in fields and signatures before any fixture runs.
   -->
   <Target Name="GenerateWotrModuleInitializer" BeforeTargets="CoreCompile"
-          Condition="'$(WotrIsLibrary)'!='true' and '$(WotrGenerateModuleInitializer)'!='false'">
+          Condition="'$(WotrIsLibrary)'!='true' and '$(WotrGenerateModuleInitializer)'!='false' and '$(WotrInputsMissing)'!='true'">
     <PropertyGroup>
       <_WotrInitializerFile>$(IntermediateOutputPath)WotrModuleInitializer.g.cs</_WotrInitializerFile>
       <_WotrInitializerSource>// Generated by WotR.Testing.Offline.targets.

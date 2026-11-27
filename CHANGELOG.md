@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- New `WotrAllowMissingInputs` build property for the offline targets: a test
+  project that must build and run without the game reports the missing inputs as
+  a warning instead of a build error, and leaves out the game references, the
+  module initializer and the offline run.
+
 ## 0.1.0-preview.3 - 2026-10-18
 
 - New `WotR.Testing.Fuzzing` component: mod authors register an interface and an

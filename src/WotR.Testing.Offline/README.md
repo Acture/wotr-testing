@@ -148,6 +148,7 @@ when a path reaches Unity engine code; such results are reported as
 | `WotrTestTimeoutSeconds` | VSTest session timeout (default 900); an explicit `TestSessionTimeout` in user runsettings takes precedence |
 | `WotrMinimumPassed` | Minimum passing tests (default 1); skips do not count |
 | `WotrModAssembly` | Built mod DLL (required). `Info.json` and private DLLs such as `BlueprintCore.dll` are read from its directory |
+| `WotrAllowMissingInputs` | `true` for a project that must build and run without the game: the missing inputs are a warning instead of a build error, the game references, the module initializer and the offline run are left out, and the project reports its scope as skipped |
 | `WotrDependencyMod` (items) | Other built mods loaded with it, ordered by `Requirements`/`LoadAfter` |
 | `WotrXunitConsoleVersion` | xUnit v2 console runner for `-Runtime mono` (default 2.9.2), downloaded with `PackageDownload` |
 | `WotrInputRoot` / `WOTR_INPUT_ROOT` | Game root; otherwise `WotrSnapshotDirectory` (with `manifest.json`), then `WrathInstallDir`/`WrathPath`/`WRATH_PATH` |

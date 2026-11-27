@@ -42,7 +42,7 @@
       the tests on the game's own Unity Mono runtime. The version is pinned to the one the SDK was verified with;
       change it deliberately, and read the release notes of the newer version first.
     -->
-    <PackageReference Include="WotR.Testing" Version="[0.1.0-preview.3]" />
+    <PackageReference Include="WotR.Testing" Version="[0.1.0-preview.4]" />
 
     <!-- The test framework. xUnit v2 is the verified combination on the game's Unity Mono runtime. -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="[1.0.3]" PrivateAssets="all" />

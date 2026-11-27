@@ -35,7 +35,7 @@ The template is a test project with every dependency pinned as a
 repository by hand.
 
 ```xml
-<PackageReference Include="WotR.Testing" Version="[0.1.0-preview.3]" />
+<PackageReference Include="WotR.Testing" Version="[0.1.0-preview.4]" />
 <PackageReference Include="Microsoft.NET.Test.Sdk" Version="[17.11.1]" />
 <PackageReference Include="xunit" Version="[2.9.2]" />
 <PackageReference Include="xunit.runner.visualstudio" Version="[2.8.2]" />
@@ -52,7 +52,7 @@ Three ways to get the project:
 | Way | How |
 | --- | --- |
 | Copy the template | Take `templates/WotR.Testing.Sdk/` from the [repository](https://github.com/Acture/wotr-testing) or from the `external/wotr-testing` submodule, rename the files and the namespace, and edit the two settings below. |
-| Template package | `dotnet new install WotR.Testing.Sdk --version 0.1.0-preview.3`, then `dotnet new wotr-test -n MyMod`. The package is built from this repository; it is not on a public feed yet (see [distribution boundaries](#distribution-boundaries)). |
+| Template package | `dotnet new install WotR.Testing.Sdk --version 0.1.0-preview.4`, then `dotnet new wotr-test -n MyMod`. The package is built from this repository; it is not on a public feed yet (see [distribution boundaries](#distribution-boundaries)). |
 | Your own project | Add the same `PackageReference` lines to an existing .NET Framework 4.8 xUnit v2 test project and add the fixture from the template. |
 
 The generated project holds `MyMod.OfflineTests.csproj`, the fixture

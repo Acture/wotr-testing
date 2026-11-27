@@ -35,7 +35,7 @@ xUnit v2 project with every dependency pinned as a `PackageReference`, the game
 path settings, the session fixture, the examples and a CI workflow. Copy
 [`templates/WotR.Testing.Sdk/`](templates/WotR.Testing.Sdk/README.md) from this
 repository, or install the template package with
-`dotnet new install WotR.Testing.Sdk --version 0.1.0-preview.3`.
+`dotnet new install WotR.Testing.Sdk --version 0.1.0-preview.4`.
 
 To follow unreleased changes, use this repository as a Git submodule instead: import
 `external/wotr-testing/src/WotR.Testing.Offline/build/WotR.Testing.Offline.targets`,
@@ -62,6 +62,17 @@ arguments and call sequences, shrinks failures and saves replayable cases. Use
 `game.Fuzz<IMyModApi>(...)` to include the results in the offline environment
 report. See [interface fuzzing](docs/fuzzing.md) for custom generators and limits.
 The meta-package also includes FsCheck.Xunit for author-written `[Property]` tests.
+
+`OfflineBattle` builds both sides of a fight from real unit blueprints through the
+game's API, runs them in an area with the game's own movement, vision, combat and
+command controllers on the area's real navigation mesh, and resets it to the same
+initial state, checking that the previous build left no game state behind.
+`BattleEnvironment` runs such a battle as a reset, observe and step loop for an
+external decision maker, in real time or in the game's own turn-based combat, for
+the party against the game's AI or with every side controlled, and serves it to
+training programs in another process ([examples/training](examples/training/README.md)).
+See [battles](docs/offline.md#battles) and the
+[battle environment](docs/offline.md#battle-environment).
 
 ## Building
 

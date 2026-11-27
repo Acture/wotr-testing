@@ -41,6 +41,9 @@ namespace WotR.Testing.Build
                     if (actual != expected) Log.LogError("Runtime mismatch: expected {0}, environment.json reports {1}.", expected, actual ?? "no runtime");
                     var startupError = (string)environment.Element("startupError");
                     if (!string.IsNullOrEmpty(startupError)) Log.LogError("Initialization failed: {0}", startupError);
+                    var battles = environment.Element("battles");
+                    if ((string)battles?.Element("dirty") == "true")
+                        Log.LogError("Battle worker dirty: {0}.", (string)battles.Element("dirtyReason"));
                     foreach (var warning in environment.Element("warnings")?.Elements() ?? Enumerable.Empty<XElement>())
                         Log.LogWarning(warning.Value);
                 }

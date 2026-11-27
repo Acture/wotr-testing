@@ -6,7 +6,7 @@ itself is in `templates/WotR.Testing.Sdk/` in the
 [source repository](https://github.com/Acture/wotr-testing).
 
 ```powershell
-dotnet new install WotR.Testing.Sdk --version 0.1.0-preview.3
+dotnet new install WotR.Testing.Sdk --version 0.1.0-preview.4
 dotnet new wotr-test -n MyMod.OfflineTests
 ```
 

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../../GamePath.props" Condition="Exists('../../../GamePath.props')" />
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <WotrIsLibrary>true</WotrIsLibrary>
+  </PropertyGroup>
+  <Import Project="../../../src/WotR.Testing.Offline/build/WotR.Testing.Offline.targets" />
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <None Include="Info.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

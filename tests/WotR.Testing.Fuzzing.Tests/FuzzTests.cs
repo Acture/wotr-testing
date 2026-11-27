@@ -439,6 +439,66 @@ public class FuzzTests
         Assert.Equal(new[] { bits, bits }, seen);
     }
 
+    [Fact]
+    public void Execution_hooks_surround_each_case_and_shrink_outside_argument_generation()
+    {
+        var events = new List<string>();
+        var options = new FuzzOptions { Cases = 1, MaxCalls = 8, Seed = 12345, MaxShrinks = 30 };
+        options.BeforeExecution = () => events.Add("before");
+        options.AfterExecution = () => events.Add("after");
+        options.Generators.Register(Gen.Choose(0, 30).Select(value => { events.Add("generate"); return value; }).ToArbitrary());
+        var failure = Assert.Throws<FuzzFailureException>(() => Fuzz.Check<IThreshold>(() => new ThresholdFailure(), options));
+        var depth = 0;
+        var pairs = 0;
+        foreach (var item in events)
+        {
+            if (item == "before") { Assert.Equal(0, depth); depth = 1; }
+            else if (item == "after") { Assert.Equal(1, depth); depth = 0; pairs++; }
+            else Assert.Equal(0, depth);
+        }
+        Assert.Equal(0, depth);
+        Assert.Contains("generate", events);
+        Assert.True(failure.Report.ShrinkAttempts > 0);
+        Assert.True(pairs > 1, "pairs=" + pairs + " shrinks=" + failure.Report.ShrinkAttempts);
+    }
+
+    [Fact]
+    public void Execution_hooks_run_for_replay_and_when_the_factory_fails()
+    {
+        var made = Assert.Throws<FuzzFailureException>(() => Fuzz.Check<IAction>(() => new Expected(), new FuzzOptions { Cases = 1, MaxCalls = 2, Seed = 3 }));
+        var replay = new List<string>();
+        Fuzz.Replay<IAction>(() => new Expected(), made.Report.ReplayCase, new FuzzOptions {
+            BeforeExecution = () => replay.Add("before"), AfterExecution = () => replay.Add("after")
+        });
+        Assert.Equal(new[] { "before", "after" }, replay);
+
+        var failedFactory = new List<string>();
+        var report = Fuzz.Run<IAction>(() => throw new InvalidOperationException("factory"), new FuzzOptions {
+            Cases = 3, BeforeExecution = () => failedFactory.Add("before"), AfterExecution = () => failedFactory.Add("after")
+        });
+        Assert.Equal(FuzzStatus.InfrastructureFailure, report.Status);
+        Assert.Equal(new[] { "before", "after" }, failedFactory);
+    }
+
+    [Fact]
+    public void After_execution_hook_still_runs_when_the_before_hook_throws()
+    {
+        var events = new List<string>();
+        var error = Assert.Throws<InvalidOperationException>(() => Fuzz.Run<IAction>(() => new NoFailure(), new FuzzOptions {
+            Cases = 2, MaxCalls = 1, BeforeExecution = () => throw new InvalidOperationException("before"), AfterExecution = () => events.Add("after")
+        }));
+        Assert.Equal("before", error.Message);
+        Assert.Equal(new[] { "after" }, events);
+    }
+
+    [Fact]
+    public void Missing_execution_hooks_keep_a_passing_run()
+    {
+        var report = Fuzz.Check<IAction>(() => new NoFailure(), new FuzzOptions { Cases = 2, MaxCalls = 1, Seed = 1 });
+        Assert.True(report.Succeeded);
+        Assert.Equal(2, report.CasesPassed);
+    }
+
     public interface IBase { void Record(int value); }
     public interface IRecorder : IBase { void Record(string value); }
     public sealed class Recorder : IRecorder, IDisposable {

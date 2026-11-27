@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
+from client import paths
 from rewards import health
 
 KINDS = [
@@ -137,7 +138,7 @@ def candidate(obs: dict, cand: dict) -> np.ndarray:
 			f[base + 4] = float(min(enemies, key=health)["id"] == target["id"])
 			closest = min(enemies, key=lambda u: math.hypot(u["x"] - me["x"], u["z"] - me["z"]))
 			f[base + 5] = float(closest["id"] == target["id"])
-	f[base + 6] = (obs["paths"].get(cand.get("path")) or 0) / 10
+	f[base + 6] = ((paths(obs).get(cand.get("path")) or {}).get("distance") or 0) / 10
 	f[base + 7] = float(cand.get("variant") is not None)
 	f[base + 8] = float(">" in ability)
 	slot = next((s for s in me.get("slots", []) if s["id"] == ability), None) if ability else None

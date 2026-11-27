@@ -45,7 +45,7 @@ uv run --no-project --python 3.12 --with sb3-contrib==2.4.0 --with gymnasium==1.
 
 | File | What it is |
 | --- | --- |
-| `client.py` | The connection: `start`, `reset` (optionally on another difficulty level), `step` with candidate indices and an optional random seed, `close`; `by_unit` groups the candidates of the units that take a command, and a policy that picks one per unit takes a switch on its own |
+| `client.py` | The connection: `start`, `reset` (optionally on another difficulty level), `step` with candidate indices and an optional random seed, `record` (the episode's record), `replay` (the differences when the episode is played again), `close`; `by_unit` groups the candidates of the units that take a command, and a policy that picks one per unit takes a switch on its own |
 | `seeds.py` | Separate seeds for training and held-out evaluation episodes, each rollout's own random seed, and each battle step's seed under fixed dice |
 | `texts.py` | Text embeddings of abilities, toggles and buffs: their in-game name and description (the server's `describe`) embedded by a local sentence embedding model; the table is game-derived, keep it local |
 | `rewards.py` | Rewards from observations: per-step reward (damage dealt, health lost, units downed, resources spent: ability resources, spell slots by level, item uses; the outcome; a step-limit cutoff counts as a loss with every own unit downed) and a win-based value |

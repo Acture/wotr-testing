@@ -2,6 +2,9 @@
 
 - [Offline testing](offline.md): how it works, inputs, reports, environment
   boundaries and known limits
+- [Mod test SDK](sdk.md): the test project template, the pinned dependencies, the
+  game path setup, how to write assertions, how to run the tests locally and in
+  GitHub Actions, and how to read a failure
 - [Interface fuzzing](fuzzing.md): automatic method calls, custom argument
   generators, counterexample shrinking and exact replay through `dotnet test`
 - [WotR.Testing.Offline library](../src/WotR.Testing.Offline/README.md): project

@@ -2,6 +2,61 @@
 
 ## Unreleased
 
+- New `WotR.Testing.Sdk` template package and the `templates/WotR.Testing.Sdk/`
+  template it carries: a .NET Framework 4.8 xUnit v2 test project with every
+  dependency pinned as a `PackageReference` (`WotR.Testing`, the test SDK, xUnit
+  v2 and Xunit.SkippableFact), the game path settings, the session fixture, the
+  example tests and a GitHub Actions workflow. No dependency is downloaded,
+  unzipped or copied by hand. The template is available as a copy from this
+  repository and as a locally built package (`dotnet pack
+  src/WotR.Testing.Sdk/WotR.Testing.Sdk.csproj`, then `dotnet new install` of
+  the built `.nupkg` and `dotnet new wotr-test -n MyMod -o
+  tests/MyMod.OfflineTests` with a plain, dot-free name); the package is not
+  published to a public feed yet.
+- The template's generated project imports an untracked `GamePath.props` next
+  to itself, so the guide's local game path setup works without copying the
+  setting into the project file; a command-line property still wins. The
+  template's GitHub Actions workflow skips pull requests from forks, so a
+  fork's code never runs on the game-owning self-hosted runner; maintainers
+  test a fork contribution by pushing its commits to a branch of the mod's
+  repository first.
+- New [mod test SDK guide](docs/sdk.md): the supported game, Unity, Mono and
+  UnityModManager versions (including the ones this repository does not know),
+  the game path configuration, how to write synchronous and time-dependent
+  assertions, how to skip paths that need the Unity engine, how to run the
+  tests locally, how to connect GitHub Actions and how to read a failed run's
+  report.
+- The template package holds no game files, and the repository's package check
+  fails the build if it ever does.
+- The battle environment's conversation with a program outside the test process
+  is `BattleEnvironmentProtocol`: a JSON request per line in, a JSON answer per
+  line out. `BattleEnvironmentServer.Serve` speaks it over a local TCP port; a
+  consumer that drives the battle in its own process speaks it without a socket.
+- **Breaking:** the observation reports its paths as a list of records instead of
+  a map of id to distance. Each path has its stable id, its source
+  (`game:UnitMovementAgent.FindPath` for the game's, the scenario's own source
+  otherwise), the unit it starts at, the unit it leads to, its waypoints, its
+  destination, the distance and the cost the source gave with the unit of the
+  distance, and why it cannot be chosen now. What the source gave none of stays
+  null.
+- **Breaking:** a step answers with the outcome as an object (`outcome`: the side
+  that won, or null, and why the episode was decided) instead of a flat `winner`,
+  and adds the reason an episode was cut off (`truncation`), the changes of the
+  battle's key state (`effects`) and the meters each unit actually walked
+  (`walked`). The observation answers with the outcome and the truncation too.
+- The episode's record is available to the client (`record`) and can be replayed
+  by the server (`replay`), which resets to the record's seed, takes its steps
+  again and lists every difference. The record names the mod under test and its
+  version besides the game and library versions.
+- `-Harmony game` (the game's Harmony 2.0.4) applies the library's patches.
+  `UnityEngine.Random.set_state_Injected` is patched with a by-ref `State`
+  argument. Harmony 2.0.4 emits invalid IL (`call 0x00000001`) when a prefix
+  takes a by-ref struct argument by value, which failed startup as
+  `[INIT_FAILED] harmony`. Later Harmony copies accept either form.
+
+
+## 0.1.0-preview.4 - 2026-11-18
+
 - Offline `UnityEngine.Random` now uses one `System.Random` (startup seed 1) with
   `GameRandom.Init`, `Save`, `Restore` and `Record`. Integer results are
   `[min, max)`; float `Range` and `value` are `[min, max)`. This is not the Unity

@@ -29,7 +29,7 @@ import features
 import gymnasium as gym
 import numpy as np
 import seeds
-from client import BattleClient, deciders, is_switch
+from client import BattleClient, deciders, is_switch, winner
 from rewards import SIDE, health, step_reward
 from texts import TABLE, guids
 
@@ -209,7 +209,7 @@ class BattleEnv(gym.Env):
 			self.obs = result["observation"]
 			self.pending, self.toggles, self.group = {}, {}, None
 			if result["ended"]:
-				self.winner = result["winner"] or ""
+				self.winner = winner(result)
 				# Ended without truncation is terminal even without a winner (no side has a
 				# conscious unit, such as two units downing each other in one frame).
 				truncated = bool(result["truncated"])

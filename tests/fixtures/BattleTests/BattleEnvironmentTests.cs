@@ -25,7 +25,7 @@ namespace WotR.Testing.BattleTests
         /// A fighter and a cultist about 5.6 m apart on the Kenabres navigation mesh, out of each other's reach. The decision
         /// maker controls the party; the game's AI fights for the cultist.
         /// </summary>
-        private static BattleScenario Skirmish(params string[] controlled)
+        internal static BattleScenario Skirmish(params string[] controlled)
         {
             var scenario = new BattleScenario("skirmish") { MainCharacter = "fighter", Area = Guids.KenabresBurning };
             foreach (var side in controlled.Length == 0 ? new[] { "party" } : controlled) scenario.ControlledSides.Add(side);

@@ -1,0 +1,69 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Minimal offline test project for a UnityModManager mod of Pathfinder: Wrath of the Righteous.
+
+    Every dependency is a pinned PackageReference: nothing is downloaded, unzipped or copied into the repository by
+    hand. The WotR.Testing package imports its build targets, so the game references, the run settings and the report
+    validation work without any further wiring.
+
+    Two settings must be filled in before the first run:
+      WotrModAssembly  the built mod DLL; its Info.json and private libraries are read from the same directory
+      WrathInstallDir  the game directory (or set WOTR_INPUT_ROOT, or point WotrSnapshotDirectory at a snapshot)
+
+    The full guide is https://github.com/Acture/wotr-testing/blob/main/docs/sdk.md
+  -->
+
+  <!-- An untracked GamePath.props next to this file holds the local game directory (the guide documents the format).
+       A command-line -p:WrathInstallDir=... still wins over the file. -->
+  <Import Project="$(MSBuildThisFileDirectory)GamePath.props" Condition="Exists('$(MSBuildThisFileDirectory)GamePath.props')" />
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>latest</LangVersion>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- The mod under test. Override with -p:WotrModAssembly=<path to the built DLL>. -->
+    <WotrModAssembly Condition="'$(WotrModAssembly)'==''">$(MSBuildThisFileDirectory)../MyMod/bin/$(Configuration)/MyMod.dll</WotrModAssembly>
+
+    <!--
+      The game directory. Leave it empty and set the WOTR_INPUT_ROOT environment variable instead, or point
+      WotrSnapshotDirectory at a snapshot made with New-WotrSnapshot.ps1. Never commit the game files.
+    -->
+    <WrathInstallDir Condition="'$(WrathInstallDir)'==''"></WrathInstallDir>
+
+    <!-- Where the rewritten runtime cache and the per-run reports go. The defaults are fine for a local run. -->
+    <!-- <WotrWorkDirectory>$(MSBuildThisFileDirectory)obj/wotr/</WotrWorkDirectory> -->
+    <!-- <WotrReportDirectory>$(MSBuildThisFileDirectory)artifacts/test-results/</WotrReportDirectory> -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The SDK: the offline test library, the interface fuzzer and FsCheck.Xunit, with the build targets that run
+      the tests on the game's own Unity Mono runtime. The version is pinned to the one the SDK was verified with;
+      change it deliberately, and read the release notes of the newer version first.
+    -->
+    <PackageReference Include="WotR.Testing" Version="[0.1.0-preview.4]" />
+
+    <!-- The test framework. xUnit v2 is the verified combination on the game's Unity Mono runtime. -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="[1.0.3]" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="[17.11.1]" />
+    <PackageReference Include="xunit" Version="[2.9.2]" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="[2.8.2]" PrivateAssets="all" />
+
+    <!-- Skips a test that needs the Unity engine instead of failing it. -->
+    <PackageReference Include="Xunit.SkippableFact" Version="[1.4.13]" />
+  </ItemGroup>
+
+  <!--
+    Other mods the mod under test requires, loaded in the order their Info.json declares. Optional.
+    <ItemGroup>
+      <WotrDependencyMod Include="../OtherMod/bin/Debug/OtherMod.dll" />
+    </ItemGroup>
+  -->
+
+</Project>

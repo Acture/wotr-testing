@@ -334,7 +334,8 @@ namespace WotR.Testing.Offline
             failure = null;
             outcome = Decide(ObserveUnits());
             record = new BattleEpisodeRecord(battle.Scenario.Name, Episode, battle.Seed,
-                OfflineRuntime.Inputs?.Identity?.GameVersion, LibraryVersion, battle.InitialState.Lines, battle.Scenario.Difficulty);
+                OfflineRuntime.Inputs?.Identity?.GameVersion, HarnessState.ModId, HarnessState.ModVersion, LibraryVersion,
+                battle.InitialState.Lines, battle.Scenario.Difficulty);
             if (outcome != null) record.End(outcome, false);
             BattleWorker.NoteEpisode();
         }
@@ -1452,7 +1453,7 @@ namespace WotR.Testing.Offline
     {
         private readonly List<BattleStepRecord> steps = new();
 
-        internal BattleEpisodeRecord(string scenario, int episode, int seed, string gameVersion, string libraryVersion, IReadOnlyList<string> initialState,
+        internal BattleEpisodeRecord(string scenario, int episode, int seed, string gameVersion, string modId, string modVersion, string libraryVersion, IReadOnlyList<string> initialState,
             Kingmaker.Settings.GameDifficultyOption? difficulty)
         {
             Scenario = scenario;
@@ -1460,6 +1461,8 @@ namespace WotR.Testing.Offline
             Seed = seed;
             Difficulty = difficulty;
             GameVersion = gameVersion;
+            ModId = modId;
+            ModVersion = modVersion;
             LibraryVersion = libraryVersion;
             InitialState = initialState;
         }
@@ -1474,6 +1477,12 @@ namespace WotR.Testing.Offline
         public Kingmaker.Settings.GameDifficultyOption? Difficulty { get; }
 
         public string GameVersion { get; }
+
+        /// <summary>The mod under test and its version: a regression record says which mod ran.</summary>
+        public string ModId { get; }
+
+        public string ModVersion { get; }
+
         public string LibraryVersion { get; }
         public IReadOnlyList<string> InitialState { get; }
         public IReadOnlyList<BattleStepRecord> Steps => steps;
@@ -1500,7 +1509,7 @@ namespace WotR.Testing.Offline
         public override string ToString()
             => string.Join(Environment.NewLine, new[]
                 {
-                    $"scenario {Scenario} episode {Episode} seed {Seed}{(Difficulty is { } level ? " difficulty " + level : "")} game {GameVersion ?? "unknown"} library {LibraryVersion ?? "unknown"}",
+                    $"scenario {Scenario} episode {Episode} seed {Seed}{(Difficulty is { } level ? " difficulty " + level : "")} game {GameVersion ?? "unknown"} mod {ModId ?? "unknown"} {ModVersion ?? "unknown"} library {LibraryVersion ?? "unknown"}",
                 }
                 .Concat(steps.Select(s => s.ToString()))
                 .Concat(new[] { Error != null ? "failed: " + Error : Outcome != null ? "outcome: " + Outcome : Truncated ? "truncated" : "running" }));

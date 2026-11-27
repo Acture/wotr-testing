@@ -21,7 +21,7 @@ import time
 import numpy as np
 import seeds
 import warm
-from client import BattleClient, by_unit
+from client import BattleClient, by_unit, winner
 from policy import LinearPolicy, softmax
 from rewards import SIDE, balance, step_reward, win_value
 
@@ -90,7 +90,7 @@ def evaluate(
 				obs = result["observation"]
 				if result["ended"]:
 					break
-			wins += result["winner"] == SIDE
+			wins += winner(result) == SIDE
 			balances.append(balance(obs))
 		print(
 			f"eval {label:6s} {'greedy' if greedy else 'sampled':7s} win {wins}/{len(seeds)} "
@@ -169,7 +169,7 @@ def main() -> None:
 				[
 					episode,
 					seed,
-					result["winner"] or "",
+					winner(result),
 					len(history),
 					queries,
 					round(time.time() - t0, 1),
@@ -177,7 +177,7 @@ def main() -> None:
 			)
 			handle.flush()
 			print(
-				f"train {episode:3d} winner {result['winner'] or '-':8s} steps {len(history):3d} "
+				f"train {episode:3d} winner {winner(result) or '-':8s} steps {len(history):3d} "
 				f"teacher scores {queries:4d} wall {time.time() - t0:6.1f}s",
 				flush=True,
 			)

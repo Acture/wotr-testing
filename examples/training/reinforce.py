@@ -14,7 +14,7 @@ import time
 import numpy as np
 import seeds
 import warm
-from client import BattleClient, by_unit
+from client import BattleClient, by_unit, winner
 from policy import LinearPolicy
 from rewards import SIDE, step_reward
 
@@ -85,13 +85,13 @@ def main() -> None:
 					"eval" if greedy else "train",
 					n,
 					round(total, 3),
-					result["winner"] or "",
+					winner(result),
 					len(steps),
 					round(time.time() - t0, 2),
 				]
 			)
 			handle.flush()
-			won = "won " if result["winner"] == SIDE else "lost"
+			won = "won " if winner(result) == SIDE else "lost"
 			print(
 				f"{'eval ' if greedy else 'train'} {n:4d} {won} "
 				f"return {total:6.2f} steps {len(steps):3d}",

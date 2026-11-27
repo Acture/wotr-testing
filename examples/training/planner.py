@@ -19,7 +19,7 @@ import time
 
 import numpy as np
 import seeds
-from client import BattleClient, by_unit
+from client import BattleClient, by_unit, winner
 from rewards import SIDE, health, step_reward
 
 
@@ -133,7 +133,7 @@ def play(
 	return {
 		"policy": policy,
 		"seed": seed,
-		"winner": result["winner"] or "",
+		"winner": winner(result),
 		"own_health": round(statistics.mean(health(u) for u in own), 3),
 		"enemies_down": sum(not u["conscious"] for u in obs["units"] if u["side"] != SIDE),
 		"steps": len(history),

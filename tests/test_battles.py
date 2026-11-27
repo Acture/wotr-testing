@@ -90,7 +90,13 @@ class BattleFixtureTests(unittest.TestCase):
 					for fact in FACTS.findall(source.read_text(encoding="utf-8"))
 				]
 				self.assertGreater(len(facts), 0)
-				self.assertEqual(classifications(result), dict.fromkeys(facts, "passed"))
+				# Every fixture test ran, and every test that ran passed. A theory's rows are in the
+				# results too, under the name with its arguments, so they are checked apart.
+				classes = classifications(result)
+				self.assertEqual([fact for fact in facts if fact not in classes], [])
+				self.assertEqual(
+					{name: value for name, value in classes.items() if value != "passed"}, {}
+				)
 				section = battles(result)
 				self.assertFalse(section["dirty"])
 				self.assertGreater(section["builds"], section["battlesStarted"])

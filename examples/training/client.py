@@ -53,9 +53,28 @@ class BattleClient:
 			return self.call(op="step", choices=choices)
 		return self.call(op="step", choices=choices, randomSeed=random_seed)
 
+	def record(self) -> dict:
+		"""The episode's record: what a regression needs to name and to reproduce it."""
+		return self.call(op="record")["record"]
+
+	def replay(self) -> list[str]:
+		"""Resets to the record's seed and takes its steps again; empty means it reproduces."""
+		return self.call(op="replay")["differences"]
+
 	def close(self) -> None:
 		self.call(op="close")
 		self.sock.close()
+
+
+def winner(result: dict) -> str:
+	"""The side that won the episode, or an empty string while it runs."""
+	outcome = result.get("outcome") or {}
+	return outcome.get("winner") or ""
+
+
+def paths(obs: dict) -> dict[str, dict]:
+	"""The observation's paths by id, each with its source, its waypoints and its distance."""
+	return {p["id"]: p for p in obs["paths"]}
 
 
 def by_unit(obs: dict) -> dict[str, list[int]]:

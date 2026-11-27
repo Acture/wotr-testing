@@ -672,19 +672,52 @@ and actions. It is not an outcome or a training sample: the episode stops until
 `Reset` throw `BattleCleanupException`, the process is dirty, and the environment
 cannot continue; run the next episodes in a new process.
 
-**Training programs in another process.** `BattleEnvironmentServer.Serve(port,
-scenario)` serves the environment to one client on a local TCP port, one JSON object
-per line: `start`, `reset` (optionally with a difficulty level), `observe`, `step`
-with candidate indices or action
-objects (with a point for any-point candidates) and an optional `randomSeed`,
-`close`. The battle runs in the test
-process inside the offline runtime; the client only sends decisions. The battle
+**Training programs in another process.** `BattleEnvironmentProtocol` is the
+conversation with one client: a JSON request per line in, a JSON answer per line
+out. `BattleEnvironmentServer.Serve(port, scenario)` speaks it over a local TCP
+port to one client; a consumer that drives the battle in its own process speaks it
+without a socket. The requests are `start` (the scenario the host names, a seed, a
+step limit and whether the battle runs in turns), `reset` (optionally with a
+difficulty level), `observe`, `step` with candidate indices or action objects (with
+a point for any-point candidates) and an optional `randomSeed`, `record`, `replay`
+and `close`. The battle runs in the test process inside the offline runtime; the
+client only sends decisions. A step answers with the new observation, whether the
+episode ended, whether it was truncated and why (`truncation`), the outcome with
+its reason (`outcome`: the side that won, or null, and why the episode was
+decided), the reward, the game time the frames took, why they stopped
+(`decision`), the changes of the battle's key state (`effects`) and the meters
+each unit actually walked (`walked`). The observation reports the paths as the
+source gave them: every path with its stable id, its source
+(`game:UnitMovementAgent.FindPath` for the game's, the scenario's own source
+otherwise), the unit it
+starts at, the unit it leads to, its waypoints, its destination, the distance and
+the cost the source gave and the unit of the distance, and why it cannot be chosen
+now; what the source gave none of stays null. An error answers `{"error": ...}`;
+after an environment failure, reset. The battle
 fixture's `TrainingServer` test serves while `WOTR_TRAIN_PORT` is set, and
 [examples/training](../examples/training/README.md) has Python clients: REINFORCE,
 random-rollout planning, on-policy distillation and MaskablePPO through a Gymnasium
 interface with action masks, each of which can start from demonstrations (the
 winning episodes among the best by return, cloned before training). The environment has no save and restore; rollouts
 rebuild a state by replaying from the episode's seed.
+
+**Movement in the offline runtime.** The environment never computes a path: it
+reads the paths the game and the scenario give, and a move is the game's own
+command. `BattleAction.Move(unit, path)` to a path that leads to a unit runs
+`UnitMoveTo` to that unit's position with the game's approach radius, to any
+other path to its destination; in real time the game's move command finds its own
+path there, in turn-based combat the precomputed path is followed. What the
+offline runtime offers is what those commands need: the area's real navigation
+mesh (boundary `navigation-graph`), so a path goes around walls and obstacles.
+Verified with the game's own commands: a move to a point on the mesh walks the
+distance the mesh's path gives and ends within the approach radius
+(`AMoveCommandEndsWithinItsApproachRadius`), a move whose straight line is blocked
+walks around the obstacle (`AMoveWhoseStraightLineIsBlockedWalksAroundTheObstacle`),
+and a move along an observed path walks more than a meter and changes the unit's
+position (`AClientRunsThreeEpisodesAndMovesAlongTheGamesPath`). The environment
+does not rebuild a navigation mesh, does not repair or measure a path and does not
+move a unit by changing its coordinates; a unit that may not move is refused by
+the game's own checks.
 
 **Branching from a state.** Replaying an episode reaches its random state too, so a
 rollout from the replayed state would roll exactly the dice the episode's own next
@@ -698,13 +731,16 @@ the same draws. Held-out evaluation episodes need their own seeds as well: a
 training episode with an evaluation seed starts from exactly the same battle.
 
 **Records.** `environment.Record` has the scenario, episode, seed, difficulty level,
-game version,
+game version, the mod under test and its version,
 library version, initial state, and per step the actions, random seed (if one was
 given), game time, decision and the key state afterwards. A seed alone does not reproduce an episode; the actions
 do, and `Replay` checks that they do. The game's pathfinding does not make an episode
 depend on how fast or busy the machine is (boundary `pathfinding-clock`), for example
 when many episodes run at once. `environment.json` counts episodes, steps,
-ended episodes and failed episodes under `battles.environment`.
+ended episodes and failed episodes under `battles.environment`. A client in another
+process reads the same record with the `record` request and has the server replay
+the episode with the `replay` request, which resets to the record's seed, takes its
+steps again and lists every difference.
 
 ## Runtimes
 

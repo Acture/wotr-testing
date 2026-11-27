@@ -6,6 +6,7 @@ Test tooling for Pathfinder: Wrath of the Righteous mods.
 |---|---|
 | [`WotR.Testing.Offline`](src/WotR.Testing.Offline/README.md) | Runs UnityModManager mods against the real game assemblies, vanilla blueprint pack and settings on the game's own Unity Mono runtime (or .NET Framework), without starting the game or the Unity player |
 | [`WotR.Testing.Fuzzing`](src/WotR.Testing.Fuzzing/README.md) | Automatically generates method calls and argument values for interfaces selected by a mod author, shrinks failures and replays saved cases |
+| [`WotR.Testing.Sdk`](src/WotR.Testing.Sdk/README.md) | Template for a mod's test project: pinned `PackageReference` dependencies, the game path settings, the session fixture, the examples and a CI workflow |
 | In-game testing | Planned: running tests inside the game for paths that need the Unity engine |
 
 The repository contains no game files. Game assemblies are referenced at compile
@@ -28,6 +29,15 @@ and Mono host, and `WotR.Testing.Fuzzing`); the packages contain no game files.
 ```powershell
 dotnet test tests/MyMod.OfflineTests/MyMod.OfflineTests.csproj
 ```
+
+A mod author starts from the [SDK template](docs/sdk.md): a .NET Framework 4.8
+xUnit v2 project with every dependency pinned as a `PackageReference`, the game
+path settings, the session fixture, the examples and a CI workflow. Copy
+[`templates/WotR.Testing.Sdk/`](templates/WotR.Testing.Sdk/README.md) from this
+repository, or build the template package locally (`dotnet pack
+src/WotR.Testing.Sdk/WotR.Testing.Sdk.csproj -o artifacts/packages`, then
+`dotnet new install artifacts/packages/WotR.Testing.Sdk.0.1.0-preview.4.nupkg`;
+the package is not on a public feed).
 
 To follow unreleased changes, use this repository as a Git submodule instead: import
 `external/wotr-testing/src/WotR.Testing.Offline/build/WotR.Testing.Offline.targets`,
@@ -55,6 +65,18 @@ arguments and call sequences, shrinks failures and saves replayable cases. Use
 report. See [interface fuzzing](docs/fuzzing.md) for custom generators and limits.
 The meta-package also includes FsCheck.Xunit for author-written `[Property]` tests.
 
+`OfflineBattle` builds both sides of a fight from real unit blueprints through the
+game's API, runs them in an area with the game's own movement, vision, combat and
+command controllers on the area's real navigation mesh, and resets it to the same
+initial state, checking that the previous build left no game state behind.
+`BattleEnvironment` runs such a battle as a reset, observe and step loop for an
+external decision maker, in real time or in the game's own turn-based combat, for
+the party against the game's AI or with every side controlled, and speaks it to
+training programs in another process over a protocol of JSON lines
+(`BattleEnvironmentProtocol`, [examples/training](examples/training/README.md)).
+See [battles](docs/offline.md#battles) and the
+[battle environment](docs/offline.md#battle-environment).
+
 ## Building
 
 Requires Windows, .NET SDK 8 or later and a WotR installation. Set `WrathInstallDir` with
@@ -81,6 +103,7 @@ fuzzing library's tests; building the offline library needs game files.
 | Path | Owns |
 | --- | --- |
 | `src/` | Libraries and their MSBuild targets ([overview](src/README.md)) |
+| `templates/` | The SDK template for a mod's test project ([WotR.Testing.Sdk](templates/WotR.Testing.Sdk/README.md)) |
 | `scripts/` | Test runner and game-file snapshot scripts, called by consumers through the submodule |
 | `tests/` | Repository checks and synthetic fixtures for native runtime and FsCheck integration |
 | `docs/` | Public documentation ([index](docs/README.md)) |

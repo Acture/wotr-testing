@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- New `tests/headless_launch.py`: a muted, recoverable headless launch harness
+  for in-game test runs (OSS-23). One command deploys the test assembly and its
+  dependency mods into the game's `Mods` folder (quarantining every other mod
+  for the run), mutes the game's audio settings, launches the game through
+  Steam (`-applaunch`, so no launch options dialog appears) or directly, waits
+  with a timeout, collects the JSON test report and restores everything it
+  touched on success, failure, timeout and interruption. Pre-existing game
+  processes are never managed; the run is refused while they exist unless
+  `--allow-existing-game` is passed. The manifest records the game version, the
+  test assembly hash and the launch mode. Verified offline with a fake process
+  gateway; the first authorized live launch still has to confirm the mute
+  entries, the launch-options behavior and the report contract.
+
 - New `WotR.Testing.Sdk` template package and the `templates/WotR.Testing.Sdk/`
   template it carries: a .NET Framework 4.8 xUnit v2 test project with every
   dependency pinned as a `PackageReference` (`WotR.Testing`, the test SDK, xUnit

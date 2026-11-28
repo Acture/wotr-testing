@@ -72,5 +72,38 @@ $env:WOTR_TEST_INTEGRATION = '1'
 python -m unittest discover -s tests -p 'test_battles.py' -v
 ```
 
+`headless_launch.py` is the muted, recoverable harness for in-game test runs
+(OSS-23): one command prepares the game installation, launches the game, waits
+with a timeout, collects the report and restores everything it touched. It
+deploys the test assembly and its dependency mods into the game's `Mods`
+folder, quarantines every other mod for the run (a crashed run's quarantine is
+restored by the next run), mutes the game's audio settings before launch, and
+passes the report path to the game as `--wotr-headless-report=<path>` (also in
+the `WOTR_HEADLESS_REPORT` environment variable). A run without a fresh report
+fails. Pre-existing game processes are detected and never managed; by default
+the run is refused while they exist. Cleanup restores the settings file and the
+`Mods` folder byte for byte on success, failure, timeout and interruption, and
+`wotr-headless-manifest.json` records the game version, the test assembly hash,
+the launch mode and the managed processes. The game is launched through Steam
+(`steam.exe -applaunch 2201390 ...`, which passes the arguments so no launch
+options dialog appears) or directly with `--launch-mode direct`; Steam
+re-launching the game is handled by tracking the process that appears after the
+launch request, not the launcher. Example:
+
+```powershell
+python tests/headless_launch.py --game-dir "C:/Games/Pathfinder Second Adventure" `
+    --test-assembly artifacts/MyMod.InGameTests.dll --mod artifacts/DepMod `
+    --results-dir artifacts/headless --timeout 900
+```
+
+`--dry-run` prepares, prints the launch command and restores without starting
+the game. `test_headless_launch.py` covers the harness offline with a fake
+process gateway: argument and config resolution, launch command construction,
+backup/restore, quarantine self-healing, muting, report collection, and cleanup
+on success, failure, timeout and interruption. Launching the real game is not
+covered: it needs the owner's authorization, and the mute entries, the
+launch-options behavior and the report contract still have to be confirmed
+against a live game.
+
 Real game behavior is also verified through a consumer mod's offline tests (see
 [CLAUDE.md](../CLAUDE.md)).

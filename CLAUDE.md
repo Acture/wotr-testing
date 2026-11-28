@@ -33,7 +33,9 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
 - `tests/`: repository checks, CLI integration tests and small synthetic fixtures
   (`tests/fixtures/`) for the native runtime and FsCheck. `tests/test_sdk_template.py`
   keeps the SDK template's pinned versions and the template package's allowlist in
-  step with the repository.
+  step with the repository. `tests/headless_launch.py` is the muted, recoverable
+  headless game-launch harness for in-game test runs (OSS-23); checks never launch
+  the game — its process/Steam edge is faked in `tests/test_headless_launch.py`.
 - `docs/`: public documentation. `data/`: no datasets; game files never go there.
 - `.github/`: CI, pull request template and CODEOWNERS.
 - `notes/`: optional private notes submodule; public builds and checks must not

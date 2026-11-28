@@ -95,8 +95,22 @@ ignored `GamePath.props` at the repository root:
 dotnet build WotR.Testing.slnx
 ```
 
-Outputs go to the ignored `artifacts/` directory. Public CI runs the independent
-fuzzing library's tests; building the offline library needs game files.
+Outputs go to the ignored `artifacts/` directory. Building the offline library
+needs game files.
+
+## Tests
+
+`dotnet test` at the repository root runs every test scope in
+`WotR.Testing.slnx`: the game-independent fuzzing scope and the offgame scope,
+which runs the fuzz targets and the FsCheck properties on the game's own Unity
+Mono runtime. The offgame scope reports itself as skipped when no WotR
+installation is available, so the run neither fails nor passes silently. See
+[tests/README.md](tests/README.md) for the scopes and the opt-in CLI
+integration tests.
+
+```powershell
+dotnet test
+```
 
 ## Repository layout
 
@@ -105,7 +119,7 @@ fuzzing library's tests; building the offline library needs game files.
 | `src/` | Libraries and their MSBuild targets ([overview](src/README.md)) |
 | `templates/` | The SDK template for a mod's test project ([WotR.Testing.Sdk](templates/WotR.Testing.Sdk/README.md)) |
 | `scripts/` | Test runner and game-file snapshot scripts, called by consumers through the submodule |
-| `tests/` | Repository checks and synthetic fixtures for native runtime and FsCheck integration |
+| `tests/` | Test scopes, repository checks and synthetic fixtures for the CLI integration tests |
 | `docs/` | Public documentation ([index](docs/README.md)) |
 | `data/` | No datasets; game files never belong in this repository |
 | `.github/` | CI, pull request template and CODEOWNERS |

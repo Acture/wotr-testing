@@ -9,7 +9,7 @@ from test_dotnet_test import ROOT, TRX_NS, DotnetTestHarness
 
 
 class FsCheckIntegrationTests(DotnetTestHarness):
-	project = ROOT / "tests/fixtures/FuzzTests/FuzzTests.csproj"
+	project = ROOT / "tests/WotR.Testing.Offline.Tests/WotR.Testing.Offline.Tests.csproj"
 
 	def test_automatic_interface_fuzzer_on_both_runtimes(self) -> None:
 		for runtime in ("mono", "netfx"):
@@ -137,9 +137,8 @@ class FsCheckIntegrationTests(DotnetTestHarness):
 				self.assertEqual(len(skipped), 1)
 				self.assertEqual(skipped[0].attrib["outcome"], "NotExecuted")
 				run_id = next(results.rglob("environment.json")).parent.name
-				run_report = (
-					ROOT / "artifacts/obj/FuzzTests/wotr/test-runs" / run_id / "wotr-results.xml"
-				)
+				run_root = ROOT / "artifacts/obj" / self.project.stem / "wotr/test-runs"
+				run_report = run_root / run_id / "wotr-results.xml"
 				recorded = [
 					test
 					for test in ET.parse(run_report).getroot().findall("Test")

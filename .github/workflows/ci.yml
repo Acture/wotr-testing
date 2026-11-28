@@ -24,6 +24,8 @@ jobs:
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '8.0.x'
+      # The game-independent fuzzing scope: this runner has no WotR installation, a .NET
+      # Framework SDK that cannot build net48 projects, and an SDK that does not read .slnx.
       - name: Test automatic interface generation, shrinking and replay
         run: dotnet test tests/WotR.Testing.Fuzzing.Tests/WotR.Testing.Fuzzing.Tests.csproj --configuration Release
   repository:

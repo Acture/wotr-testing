@@ -8,4 +8,6 @@
   <Project Path="src/WotR.Testing.Snapshot/WotR.Testing.Snapshot.csproj" />
   <Project Path="src/WotR.Testing.Sdk/WotR.Testing.Sdk.csproj" />
   <Project Path="src/WotR.Testing/WotR.Testing.csproj" />
+  <Project Path="tests/WotR.Testing.Fuzzing.Tests/WotR.Testing.Fuzzing.Tests.csproj" />
+  <Project Path="tests/WotR.Testing.Offline.Tests/WotR.Testing.Offline.Tests.csproj" />
 </Solution>

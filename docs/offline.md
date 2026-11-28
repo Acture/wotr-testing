@@ -96,6 +96,13 @@ verified game versions run (currently 2.7.0). Any other version is reported as
 `[ENV_MISSING]` unless `WOTR_ALLOW_UNVERIFIED_VERSION=1` is set, in which case the
 report records it as unverified.
 
+A test project that must build and run on a machine without the game sets
+`WotrAllowMissingInputs=true`. The missing inputs are then reported as a warning
+instead of a build error, the game references, the module initializer and the
+offline run are left out, and the project reports its scope as skipped. Set
+`WotrInputRoot` (or import `GamePath.props`) before importing the targets, so the
+inputs are known when the project is evaluated.
+
 To pin a copy for a workspace or a controlled CI runner:
 
 ```powershell

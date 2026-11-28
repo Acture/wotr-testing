@@ -30,10 +30,18 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   the submodule; moving them is a breaking change.
 - `examples/training/`: Python training programs for the battle environment, which
   connect to `BattleEnvironmentServer` in a battle fixture test; no game files.
-- `tests/`: repository checks, CLI integration tests and small synthetic fixtures
-  (`tests/fixtures/`) for the native runtime and FsCheck. `tests/test_sdk_template.py`
-  keeps the SDK template's pinned versions and the template package's allowlist in
-  step with the repository.
+- `tests/`: the test scopes of this repository, the repository checks and the
+  CLI integration fixtures.
+  - `tests/WotR.Testing.Fuzzing.Tests/`: the fuzzing scope; .NET 8, no game
+    inputs.
+  - `tests/WotR.Testing.Offline.Tests/`: the offgame scope; the game's Unity
+    Mono runtime. Without the game inputs it reports itself as skipped.
+  - `tests/fixtures/`: small synthetic fixtures (`MonoTests/`) for the CLI
+    integration tests.
+  `WotR.Testing.slnx` lists the scopes: `dotnet test` at the repository root runs
+  every scope it finds. `tests/test_sdk_template.py` keeps the SDK template's
+  pinned versions and the template package's allowlist in step with the
+  repository.
 - `docs/`: public documentation. `data/`: no datasets; game files never go there.
 - `.github/`: CI, pull request template and CODEOWNERS.
 - `notes/`: optional private notes submodule; public builds and checks must not
@@ -76,7 +84,6 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   uvx ty==0.0.82 check tests
   ```
 - Opt-in runner integration tests: restore `tests/fixtures/MonoTests/MonoTests.csproj`,
-  and `tests/fixtures/FuzzTests/FuzzTests.csproj` for FsCheck integration,
   set `WOTR_TEST_INTEGRATION=1`, then run the Python suite above. They need local
   game inputs and skip in public CI. Verify real game behavior through a consumer: the
   AttributeFeats repository (`external/wotr-testing` submodule) runs
@@ -85,9 +92,13 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   with a mod that has a dependency mod (TabletopTweaks-Base with -Core).
   Point its submodule at a local branch to test before publishing. Do not claim
   untested behavior has passed.
-- Run `dotnet test tests/WotR.Testing.Fuzzing.Tests/WotR.Testing.Fuzzing.Tests.csproj`
-  for game-independent fuzzing tests. Public CI runs these; building the offline
-  library still needs game files.
+- Run `dotnet test` at the repository root for the default scope: every scope in
+  `WotR.Testing.slnx`. This is the full-scope entry point for Windows with a
+  WotR installation; it needs a .NET SDK that reads `.slnx` (9.0.2xx+ / 10) and
+  game inputs for the net48 projects. The fuzzing scope needs no game inputs;
+  the offgame scope runs on the game's Unity Mono runtime and reports itself as
+  skipped without the inputs. Public CI runs only the game-independent fuzzing
+  scope with an explicit project path (SDK 8.0.x, ubuntu, no game installation).
 - Use CLI and code; do not use computer use or launch the game for offline work.
 
 ## Changes

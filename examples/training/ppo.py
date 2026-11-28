@@ -99,7 +99,10 @@ class RoundDiscountBuffer(MaskableRolloutBuffer):
 	rounds (BattleEnv.last_rounds) is discounted by gamma**r, so steps that take no game time are
 	not discounted. A step that ended the episode at the step limit is bootstrapped by the trainer
 	with the value of the state the battle was cut off in, discounted by one step; the round
-	discount applies to that bootstrap as well. Set `env` and `policy` before collecting.
+	discount applies to that bootstrap as well. Set `env` and `policy` before collecting. The
+	trainer's vectorized env resets a finished episode before the buffer records the step that
+	ended it, so `env` must keep that step's rounds and terminal observation across the reset
+	(RolloutBattleEnv).
 	"""
 
 	env: BattleEnv | None = None
@@ -144,6 +147,25 @@ class RoundDiscountBuffer(MaskableRolloutBuffer):
 			advantage = delta + gamma * lam * going_on * advantage
 			self.advantages[step] = advantage
 		self.returns = self.advantages + self.values
+
+
+class RolloutBattleEnv(BattleEnv):
+	"""
+	BattleEnv as the trainer's vectorized env collects it: the vec env resets a finished episode
+	inside env.step, before the rollout buffer records the step that ended it (DummyVecEnv does),
+	and when the fresh battle has no unit to command yet, the reset's advance adds its rounds to
+	the completed step's last_rounds. Keep the completed step's rounds and terminal observation
+	across the reset, so the buffer discounts the step that ended the episode by its own rounds,
+	not by time from the next episode; a reset that advances nothing changes neither, and the next
+	step starts both over.
+	"""
+
+	def reset(self, *, seed: int | None = None, options: dict | None = None):
+		rounds, terminal = self.last_rounds, self.terminal_observation
+		try:
+			return super().reset(seed=seed, options=options)
+		finally:
+			self.last_rounds, self.terminal_observation = rounds, terminal
 
 
 class ScoringPolicy(MaskableActorCriticPolicy):
@@ -271,7 +293,10 @@ def warm_start(
 	decisions = list(warm.decisions(demos))
 	# The demonstrations' abilities and buffs must be in the text table, as the live observations
 	# are: a guid the table does not know is row 0, and the policy would learn another observation.
-	texts.TABLE.ensure([g for obs, _, _, _ in decisions for g in texts.guids(obs)], describe)
+	demo_guids = [g for obs, _, _, _ in decisions for g in texts.guids(obs)]
+	texts.TABLE.ensure(demo_guids, describe)
+	missing = [g for g in demo_guids if not texts.TABLE.id(g)]
+	assert not missing, f"demonstration guids not registered in the text table: {missing[:3]}"
 	for obs, unit, switched, choice in decisions:
 		options = groups(obs, unit, switched)
 		group = next((g for g in options if choice in g), None)
@@ -378,7 +403,7 @@ def main() -> None:
 	torch.set_num_threads(args.threads)
 
 	levels = [level for level in args.difficulties.split(",") if level]
-	env = BattleEnv(
+	env = RolloutBattleEnv(
 		args.port,
 		args.scenario,
 		turn_based=args.turn_based,

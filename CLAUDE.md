@@ -100,13 +100,15 @@ to it and `.github/copilot-instructions.md` points to `../CLAUDE.md`.
   set `WOTR_TEST_INTEGRATION=1`, then run the Python suite above. They need local
   game inputs and skip in public CI. `WOTR_TEST_INGAME=1` also starts and closes the
   installed game with the host (install it once with `-t:InstallWotrInGameHost`).
-  Verify real game behavior through a consumer: the
-  AttributeFeats repository (`external/wotr-testing` submodule) runs
-  `pwsh -NoProfile -File scripts/Invoke-OfflineMechanicsTests.ps1`, currently 52/52
-  on the default Unity Mono runtime. Changes to mod loading should also be checked
-  with a mod that has a dependency mod (TabletopTweaks-Base with -Core).
-  Point its submodule at a local branch to test before publishing. Do not claim
-  untested behavior has passed.
+- Verify real game behavior by running a consumer mod's offline tests, such as
+  AttributeFeats, against this branch packed under a local-only version. Only run its
+  tests: point a temporary copy at the local package and leave the consumer's
+  repository unchanged. Use a fresh, isolated NuGet package cache for each
+  verification (point `NUGET_PACKAGES` or `globalPackagesFolder` at a clean empty
+  directory) and restore the temporary copy with it before running its tests;
+  otherwise NuGet may restore an earlier cached build and passing tests would not
+  verify this branch. Check changes to mod loading with a mod that has a dependency
+  mod (TabletopTweaks-Base with -Core). Do not claim untested behavior has passed.
 - Run `dotnet test tests/WotR.Testing.Fuzzing.Tests/WotR.Testing.Fuzzing.Tests.csproj`
   for game-independent fuzzing tests and
   `dotnet test tests/WotR.Testing.InGame.Tests/WotR.Testing.InGame.Tests.csproj` for

@@ -121,6 +121,17 @@ def _kernel32() -> Any:
 	return windll.kernel32
 
 
+def _get_last_error() -> int:
+	import ctypes
+
+	# GetLastError exists only on Windows; resolve it dynamically so the module
+	# stays importable and type-checkable on any platform.
+	get_last_error = getattr(ctypes, "GetLastError", None)
+	if get_last_error is None:
+		raise HarnessError("Headless game launches need Windows.")
+	return int(get_last_error())
+
+
 def _is_under(path: str, root: Path) -> bool:
 	try:
 		return Path(path).resolve().is_relative_to(root.resolve())
@@ -219,7 +230,7 @@ class WindowsProcessGateway:
 		kernel32 = _kernel32()
 		handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
 		if not handle:
-			return ctypes.GetLastError() == 5  # ERROR_ACCESS_DENIED: exists but protected
+			return _get_last_error() == 5  # ERROR_ACCESS_DENIED: exists but protected
 		try:
 			code = ctypes.c_ulong()
 			if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):

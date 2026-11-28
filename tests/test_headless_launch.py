@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import contextlib
+import ctypes
 import dataclasses
 import hashlib
 import io
 import json
+import sys
 import tempfile
 import unittest
 from collections.abc import Callable
 from pathlib import Path
+from unittest import mock
 
 import headless_launch as hl
 
@@ -524,6 +527,78 @@ class CommandAndConfigTests(unittest.TestCase):
 				]
 			)
 		self.assertEqual(exit_code, hl.EXIT_REFUSED)
+
+	def test_main_is_refused_off_windows_without_a_dry_run(self) -> None:
+		with (
+			mock.patch.object(sys, "platform", "linux"),
+			contextlib.redirect_stderr(io.StringIO()),
+		):
+			exit_code = hl.main(
+				[
+					"--game-dir",
+					str(self.game),
+					"--launch-mode",
+					"direct",
+					"--test-assembly",
+					str(self.assembly),
+					"--results-dir",
+					str(self.tmp / "results"),
+				]
+			)
+		self.assertEqual(exit_code, hl.EXIT_REFUSED)
+
+
+class WindowsGatewayTests(unittest.TestCase):
+	"""The Windows process edge: refused off Windows, ERROR_ACCESS_DENIED on it."""
+
+	def make_gateway(self) -> hl.WindowsProcessGateway:
+		# Construction only checks the platform; fake it so these tests run anywhere.
+		with mock.patch.object(sys, "platform", "win32"):
+			return hl.WindowsProcessGateway()
+
+	def test_construction_is_refused_off_windows(self) -> None:
+		with mock.patch.object(sys, "platform", "linux"), self.assertRaises(hl.HarnessError):
+			hl.WindowsProcessGateway()
+
+	def test_kernel32_is_refused_off_windows(self) -> None:
+		# Off Windows ctypes has no windll; simulate that on any platform.
+		with (
+			mock.patch.object(ctypes, "windll", None, create=True),
+			self.assertRaises(hl.HarnessError),
+		):
+			hl._kernel32()
+
+	def test_get_last_error_is_refused_off_windows(self) -> None:
+		# Off Windows ctypes has no GetLastError; simulate that on any platform.
+		with (
+			mock.patch.object(ctypes, "GetLastError", None, create=True),
+			self.assertRaises(hl.HarnessError),
+		):
+			hl._get_last_error()
+
+	@unittest.skipUnless(sys.platform == "win32", "ctypes.GetLastError needs Windows")
+	def test_get_last_error_returns_an_int_on_windows(self) -> None:
+		self.assertGreaterEqual(hl._get_last_error(), 0)
+
+	def test_access_denied_counts_as_running(self) -> None:
+		gateway = self.make_gateway()
+		kernel32 = mock.Mock()
+		kernel32.OpenProcess.return_value = 0  # the process cannot be opened
+		with (
+			mock.patch.object(hl, "_kernel32", return_value=kernel32),
+			mock.patch.object(hl, "_get_last_error", return_value=5),  # ERROR_ACCESS_DENIED
+		):
+			self.assertTrue(gateway.is_running(4242))
+
+	def test_a_process_that_cannot_be_opened_is_not_running(self) -> None:
+		gateway = self.make_gateway()
+		kernel32 = mock.Mock()
+		kernel32.OpenProcess.return_value = 0
+		with (
+			mock.patch.object(hl, "_kernel32", return_value=kernel32),
+			mock.patch.object(hl, "_get_last_error", return_value=87),  # ERROR_INVALID_PARAMETER
+		):
+			self.assertFalse(gateway.is_running(4242))
 
 
 if __name__ == "__main__":

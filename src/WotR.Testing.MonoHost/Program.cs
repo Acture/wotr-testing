@@ -45,6 +45,7 @@ namespace WotR.Testing.MonoHost
             {
                 // This branch runs inside Unity Mono, after the outer .NET Framework process calls mono_main.
                 if (args.Length > 0 && args[0] == "--testhost") return ManagedTestHost.Run(args.Skip(1).ToArray());
+                if (args.Length > 0 && args[0] == "--worker") return ManagedWorker.Run(args.Skip(1).ToArray());
                 return Run(args);
             }
             catch (HostException error)

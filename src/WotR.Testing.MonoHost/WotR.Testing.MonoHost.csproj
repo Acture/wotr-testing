@@ -17,6 +17,11 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <!-- The offgame worker mode. Runs with the test project's own xUnit, never one beside this host. -->
+    <ProjectReference Include="../WotR.Testing.Runner/WotR.Testing.Runner.csproj" />
+    <!-- Shipped, never referenced in code: loaded beside the test project's xUnit. -->
+    <ProjectReference Include="../WotR.Testing.Runner.Xunit/WotR.Testing.Runner.Xunit.csproj" />
+    <ProjectReference Include="../WotR.Testing.Runner.Fuzzing/WotR.Testing.Runner.Fuzzing.csproj" />
   </ItemGroup>
 
 </Project>

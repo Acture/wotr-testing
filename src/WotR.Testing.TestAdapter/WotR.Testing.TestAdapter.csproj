@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    VSTest adapter for .wotrtests sources: in-game cases and fuzz targets in either environment. Runs in the ordinary
+    .NET Framework test host and drives offgame workers and the in-game host through the shared client.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.TestPlatform.ObjectModel" Version="17.10.0" PrivateAssets="all" />
+    <ProjectReference Include="../WotR.Testing.Client/WotR.Testing.Client.csproj" />
+  </ItemGroup>
+
+</Project>

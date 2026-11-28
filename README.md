@@ -7,7 +7,7 @@ Test tooling for Pathfinder: Wrath of the Righteous mods.
 | [`WotR.Testing.Offline`](src/WotR.Testing.Offline/README.md) | Runs UnityModManager mods against the real game assemblies, vanilla blueprint pack and settings on the game's own Unity Mono runtime (or .NET Framework), without starting the game or the Unity player |
 | [`WotR.Testing.Fuzzing`](src/WotR.Testing.Fuzzing/README.md) | Automatically generates method calls and argument values for interfaces selected by a mod author, shrinks failures and replays saved cases |
 | [`WotR.Testing.Sdk`](src/WotR.Testing.Sdk/README.md) | Template for a mod's test project: pinned `PackageReference` dependencies, the game path settings, the session fixture, the examples and a CI workflow |
-| In-game testing | Planned: running tests inside the game for paths that need the Unity engine |
+| [`WotR.Testing.InGame`](src/WotR.Testing.InGame/README.md) | Runs xUnit tests and registered fuzz targets inside the running game, on Unity's main thread, from the same `dotnet test` |
 
 The repository contains no game files. Game assemblies are referenced at compile
 time from your own installation, and the offline runtime is prepared on the test
@@ -62,8 +62,18 @@ public void FuzzMyApi() => Fuzz.Check<IMyModApi>(() => new MyModApi());
 `WotR.Testing.Fuzzing.Fuzz` discovers the selected interface's methods, generates
 arguments and call sequences, shrinks failures and saves replayable cases. Use
 `game.Fuzz<IMyModApi>(...)` to include the results in the offline environment
-report. See [interface fuzzing](docs/fuzzing.md) for custom generators and limits.
-The meta-package also includes FsCheck.Xunit for author-written `[Property]` tests.
+report, or register the factory with `[WotrFuzz]` so `dotnet test` runs it in the
+environments it names. See [interface fuzzing](docs/fuzzing.md) for custom
+generators and limits. The meta-package also includes FsCheck.Xunit for
+author-written `[Property]` tests.
+
+Cases marked `[Trait("WotrMode", "ingame")]` run inside the game through a small
+development host mod; `dotnet test` starts its own game in the background (and
+refuses to use one that is already open unless asked to), and by default runs
+every offgame and in-game case and fuzz target the assembly declares.
+`-p:WotrTestMode=offgame|ingame` and `-p:WotrTestKind=tests|fuzz` narrow the run.
+Unmarked cases stay offgame, so existing projects are unchanged. See [in-game
+testing](docs/ingame.md).
 
 `OfflineBattle` builds both sides of a fight from real unit blueprints through the
 game's API, runs them in an area with the game's own movement, vision, combat and
@@ -96,7 +106,8 @@ dotnet build WotR.Testing.slnx
 ```
 
 Outputs go to the ignored `artifacts/` directory. Public CI runs the independent
-fuzzing library's tests; building the offline library needs game files.
+fuzzing library's tests and the game-free in-game infrastructure tests; building
+the offline and in-game libraries needs game files.
 
 ## Repository layout
 
@@ -105,7 +116,7 @@ fuzzing library's tests; building the offline library needs game files.
 | `src/` | Libraries and their MSBuild targets ([overview](src/README.md)) |
 | `templates/` | The SDK template for a mod's test project ([WotR.Testing.Sdk](templates/WotR.Testing.Sdk/README.md)) |
 | `scripts/` | Test runner and game-file snapshot scripts, called by consumers through the submodule |
-| `tests/` | Repository checks and synthetic fixtures for native runtime and FsCheck integration |
+| `tests/` | Repository checks, game-free unit tests and synthetic fixtures for native runtime, FsCheck and in-game integration |
 | `docs/` | Public documentation ([index](docs/README.md)) |
 | `data/` | No datasets; game files never belong in this repository |
 | `.github/` | CI, pull request template and CODEOWNERS |
@@ -123,8 +134,8 @@ the game:
 ```powershell
 python tests/check_repository.py
 python -m unittest discover -s tests -p 'test_*.py'
-uvx ruff==0.16.10 check --config .ruff.toml tests
-uvx ruff==0.16.10 format --check --config .ruff.toml tests
+uvx ruff==0.16.10 check --config .ruff.toml tests examples
+uvx ruff==0.16.10 format --check --config .ruff.toml tests examples
 uvx ty==0.0.82 check tests
 ```
 

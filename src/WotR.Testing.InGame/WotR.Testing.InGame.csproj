@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Author API for tests inside the running WotR player: InGameFixture runs test code on Unity's main thread through
+    the in-game host. MainThreadDispatcher does not reference Unity, so the game-free tests compile it directly.
+  -->
+  <Import Project="$(MSBuildThisFileDirectory)../../GamePath.props" Condition="Exists('$(MSBuildThisFileDirectory)../../GamePath.props')" />
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>WotR.Testing.InGame</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- Packed by WotR.Testing.InGame.Package together with the host, which references this library. -->
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <WotrManaged>$(WrathInstallDir)/Wrath_Data/Managed</WotrManaged>
+  </PropertyGroup>
+
+  <Target Name="EnsureWotrInGameReferences" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(WotrManaged)/UnityEngine.CoreModule.dll')" Text="[ENV_MISSING] WotR installation not found. Set WrathInstallDir (for example in GamePath.props)." />
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <!-- Compile-time only: the player supplies these. -->
+    <Reference Include="$(WotrManaged)/UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="$(WotrManaged)/Assembly-CSharp.dll" Private="false" />
+    <Reference Include="$(WotrManaged)/Owlcat.Runtime.Core.dll" Private="false" />
+  </ItemGroup>
+
+</Project>

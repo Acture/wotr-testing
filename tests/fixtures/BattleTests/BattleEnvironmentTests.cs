@@ -181,6 +181,8 @@ namespace WotR.Testing.BattleTests
                 new[] { BattleAction.Move("fighter", "no-such-path") },
                 new[] { BattleAction.Attack("cultist", "fighter") },
                 new[] { BattleAction.Wait("fighter"), BattleAction.Attack("fighter", "cultist") },
+                new[] { BattleAction.Hold("fighter"), BattleAction.Hold("fighter") },
+                new[] { BattleAction.Stop("cultist") },
                 new[] { BattleAction.Wait("nobody") },
             };
             foreach (var actions in rejections)
@@ -195,13 +197,16 @@ namespace WotR.Testing.BattleTests
             Assert.Empty(environment.Record.Steps);
             Assert.Equal(state, environment.Battle.Observe());
 
-            // A unit that is still running a command is not ready.
+            // In real time a unit still running a command is not ready, but takes another command, which replaces it.
             var attack = environment.Step(BattleAction.Attack("fighter", "cultist"));
             if (!attack.Ended && !attack.Observation.Unit("fighter").Ready)
             {
-                var busy = Assert.Throws<BattleActionRejectedException>(() => environment.Step(BattleAction.Wait("fighter")));
-                Assert.Contains("is not ready", busy.Message);
+                Assert.True(attack.Observation.Unit("fighter").Commandable);
+                Assert.Contains(BattleAction.Wait("fighter"), attack.Observation.Candidates);
             }
+            // A unit that cannot act takes switches only.
+            var twice = Assert.Throws<BattleActionRejectedException>(() => environment.Step(BattleAction.Stop("fighter"), BattleAction.Stop("fighter")));
+            Assert.Contains("uses Stop 2 times in one step", twice.Message);
         }
 
         [Fact]
@@ -509,6 +514,45 @@ namespace WotR.Testing.BattleTests
 
             environment.Reset();
             Assert.True(environment.Battle.LastCleanup.Clean, environment.Battle.LastCleanup.ToString());
+        }
+
+        /// <summary>
+        /// A controlled unit the player does not control (an enemy in self-play) reports its action bar slots as
+        /// usable only while the game would give it the command: on its own turn, and while the command can still
+        /// act it. Before, a slot was reported usable whenever the unit had the resources.
+        /// </summary>
+        [Fact]
+        public void AControlledEnemysSlotsAreUsableOnlyWhileItCanUseThem()
+        {
+            game.RequireGame();
+            using var environment = BattleEnvironment.Start(Casters(turnBased: true), seed: 13, new BattleEnvironmentOptions { MaxSteps = 60 });
+            var bless = "spell:ClericSpellbook:1:Bless";
+            // Out of combat the game runs in real time; the units see each other and the fight turns.
+            var result = environment.Step(BattleAction.Wait("fighter"));
+
+            // The fighter's turn: the cultist waits for its own and cannot use its spell.
+            result = WaitForTurn(environment, result, "fighter");
+            var cultist = result.Observation.Unit("cultist");
+            Assert.False(cultist.Commandable);
+            Assert.Contains(cultist.Slots, s => s.Id == bless);
+            Assert.All(cultist.Slots, s => Assert.False(s.Usable, s.Id));
+            Assert.DoesNotContain(result.Observation.Candidates, c => c.Unit == "cultist");
+
+            // The cultist's turn: it can cast the spell, and its slot says so.
+            result = WaitForTurn(environment, result, "cultist");
+            var ready = result.Observation.Unit("cultist");
+            Assert.True(ready.Commandable);
+            Assert.True(ready.Slots.Single(s => s.Id == bless).Usable);
+            Assert.Contains(result.Observation.Candidates, c => c.Kind == BattleActionKind.UseAbility && c.Ability == bless);
+        }
+
+        /// <summary>Steps through the turns until the unit's own turn waits for its command.</summary>
+        private static BattleStepResult WaitForTurn(BattleEnvironment environment, BattleStepResult result, string unit)
+        {
+            for (var i = 0; i < 6 && !result.Observation.Unit(unit).Commandable; i++)
+                result = environment.Step(BattleAction.EndTurn(Assert.Single(result.Observation.Ready)));
+            Assert.True(result.Observation.Unit(unit).Commandable, environment.Record.ToString());
+            return result;
         }
 
         [Fact]

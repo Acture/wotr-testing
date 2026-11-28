@@ -27,31 +27,38 @@ cultists on the Kenabres mesh) are defined in
 uv run --no-project --with numpy python reinforce.py --scenario 2v3
 uv run --no-project --with numpy python planner.py --scenario 1v3
 uv run --no-project --with numpy python opd.py --scenario 1v3
-uv run --no-project --python 3.12 --with sb3-contrib==2.4.0 --with gymnasium==1.0.0 --with numpy python ppo.py --scenario 1v3
+uv run --no-project --python 3.12 --with sb3-contrib==2.4.0 --with gymnasium==1.0.0 --with numpy --with sentence-transformers python ppo.py --scenario 1v3
+uv run --no-project --python 3.12 --with sb3-contrib==2.4.0 --with gymnasium==1.0.0 --with numpy --with sentence-transformers python grpo.py --scenario 1v1
 ```
+
+`ppo.py` and `grpo.py` embed ability and buff texts with a local model
+(`sentence-transformers`); its first run downloads the model's public weights. The game's
+text stays on this machine.
 
 A warm start takes two server runs: one to collect demonstrations, one to train from
 them.
 
 ```powershell
 uv run --no-project --with numpy python demos.py --scenario 2v3 --policy random --seeds 100 --per-seed 5
-uv run --no-project --python 3.12 --with sb3-contrib==2.4.0 --with gymnasium==1.0.0 --with numpy python ppo.py --scenario 2v3 --warm demos.jsonl
+uv run --no-project --python 3.12 --with sb3-contrib==2.4.0 --with gymnasium==1.0.0 --with numpy --with sentence-transformers python ppo.py --scenario 2v3 --warm demos.jsonl
 ```
 
 | File | What it is |
 | --- | --- |
-| `client.py` | The connection: `start`, `reset` (optionally on another difficulty level), `step` with candidate indices and an optional random seed, `record` (the episode's record), `replay` (the differences when the episode is played again), `close` |
-| `seeds.py` | Separate seeds for training and held-out evaluation episodes, and each rollout's own random seed |
+| `client.py` | The connection: `start`, `reset` (optionally on another difficulty level), `step` with candidate indices and an optional random seed, `record` (the episode's record), `replay` (the differences when the episode is played again), `close`; `by_unit` groups the candidates of the units that take a command, and a policy that picks one per unit takes a switch on its own |
+| `seeds.py` | Separate seeds for training and held-out evaluation episodes, each rollout's own random seed, and each battle step's seed under fixed dice |
+| `texts.py` | Text embeddings of abilities, toggles and buffs: their in-game name and description (the server's `describe`) embedded by a local sentence embedding model; the table is game-derived, keep it local |
 | `rewards.py` | Rewards from observations: per-step reward (damage dealt, health lost, units downed, resources spent: ability resources, spell slots by level, item uses; the outcome; a step-limit cutoff counts as a loss with every own unit downed) and a win-based value |
-| `features.py` | Features of one candidate action relative to the unit that takes it |
+| `features.py` | Features of one candidate action relative to the unit that takes it: its kind, target and, for an action bar slot, which slot (its row in the text table, `texts.TABLE`, 0 for one it has not seen) and what it does (the server's `slots`: action, range, targets, effects, area, level, descriptors, save, DC, uses, ...); the weapon set a candidate switches to, and the auto-use ability a unit has chosen |
 | `policy.py` | A linear softmax policy over candidate features |
 | `reinforce.py` | REINFORCE with the linear policy and the per-step reward |
 | `planner.py` | Random-rollout planning compared with a random and an attack-the-nearest policy on the same held-out seeds |
 | `opd.py` | On-policy distillation: the linear student plays, a rollout teacher scores the candidates of the states it reaches |
 | `demos.py` | Demonstrations for a warm start: episodes on training seeds, of which those in the best tenth by return that won are kept |
 | `warm.py` | Behavior cloning from demonstrations; `reinforce.py`, `opd.py` and `ppo.py` take `--warm` |
-| `gym_env.py` | A Gymnasium environment with action masks: one decision per ready unit, toggles go with the unit's command; the observation includes the battle's difficulty settings, and with several levels each episode draws one from its seed |
-| `ppo.py` | MaskablePPO with a policy that scores each candidate with one shared network; `--difficulties` mixes game difficulty levels in training and evaluates each |
+| `gym_env.py` | A Gymnasium environment with action masks: one decision per unit that takes a command (in real time also busy units), in two levels, what to do (wait, attack, one action bar slot, move, delay, a switch) and then on whom or where, every choice offered (a level with more than `MAX_CHOICES` raises); switches (toggles, the hold, stop and stealth keys, auto use, weapon sets, grip) go with the unit's command; the observation includes the battle's difficulty settings, and with several levels each episode draws one from its seed |
+| `grpo.py` | Group relative policy optimization with fixed dice: a group of episodes per training seed meets the same dice at the same step, each episode's return against its group's is the advantage, clipped policy gradient without a value network; evaluates the baselines and the policy with fixed dice; `--ports` runs episodes in parallel, one worker per server (keep it to a few on a shared machine), `--threads` limits torch threads per process |
+| `ppo.py` | MaskablePPO with a policy that scores each candidate with one shared network; rewards are discounted per combat round (`--gamma`), not per decision, so switches that take no game time cannot push a loss away; `--rounds` sets the training budget in combat rounds played, and the rollout that reaches it still trains; the evaluation plays the random and attack-the-nearest baselines and the policy, greedy and sampled, on the same held-out seeds, and reports how decisive the policy is; `--difficulties` mixes game difficulty levels in training and evaluates each |
 
 ## Limits
 

@@ -146,7 +146,8 @@ engagement and attacks of opportunity.
 no game state behind. See
 [Battles](https://github.com/Acture/wotr-testing/blob/main/docs/offline.md#battles).
 `BattleEnvironment` runs a battle as a decision loop: `Reset`, `Observe` and `Step`
-with the game's player commands, in real time or in turn-based combat
+with the game's player commands and the character's own controls (toggles, hold,
+stop, stealth, auto use, weapon sets, grip), in real time or in turn-based combat
 (`BattleScenario.TurnBased`); see the
 [battle environment](https://github.com/Acture/wotr-testing/blob/main/docs/offline.md#battle-environment).
 

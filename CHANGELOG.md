@@ -53,6 +53,29 @@
   argument. Harmony 2.0.4 emits invalid IL (`call 0x00000001`) when a prefix
   takes a by-ref struct argument by value, which failed startup as
   `[INIT_FAILED] harmony`. Later Harmony copies accept either form.
+- The battle environment's default outcome check reads the sides and the
+  consciousness of the battle's units, without collecting the action bars of
+  every controlled unit after each frame; a consumer's own
+  `BattleEnvironmentOptions.Outcome` still gets the full observation.
+- A controlled unit the player does not control (an enemy in self-play) reports
+  its action bar slots as usable only while the game would give it the command:
+  in turn-based combat on its own turn, and while the command can still act it.
+  Before, a slot was reported usable whenever the unit had the resources, while
+  the offered actions excluded it.
+- Training examples: the features tell the weapon sets apart (the set a
+  candidate switches to) and mark the auto-use ability a unit has chosen, so the
+  policy can tell the states apart. The feature vector grew, so a policy saved
+  before this cannot be loaded into a program of this version.
+- Training examples: the PPO example's warm start registers the demonstrations'
+  abilities and buffs in the text table before it encodes them, so the behavior
+  cloning trains on the observations live play produces.
+- Training examples: the PPO example's round budget finishes the rollout that
+  reached it and trains it; the training stops after that update, so a budget
+  reached within the first rollout still trains once and a larger budget does not
+  lose its last rollout.
+- Training examples: the PPO example discounts the bootstrap of a step that was
+  cut off at the step limit by the combat rounds that step took, as its other
+  transitions are discounted.
 - New `WotR.Testing.InGame` package (included by `WotR.Testing`): xUnit v2 tests
   marked `[Trait("WotrMode", "ingame")]` (or `both`) run inside the running game on
   Unity's main thread through `InGameFixture.OnMainThread`, with frame waits,
@@ -232,6 +255,77 @@
   another process (one client on a local TCP port, JSON lines);
   `examples/training` has Python clients (REINFORCE, rollout planning, on-policy
   distillation, MaskablePPO through a Gymnasium interface).
+- The battle environment's decision maker has the controls a character exposes to
+  the player besides its commands, as switches (`BattleAction.IsSwitch`): the hold,
+  stop and stealth keys of a party member (`Hold`, `Stop`, `Stealth`), the right click
+  that chooses its auto-use ability (`AutoUse`), its weapon sets (`WeaponSet`) and the
+  grip of the current set (`Grip`), next to the action bar's toggles. In combat a
+  weapon set change takes the game's action for it, the move action or else the
+  standard action, with the hands busy until the unit has one (new boundary
+  `weapon-set-change`). Observations report them (`BattleUnitObservation.Controls`;
+  server fields `autoUse`, `hold`, `stop`, `stealth`, `weaponSet`, `weaponSets`, and
+  `switch` on candidates), and the key state has lines for them. The AI button is not
+  offered: the decision maker takes the place of the game's AI for its units.
+- Breaking: in real time a busy controlled unit now takes commands, which replace its
+  running one as the player's click does (`BattleUnitObservation.Commandable`,
+  `BattleObservation.Commandable`, server field `commandable`); before, only idle
+  units were offered actions. `Wait` for a busy unit keeps its command. A step
+  rejects two switches of one kind for a unit; in turn-based combat a waiting unit
+  given nothing decides again after a frame instead of running into
+  `TurnBasedStepLimit`. Episode records from earlier versions replay with the new key
+  state lines as differences. The training examples decide for every unit that takes
+  a command (`client.deciders`), treat every switch as going with the unit's command,
+  and have more candidate and unit features; models saved by earlier versions do not
+  load.
+- Observations report a controlled unit's action bar with what each slot does, as the
+  game's ability tooltip shows it (`BattleUnitObservation.Slots`,
+  `BattleSlotObservation`; server field `slots`): blueprint, type, action, range,
+  targets, effect on enemies and allies, area, spell level, school, descriptors,
+  saving throw, spell resistance, DC, caster level, whether it provokes, uses, whether
+  it is usable now and whether a toggle is on. The server also sends the slot's
+  blueprint guid (`guid`), each unit's buff guids (`buffGuids`) and action cooldowns
+  (`cooldown`). A new server request, `describe` with `guids`, answers each ability,
+  toggle or buff blueprint's in-game name and description from the loaded
+  localization pack.
+- Training examples: a choice tells what its action bar slot does (the fields above)
+  and which ability it is by its text: each blueprint's in-game name and description
+  (`describe`) embedded once by a local sentence embedding model (`texts.py`,
+  `sentence-transformers/all-MiniLM-L6-v2`), so an ability a model never trained on
+  still lands next to the ones its text resembles. Unit features add action cooldowns
+  and the text embeddings of their buffs. The text table is saved with a model
+  (`*.texts.npz`, game-derived: keep it local) and nothing is sent anywhere. Before,
+  every ability a unit used on a target looked the same to a policy, which could learn
+  when to use an ability but not which one. A battle that ends with no side standing
+  now ends the gym episode; before, `BattleEnv` stepped on and failed with an
+  `IndexError`. Models saved by earlier versions do not load.
+- Training examples: fixed dice (`BattleEnv(fixed_dice=True)`, `ppo.py --fixed-dice`)
+  restart the game's random numbers at every battle step from a seed of the episode's
+  seed and the step's number (`seeds.dice`), so episodes from one seed meet the same
+  dice at the same step whatever was chosen before. New `grpo.py` trains by group
+  relative policy optimization with fixed dice: a group of episodes per training seed,
+  each episode's return against its group's as the advantage of its decisions, and the
+  clipped policy gradient without a value network; its evaluation plays the baselines
+  and the policy with fixed dice on the same held-out seeds. `--ports` runs the
+  episodes in parallel, one worker process per server. `ppo.py` and `grpo.py` limit
+  torch's threads (`--threads`, 2 by default); before, each process took one per core.
+- Training examples: `BattleEnv` asks in two levels, what to do (waiting, attacking,
+  one action bar slot, moving, delaying, a switch) and then, when that has several
+  targets, on whom or where; choosing what to do is a step that takes no game time.
+  Every choice is offered, and a level with more than `MAX_CHOICES` (64) raises.
+  Before, a unit's candidates were one flat list of every action and target cut to
+  the first 48 without a warning, which left out the last ones (moves first).
+- Training examples: the PPO example discounts rewards per combat round instead of per
+  decision (with many switches per decision, a policy had learned to pile them up to
+  discount a coming loss away), takes a budget in combat rounds (`--rounds`), and its
+  evaluation reports the random and attack-the-nearest baselines and the policy played
+  greedily and sampled on the same seeds. A greedy evaluation alone had matched the
+  baseline before any training: a nearly uniform policy's most probable candidate was
+  an attack.
+- Known game logs: a command that waits more than 5 seconds for hands busy with a
+  weapon set change, and the game's own NullReferenceException in
+  `UnitImpatienceController` after an offensive ability is interrupted before it acts,
+  are allowed with their reasons and counted. An allowed exception also allows the
+  "Exception occured!" header Owlcat's `LogChannel.Exception` logs before it.
 - `BattleSlot.QuickSlot1` to `QuickSlot5` put usable items in a battle unit's quick
   slots. `BattleScenario.FrameLogAllowances` allows errors the game logs during
   battle frames that the scenario explains; the game's own known logs (a touch

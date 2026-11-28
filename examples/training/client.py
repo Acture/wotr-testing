@@ -53,6 +53,10 @@ class BattleClient:
 			return self.call(op="step", choices=choices)
 		return self.call(op="step", choices=choices, randomSeed=random_seed)
 
+	def describe(self, guids: list[str]) -> dict:
+		"""In-game name and description of ability, toggle and buff blueprints, by guid."""
+		return self.call(op="describe", guids=guids)["texts"]
+
 	def record(self) -> dict:
 		"""The episode's record: what a regression needs to name and to reproduce it."""
 		return self.call(op="record")["record"]
@@ -64,6 +68,22 @@ class BattleClient:
 	def close(self) -> None:
 		self.call(op="close")
 		self.sock.close()
+
+
+def deciders(obs: dict) -> list[str]:
+	"""
+	The units that take a command now: in real time every controlled unit that can act, busy or
+	idle (a new command replaces its running one); in turn-based combat the unit whose turn waits.
+	"""
+	return obs.get("commandable", obs["ready"])
+
+
+def is_switch(cand: dict) -> bool:
+	"""
+	Whether the candidate switches something instead of giving a command (toggles, the hold, stop
+	and stealth keys, auto use, weapon sets, grip); switches go with the unit's command.
+	"""
+	return bool(cand.get("switch", cand["kind"] == "Toggle"))
 
 
 def winner(result: dict) -> str:
@@ -78,9 +98,13 @@ def paths(obs: dict) -> dict[str, dict]:
 
 
 def by_unit(obs: dict) -> dict[str, list[int]]:
-	"""Candidate indices of each ready unit, without the ones that stand for any point."""
+	"""
+	Candidate indices of each unit that takes a command, without the ones that stand for any point.
+	A policy that chooses one of them per unit takes a switch on its own, without a command.
+	"""
+	units = set(deciders(obs))
 	options: dict[str, list[int]] = {}
 	for i, c in enumerate(obs["candidates"]):
-		if c["unit"] in obs["ready"] and not c.get("anyPoint"):
+		if c["unit"] in units and not c.get("anyPoint"):
 			options.setdefault(c["unit"], []).append(i)
 	return options

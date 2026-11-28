@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- net48 on Windows: the game's Mono uses the .NET Framework serializer implementation, not .NET 8's. -->
+    <TargetFrameworks>net8.0</TargetFrameworks>
+    <TargetFrameworks Condition="'$(OS)'=='Windows_NT'">net8.0;net48</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" Condition="'$(TargetFramework)'=='net48'" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+    <ProjectReference Include="../../src/WotR.Testing.InGame.Protocol/WotR.Testing.InGame.Protocol.csproj" />
+    <ProjectReference Include="../../src/WotR.Testing.Client/WotR.Testing.Client.csproj" />
+    <!-- Scanned from metadata, never run. -->
+    <ProjectReference Include="../fixtures/ScopeSamples/ScopeSamples.csproj" />
+    <!-- Compiled from source: the in-game project references game assemblies, these tests must not need them. -->
+    <Compile Include="../../src/WotR.Testing.InGame/MainThreadDispatcher.cs" Link="MainThreadDispatcher.cs" />
+  </ItemGroup>
+</Project>

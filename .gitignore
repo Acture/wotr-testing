@@ -31,3 +31,5 @@ __pycache__/
 /examples/training/*.zip
 /examples/training/*.texts.npz
 /examples/training/*.pt
+# Test results written beside test projects
+TestResults/

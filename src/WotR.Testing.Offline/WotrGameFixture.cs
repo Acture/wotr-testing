@@ -44,6 +44,9 @@ namespace WotR.Testing.Offline
             processesBefore = new HashSet<int>(ForbiddenProcesses.SelectMany(Process.GetProcessesByName).Select(p => p.Id));
             try
             {
+                if (OfflineRuntime.IsInGame)
+                    throw new InvalidOperationException("[OFFGAME_ONLY] WotrGameFixture starts an offline game and cannot run inside the game. " +
+                        "Use InGameFixture from WotR.Testing.InGame for in-game cases.");
                 Session.Start(VerifyModInitialized);
             }
             catch (Exception error)

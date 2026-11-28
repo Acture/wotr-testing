@@ -1,0 +1,66 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Builds the WotR.Testing.InGame NuGet package: the author library (lib/net48), the development host mod (tools/host)
+    and the InstallWotrInGameHost target. A separate project, because the host references the library. Contains no
+    game files; Directory.Build.targets deletes the package if it holds anything outside the allowlist below.
+  -->
+  <Import Project="$(MSBuildThisFileDirectory)../../GamePath.props" Condition="Exists('$(MSBuildThisFileDirectory)../../GamePath.props')" />
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!-- NU5128: the library is added to lib/ by hand below. -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+    <PackageId>WotR.Testing.InGame</PackageId>
+    <Authors>Acture</Authors>
+    <Description>Runs xUnit tests and registered fuzz targets inside the running Pathfinder: Wrath of the Righteous player through a development UnityModManager host, from dotnet test. Game files come from your own installation and are never part of the package.</Description>
+    <PackageTags>pathfinder;wrath-of-the-righteous;wotr;modding;testing;unitymodmanager;unity</PackageTags>
+    <PackageLicenseExpression>AGPL-3.0-only</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/Acture/wotr-testing</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Acture/wotr-testing</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <!-- Running in-game tests from dotnet test uses the offline component's targets and tools: a package dependency. -->
+    <ProjectReference Include="../WotR.Testing.Offline/WotR.Testing.Offline.csproj" />
+    <!-- Built first, packed by hand. -->
+    <ProjectReference Include="../WotR.Testing.InGame/WotR.Testing.InGame.csproj" ReferenceOutputAssembly="false" Private="false" PrivateAssets="all" />
+    <ProjectReference Include="../WotR.Testing.InGame.Host/WotR.Testing.InGame.Host.csproj" ReferenceOutputAssembly="false" Private="false" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../WotR.Testing.InGame/build/WotR.Testing.InGame.targets" Pack="true" PackagePath="build/" />
+    <None Include="../WotR.Testing.InGame/buildTransitive/WotR.Testing.InGame.targets" Pack="true" PackagePath="buildTransitive/" />
+    <None Include="../WotR.Testing.InGame/README.md" Pack="true" PackagePath="/" />
+    <None Include="../../LICENSE-EXCEPTION.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <Target Name="PackWotrInGame" BeforeTargets="_GetPackageFiles">
+    <MSBuild Projects="../WotR.Testing.InGame/WotR.Testing.InGame.csproj;../WotR.Testing.InGame.Host/WotR.Testing.InGame.Host.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_WotrInGameOutput" />
+    </MSBuild>
+    <PropertyGroup>
+      <_WotrLibrary>@(_WotrInGameOutput->WithMetadataValue('Filename', 'WotR.Testing.InGame')->'%(FullPath)')</_WotrLibrary>
+      <_WotrHostDirectory>@(_WotrInGameOutput->WithMetadataValue('Filename', 'WotR.Testing.InGame.Host')->'%(RootDir)%(Directory)')</_WotrHostDirectory>
+    </PropertyGroup>
+    <ItemGroup>
+      <None Include="$(_WotrLibrary);$([System.IO.Path]::ChangeExtension('$(_WotrLibrary)', '.xml'))" Pack="true" PackagePath="lib/net48/" />
+      <None Include="$(_WotrHostDirectory)Info.json;$(_WotrHostDirectory)WotR.Testing.InGame.Host.dll;$(_WotrHostDirectory)WotR.Testing.InGame.dll;$(_WotrHostDirectory)WotR.Testing.InGame.Protocol.dll;$(_WotrHostDirectory)WotR.Testing.Runner.dll;$(_WotrHostDirectory)WotR.Testing.Runner.Xunit.bridge;$(_WotrHostDirectory)WotR.Testing.Runner.Fuzzing.bridge" Pack="true" PackagePath="tools/host/" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <WotrPackageEntry Include="WotR.Testing.InGame.nuspec;README.md;LICENSE-EXCEPTION.md" />
+    <WotrPackageEntry Include="build\WotR.Testing.InGame.targets;buildTransitive\WotR.Testing.InGame.targets" />
+    <WotrPackageEntry Include="lib\net48\WotR.Testing.InGame.dll;lib\net48\WotR.Testing.InGame.xml" />
+    <WotrPackageEntry Include="tools\host\Info.json;tools\host\WotR.Testing.InGame.Host.dll;tools\host\WotR.Testing.InGame.dll;tools\host\WotR.Testing.InGame.Protocol.dll" />
+    <WotrPackageEntry Include="tools\host\WotR.Testing.Runner.dll;tools\host\WotR.Testing.Runner.Xunit.bridge;tools\host\WotR.Testing.Runner.Fuzzing.bridge" />
+  </ItemGroup>
+
+</Project>

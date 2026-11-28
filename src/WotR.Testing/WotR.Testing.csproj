@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Meta-package: no code, only dependencies on the WotR.Testing components (Offline and Fuzzing; in-game testing
-    will be added here). Mod test projects reference this package.
+    Meta-package: no code, only dependencies on the WotR.Testing components (Offline, InGame and Fuzzing). Mod test
+    projects reference this package.
   -->
   <Import Project="$(MSBuildThisFileDirectory)../../GamePath.props" Condition="Exists('$(MSBuildThisFileDirectory)../../GamePath.props')" />
 
@@ -14,7 +14,7 @@
     <NoWarn>$(NoWarn);NU5128</NoWarn>
     <PackageId>WotR.Testing</PackageId>
     <Authors>Acture</Authors>
-    <Description>Test tooling for Pathfinder: Wrath of the Righteous mods. Offline tests run against the real game assemblies on Unity Mono without starting the game. Interface fuzzing automatically generates method calls and arguments, shrinks failures and replays saved cases. Game files come from your own installation and are never part of the packages.</Description>
+    <Description>Test tooling for Pathfinder: Wrath of the Righteous mods. Offline tests run against the real game assemblies on Unity Mono without starting the game; in-game tests run inside the running player through a development UnityModManager host. Interface fuzzing automatically generates method calls and arguments in either environment, shrinks failures and replays saved cases. One dotnet test runs everything the tests declare. Game files come from your own installation and are never part of the packages.</Description>
     <PackageTags>pathfinder;wrath-of-the-righteous;wotr;modding;testing;unitymodmanager</PackageTags>
     <PackageLicenseExpression>AGPL-3.0-only</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
@@ -28,6 +28,7 @@
     <!-- PrivateAssets none: the component's build targets reach the consumer (through its buildTransitive/ folder). -->
     <ProjectReference Include="../WotR.Testing.Offline/WotR.Testing.Offline.csproj" PrivateAssets="none" />
     <ProjectReference Include="../WotR.Testing.Fuzzing/WotR.Testing.Fuzzing.csproj" PrivateAssets="none" />
+    <ProjectReference Include="../WotR.Testing.InGame.Package/WotR.Testing.InGame.Package.csproj" PrivateAssets="none" />
   </ItemGroup>
 
   <ItemGroup>
